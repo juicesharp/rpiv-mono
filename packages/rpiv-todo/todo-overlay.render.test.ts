@@ -46,7 +46,7 @@ async function setup(
 		theme: typeof identityTheme,
 	) => { render: (w: number) => string[]; invalidate: () => void };
 	const widget = factory({ requestRender: vi.fn() }, identityTheme);
-	return { widget, tool, ui, overlay };
+	return { widget, tool, ui, overlay, ctx };
 }
 
 beforeEach(() => {
@@ -129,17 +129,40 @@ describe("TodoOverlay — per-task formatting", () => {
 		expect(line).toContain("(Doing it)");
 	});
 
-	it("completed task stays visible until the next agent turn starts", async () => {
-		const { widget, overlay } = await setup([
-			{ action: "create", subject: "done" },
-			{ action: "update", id: 1, status: "completed" },
+	it("completed task fades only after K newer completions displace it", async () => {
+		// Last-3 rule: the 1st-3rd completions stay on screen; completing a 4th
+		// drops the oldest immediately — mid-turn, no agent_start needed.
+		const { widget, tool, ctx } = await setup([
+			{ action: "create", subject: "c1" },
+			{ action: "create", subject: "c2" },
+			{ action: "create", subject: "c3" },
+			{ action: "create", subject: "c4" },
+			{ action: "create", subject: "next" },
 		]);
-		const firstRender = widget.render(200);
-		expect(firstRender[1]).toContain("✓");
-		expect(firstRender[1]).toContain("done");
-		expect(widget.render(200)[1]).toContain("done");
-		overlay.hideCompletedTasksFromPreviousTurn();
-		expect(widget.render(200)).toEqual([]);
+		for (let i = 1; i <= 3; i++) {
+			await tool.execute?.(
+				"tc",
+				{ action: "update", id: i, status: "completed" } as never,
+				undefined as never,
+				undefined as never,
+				ctx as never,
+			);
+		}
+		const kept = widget.render(200).join("\n");
+		expect(kept).toContain("c1");
+		expect(kept).toContain("c3");
+		await tool.execute?.(
+			"tc",
+			{ action: "update", id: 4, status: "completed" } as never,
+			undefined as never,
+			undefined as never,
+			ctx as never,
+		);
+		const faded = widget.render(200).join("\n");
+		expect(faded).not.toContain("c1");
+		expect(faded).toContain("c2");
+		expect(faded).toContain("c4");
+		expect(faded).toContain("next");
 	});
 });
 
@@ -181,25 +204,44 @@ describe("TodoOverlay — overflow focus window", () => {
 		expect(lines.join("\n")).not.toContain("earlier");
 	});
 
-	it("hides a completed tail behind the later marker", async () => {
-		// 8 pending + 4 completed = 12 total. The window starts at the first task
-		// (already unfinished), so the trailing completed pair folds into the
-		// later marker.
+	it("hides pending overflow behind the later marker when completed sit before the anchor", async () => {
+		// 3 completed (all kept — within K) + 10 pending = 13. Anchor = p1 at
+		// index 3; both markers → 9 task rows → window p1..p9, p10 folds into
+		// the later marker.
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
-		for (let i = 1; i <= 8; i++) actions.push({ action: "create", subject: `p${i}` });
-		for (let i = 9; i <= 12; i++) {
+		for (let i = 1; i <= 3; i++) {
 			actions.push({ action: "create", subject: `c${i}` });
 			actions.push({ action: "update", id: i, status: "completed" });
 		}
+		for (let i = 4; i <= 13; i++) actions.push({ action: "create", subject: `p${i}` });
 		const { widget } = await setup(actions);
 		const lines = widget.render(200);
 		expect(lines).toHaveLength(13);
-		for (let i = 1; i <= 8; i++) expect(lines.join("\n")).toContain(`p${i}`);
-		expect(lines.join("\n")).toContain("c9");
-		expect(lines.join("\n")).toContain("c10");
-		expect(lines.join("\n")).not.toContain("c11");
-		expect(lines[lines.length - 2]).toContain("… 2 later");
-		expect(lines.join("\n")).not.toContain("earlier");
+		expect(lines.join("\n")).toContain("… 3 earlier");
+		expect(lines.join("\n")).not.toContain("later");
+		expect(lines.join("\n")).toContain("p9");
+		expect(lines.join("\n")).toContain("p13");
+		expect(lines.join("\n")).not.toContain("c3");
+	});
+
+	it("backfills an earlier completed task when the anchor sits at the window edge", async () => {
+		// 3 completed + 9 pending = 12 → anchor p1 at index 3; only the later
+		// marker qualifies (window reaches the end), so slots = 10 and the
+		// window shifts left to idx 2: one completed row backfills the window.
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 3; i++) {
+			actions.push({ action: "create", subject: `c${i}` });
+			actions.push({ action: "update", id: i, status: "completed" });
+		}
+		for (let i = 4; i <= 12; i++) actions.push({ action: "create", subject: `p${i}` });
+		const { widget } = await setup(actions);
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(13);
+		expect(lines[1]).toContain("… 2 earlier");
+		expect(lines[2]).toContain("c3");
+		expect(lines[3]).toContain("p4");
+		expect(lines[11]).toContain("p12");
+		expect(lines.join("\n")).not.toContain("later");
 	});
 
 	it("anchors the window at the first unfinished task", async () => {
@@ -223,27 +265,9 @@ describe("TodoOverlay — overflow focus window", () => {
 		expect(lines.join("\n")).not.toContain("p13");
 	});
 
-	it("backfills from earlier tasks so the window stays full", async () => {
-		// 9 completed + 3 pending = 12 total → the anchor is near the end, so the
-		// window shifts backward and keeps 10 task rows; only the earlier marker.
-		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
-		for (let i = 1; i <= 9; i++) {
-			actions.push({ action: "create", subject: `c${i}` });
-			actions.push({ action: "update", id: i, status: "completed" });
-		}
-		for (let i = 10; i <= 12; i++) actions.push({ action: "create", subject: `p${i}` });
-		const { widget } = await setup(actions);
-		const lines = widget.render(200);
-		expect(lines).toHaveLength(13);
-		expect(lines[1]).toContain("… 2 earlier");
-		expect(lines[2]).toContain("c3");
-		expect(lines[11]).toContain("p12");
-		expect(lines[11]).toContain("└─");
-		expect(lines.join("\n")).not.toContain("c2");
-		expect(lines.join("\n")).not.toContain("later");
-	});
-
-	it("shows the final window when every task is completed", async () => {
+	it("shows only the K most recent completions when everything is done", async () => {
+		// 13 completions → keep-last-3 eligibility leaves exactly the three
+		// newest stamped rows — no windowing needed.
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
 		for (let i = 1; i <= 13; i++) {
 			actions.push({ action: "create", subject: `t${i}` });
@@ -251,32 +275,34 @@ describe("TodoOverlay — overflow focus window", () => {
 		}
 		const { widget } = await setup(actions);
 		const lines = widget.render(200);
-		expect(lines).toHaveLength(13);
-		expect(lines[1]).toContain("… 3 earlier");
-		expect(lines[2]).toContain("t4");
-		expect(lines[11]).toContain("t13");
-		expect(lines[11]).toContain("└─");
+		expect(lines).toHaveLength(5); // heading + 3 kept rows + spacer
+		expect(lines.join("\n")).toContain("Todos (3/3)");
+		expect(lines.join("\n")).toContain("t11");
+		expect(lines.join("\n")).toContain("t13");
+		expect(lines.join("\n")).not.toContain("t10");
+		expect(lines.join("\n")).not.toContain("earlier");
 		expect(lines.join("\n")).not.toContain("later");
 	});
 
-	it("hides overflowed completed tasks on the next agent turn too", async () => {
+	it("fades stale completed tasks out of the overflow window too", async () => {
+		// 11 pending + 5 completed = 16 raw, but keep-last-3 eligibility leaves
+		// only 3 completions → 14 overlay tasks: anchor p1, later-only marker →
+		// 10 visible rows (p1..p10); p11 and the 3 kept completions hide behind
+		// the marker.
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
 		for (let i = 1; i <= 11; i++) actions.push({ action: "create", subject: `p${i}` });
 		for (let i = 12; i <= 16; i++) {
 			actions.push({ action: "create", subject: `c${i}` });
 			actions.push({ action: "update", id: i, status: "completed" });
 		}
-		const { widget, overlay } = await setup(actions);
-		const beforeNextTurn = widget.render(200).join("\n");
-		expect(beforeNextTurn).toContain("Todos (5/16)");
-		expect(beforeNextTurn).toContain("… 6 later");
-		overlay.hideCompletedTasksFromPreviousTurn();
-		const afterNextTurn = widget.render(200).join("\n");
-		expect(afterNextTurn).toContain("Todos (0/11)");
-		expect(afterNextTurn).toContain("p11");
-		expect(afterNextTurn).not.toContain("earlier");
-		expect(afterNextTurn).not.toContain("later");
-		expect(afterNextTurn).not.toContain("completed");
+		const { widget } = await setup(actions);
+		const rendered = widget.render(200).join("\n");
+		expect(rendered).toContain("Todos (3/14)");
+		expect(rendered).toContain("… 4 later");
+		expect(rendered).toContain("p10");
+		expect(rendered).not.toContain("p11");
+		expect(rendered).not.toContain("c15");
+		expect(rendered).not.toContain("c16");
 	});
 
 	it("does not engage overflow at exactly 11 visible tasks", async () => {
@@ -370,18 +396,16 @@ describe("TodoOverlay — collapse/expand render", () => {
 		expect(lines.some((l) => l.includes("b"))).toBe(true);
 	});
 
-	it("collapsed render short-circuits before completed-display tracking (no task queued for hide while collapsed)", async () => {
+	it("collapsed render does not interfere with completed fading", async () => {
 		const { widget, overlay } = await setup([
 			{ action: "create", subject: "done" },
 			{ action: "update", id: 1, status: "completed" },
 		]);
 		overlay.toggleCollapse(); // collapse
-		widget.render(200); // collapsed render — must NOT queue the completed task
-		// Draining the pending-hide set is a no-op because nothing was queued.
-		overlay.hideCompletedTasksFromPreviousTurn();
+		widget.render(200); // collapsed render
 		overlay.toggleCollapse(); // expand
-		// The completed task is still visible: the collapsed render never queued it,
-		// so the drain above couldn't hide it.
+		// The completed task is still visible: fading is driven by completion
+		// recency, not by whether a collapsed frame rendered it.
 		const expanded = widget.render(200).join("\n");
 		expect(expanded).toContain("done");
 		expect(expanded).toContain("✓");
@@ -442,22 +466,31 @@ describe("TodoOverlay — width truncation", () => {
 		expect(() => widget.render(20)).not.toThrow();
 	});
 
-	it("drops completed tasks from counts after the next agent turn starts", async () => {
-		const { widget, overlay } = await setup([
-			{ action: "create", subject: "done" },
-			{ action: "update", id: 1, status: "completed" },
+	it("drops faded completed tasks from the heading counts", async () => {
+		// 4 completions → oldest fades → heading counts exclude it (done/total
+		// derives from the eligible list, same as before).
+		const { widget, tool, ctx } = await setup([
+			{ action: "create", subject: "c1" },
+			{ action: "create", subject: "c2" },
+			{ action: "create", subject: "c3" },
+			{ action: "create", subject: "c4" },
 			{ action: "create", subject: "next" },
 		]);
-		expect(widget.render(200).join("\n")).toContain("Todos (1/2)");
-		const secondRender = widget.render(200).join("\n");
-		expect(secondRender).toContain("Todos (1/2)");
-		expect(secondRender).toContain("next");
-		expect(secondRender).toContain("done");
-		overlay.hideCompletedTasksFromPreviousTurn();
-		const hiddenRender = widget.render(200).join("\n");
-		expect(hiddenRender).toContain("Todos (0/1)");
-		expect(hiddenRender).toContain("next");
-		expect(hiddenRender).not.toContain("done");
+		expect(widget.render(200).join("\n")).toContain("Todos (0/5)");
+		for (let i = 1; i <= 4; i++) {
+			await tool.execute?.(
+				"tc",
+				{ action: "update", id: i, status: "completed" } as never,
+				undefined as never,
+				undefined as never,
+				ctx as never,
+			);
+		}
+		const rendered = widget.render(200).join("\n");
+		expect(rendered).toContain("Todos (3/4)");
+		expect(rendered).toContain("next");
+		expect(rendered).not.toContain("c1");
+		expect(rendered).toContain("c4");
 	});
 
 	it("re-renders reflect live state changes without re-registering", async () => {

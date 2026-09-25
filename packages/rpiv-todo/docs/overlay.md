@@ -74,10 +74,14 @@ reload semantics.
 
 ## Completed tasks fading out
 
-A completed task stays on screen for the remainder of the turn in which it was
-completed. At the start of the next agent turn, every completed row that has
-already been displayed is hidden from later renders. Reloading or compacting the
-session resets that tracking, so a fresh session shows the full list again.
+A completed task stays on screen until it has been displaced by 3 newer
+completions — the overlay keeps only the 3 most recently finished rows (by a
+monotonic `completedSeq` stamped when the task is completed, persisted inside
+the task snapshot so recency survives reload and compaction replay). Fading is
+immediate and deterministic: no agent-turn boundary is involved, and the
+heading's `(done/total)` counts exclude faded rows. Tasks completed before
+this feature existed carry no stamp and rank oldest, ordered among themselves
+by id.
 
 ## Collapsing
 

@@ -7,6 +7,42 @@ export function selectVisibleTasks(state: TaskState): readonly Task[] {
 }
 
 /**
+ * How many completed rows the overlay keeps on screen. Product rule: a
+ * finished task earns its row only until K newer completions displace it —
+ * "show what just finished, hide what finished a while ago". Deliberately a
+ * constant, not a config knob: the overlay is a summary surface and the
+ * number is a UX decision, not a user preference.
+ */
+export const KEEP_RECENT_COMPLETED = 3;
+
+/**
+ * Overlay-eligible tasks: everything non-deleted, minus completed tasks that
+ * have been displaced by at least `keepRecentCompleted` newer completions.
+ * Recency ranks by `completedSeq` (monotonic completion order assigned by the
+ * reducer); tasks missing the stamp — completed before the feature existed —
+ * rank oldest and tie-break by id. Unfinished tasks are never dropped, so a
+ * scattered mix of pending/in_progress rows always survives to the layout
+ * step. This replaces the old turn-boundary hiding machinery: fading is
+ * immediate and deterministic, not deferred to `agent_start`.
+ *
+ * Returns a mutable `Task[]` so callers can feed the result into
+ * `TaskState`-shaped selectors (`selectOverlayLayout`, `selectTodoCounts`)
+ * without a defensive copy — `filter` already allocates a fresh array.
+ */
+export function selectOverlayTasks(state: TaskState, keepRecentCompleted: number): Task[] {
+	const completed = state.tasks.filter((t) => t.status === "completed");
+	if (completed.length <= keepRecentCompleted) {
+		return state.tasks.filter((t) => t.status !== "deleted");
+	}
+	// Rank newest-first: stamped completions by seq desc; unstamped ones
+	// (pre-feature snapshots) are older than any stamp and order among
+	// themselves by id desc (higher id = created later = least stale).
+	const ranked = [...completed].sort((a, b) => (b.completedSeq ?? -1) - (a.completedSeq ?? -1) || b.id - a.id);
+	const keep = new Set<Task>(ranked.slice(0, Math.max(0, keepRecentCompleted)));
+	return state.tasks.filter((t) => t.status !== "deleted" && (t.status !== "completed" || keep.has(t)));
+}
+
+/**
  * Group visible tasks by status. Iteration order at the call site uses
  * (`completed`, `inProgress`, `pending`) to match the `/todos` header part
  * order pinned by `todo.command.test.ts`.

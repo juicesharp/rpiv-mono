@@ -14,6 +14,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   window stays full, with `… N earlier` / `… N later` markers for the hidden
   sides; at the minimum row budget, where two marker rows do not fit, both
   hidden sides fold into a single plain `+N more` row.
+- Completed tasks now fade by recency instead of at agent-turn boundaries: a
+  monotonic `completedSeq` is stamped on completion and the overlay keeps only
+  the 3 most recently completed rows — a just-finished task stays visible
+  until newer completions displace it, and stale completions disappear
+  mid-turn rather than in bulk at the next `agent_start`.
 
 <<<<<<< HEAD
 ## [2.15.0] - 2026-10-24

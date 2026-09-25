@@ -163,7 +163,6 @@ it("swallows a failed pre-warm, then retries on the first real update", async ()
 	const healthyModule = {
 		TodoOverlay: class {
 			setUICtx(): void {}
-			resetCompletedDisplayState(): void {}
 			update(): void {
 				overlayUpdate();
 			}
@@ -227,7 +226,6 @@ it("tool_execution_end swallows a transient load failure and heals on the next e
 	const healthyModule = {
 		TodoOverlay: class {
 			setUICtx(): void {}
-			resetCompletedDisplayState(): void {}
 			update(): void {
 				overlayUpdate();
 			}

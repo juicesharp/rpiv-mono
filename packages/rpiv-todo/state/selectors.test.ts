@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Task, TaskStatus } from "../tool/types.js";
-import { selectOverlayLayout } from "./selectors.js";
+import { selectOverlayLayout, selectOverlayTasks } from "./selectors.js";
 import type { TaskState } from "./state.js";
 
 const stateWith = (...tasks: Task[]): TaskState => ({
@@ -116,5 +116,55 @@ describe("selectOverlayLayout — focus window", () => {
 		expect(visibleIds(layout)).toEqual([3]);
 		expect(layout.hiddenBefore).toBe(2);
 		expect(layout.hiddenAfter).toBe(4);
+	});
+});
+
+describe("selectOverlayTasks — stale completed fading (keep-last-K)", () => {
+	const done = (id: number, seq?: number): Task => ({ id, subject: `c${id}`, status: "completed", completedSeq: seq });
+
+	it("keeps all completed when at most K exist", () => {
+		const layout = selectOverlayTasks(stateWith(done(1, 1), done(2, 2), done(3, 3), task(4)), 3);
+		expect(layout.map((t) => t.id)).toEqual([1, 2, 3, 4]);
+	});
+
+	it("drops the oldest stamped completions beyond K", () => {
+		const layout = selectOverlayTasks(stateWith(done(1, 1), done(2, 2), done(3, 3), done(4, 4), task(5)), 3);
+		expect(layout.map((t) => t.id)).toEqual([2, 3, 4, 5]);
+	});
+
+	it("keeps the newest by seq, not by list position", () => {
+		// seq order differs from id order — rank must follow the stamp.
+		const layout = selectOverlayTasks(stateWith(done(1, 4), done(2, 1), done(3, 2), done(4, 3), task(5)), 3);
+		expect(layout.map((t) => t.id)).toEqual([1, 3, 4, 5]);
+	});
+
+	it("never drops unfinished tasks no matter how many", () => {
+		const tasks: Task[] = [];
+		for (let i = 1; i <= 4; i++) tasks.push(done(i, i));
+		for (let i = 5; i <= 12; i++) tasks.push(task(i, i % 2 === 0 ? "pending" : "in_progress"));
+		const layout = selectOverlayTasks(stateWith(...tasks), 3);
+		expect(layout).toHaveLength(11); // 3 completed kept + 8 unfinished
+		expect(layout.filter((t) => t.status !== "completed")).toHaveLength(8);
+	});
+
+	it("ranks unstamped (pre-feature) completions oldest and tie-breaks by id", () => {
+		// 2 stamped + 3 unstamped, K=3 → keep the 2 stamped + newest unstamped id.
+		const layout = selectOverlayTasks(stateWith(done(1), done(2), done(3), done(4, 10), done(5, 11)), 3);
+		expect(layout.map((t) => t.id)).toEqual([3, 4, 5]);
+	});
+
+	it("keeps all completed visible when every completed is unstamped and count <= K", () => {
+		const layout = selectOverlayTasks(stateWith(done(1), done(2), task(3)), 3);
+		expect(layout.map((t) => t.id)).toEqual([1, 2, 3]);
+	});
+
+	it("drops the oldest unstamped by id when unstamped count exceeds K", () => {
+		const layout = selectOverlayTasks(stateWith(done(1), done(2), done(3), done(4), task(5)), 3);
+		expect(layout.map((t) => t.id)).toEqual([2, 3, 4, 5]);
+	});
+
+	it("always drops deleted tombstones regardless of stamps", () => {
+		const layout = selectOverlayTasks(stateWith(done(1, 9), task(2, "deleted"), done(3, 10), task(4)), 3);
+		expect(layout.map((t) => t.id)).toEqual([1, 3, 4]);
 	});
 });
