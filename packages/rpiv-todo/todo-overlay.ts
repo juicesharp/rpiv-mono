@@ -25,8 +25,15 @@ const WIDGET_KEY = "rpiv-todos";
 // English fallbacks for localized overlay chrome strings.
 const OVERLAY_HEADING = "Todos";
 const OVERLAY_MORE = "more";
+const OVERLAY_EARLIER = "… {count} earlier";
+const OVERLAY_LATER = "… {count} later";
 const OVERLAY_EXPAND_HINT = "{key} to expand";
 const OVERLAY_COLLAPSED = "collapsed";
+
+/** Localized overflow marker with the {count} placeholder spliced (same pattern as overlay.expandHint's {key}). */
+function formatOverflowMarker(key: "overlay.earlier" | "overlay.later", fallback: string, count: number): string {
+	return t(key, fallback).replace("{count}", String(count));
+}
 
 export class TodoOverlay {
 	private uiCtx: ExtensionUIContext | undefined;
@@ -170,13 +177,26 @@ export class TodoOverlay {
 		}
 
 		const lines: string[] = [heading];
-		// Budget for content rows (heading + tasks/summary). The rendered widget is
+		// Budget for content rows (heading + tasks/markers). The rendered widget is
 		// one line taller — withTrailingSpacer() appends a blank row below the panel.
 		// Pi's global tool-output expansion mode is read on every render so its
 		// expand/collapse shortcut also expands this live widget. Optional chaining
 		// preserves compatibility with hosts predating getToolsExpanded().
 		const bodyBudget = this.uiCtx?.getToolsExpanded?.() === true ? overlayTasks.length : getMaxWidgetLines() - 1;
 		const layout = selectOverlayLayout(overlayState, bodyBudget);
+
+		// Focus-window overflow: one marker row per hidden side. A degenerate
+		// two-row body budget (maxWidgetLines=3) fits only one marker row, so both
+		// hidden sides fold into a single legacy `+N more` bottom summary instead of
+		// breaking the row cap.
+		const combinedOnly = layout.hiddenBefore > 0 && layout.hiddenAfter > 0 && bodyBudget < 3;
+		const hiddenBefore = combinedOnly ? 0 : layout.hiddenBefore;
+		const hiddenAfter = combinedOnly ? layout.hiddenBefore + layout.hiddenAfter : layout.hiddenAfter;
+
+		if (hiddenBefore > 0) {
+			const marker = formatOverflowMarker("overlay.earlier", OVERLAY_EARLIER, hiddenBefore);
+			lines.push(truncate(`${theme.fg("dim", "├─")} ${theme.fg("dim", marker)}`));
+		}
 		for (const task of layout.visible) {
 			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
 		}
@@ -193,19 +213,15 @@ export class TodoOverlay {
 			this.completedTaskIdsPendingHide.add(taskId);
 		}
 
-		if (layout.hiddenCompleted === 0 && layout.truncatedTail === 0) {
+		if (hiddenAfter === 0) {
 			const last = lines.length - 1;
 			lines[last] = lines[last].replace("├─", "└─");
 			return this.withTrailingSpacer(lines);
 		}
 
-		const totalHidden = layout.hiddenCompleted + layout.truncatedTail;
-		const overflowParts: string[] = [];
-		if (layout.hiddenCompleted > 0) overflowParts.push(`${layout.hiddenCompleted} ${formatStatusLabel("completed")}`);
-		if (layout.truncatedTail > 0) overflowParts.push(`${layout.truncatedTail} ${formatStatusLabel("pending")}`);
-		const more = t("overlay.more", OVERLAY_MORE);
-		const summary =
-			overflowParts.length > 0 ? `+${totalHidden} ${more} (${overflowParts.join(", ")})` : `+${totalHidden} ${more}`;
+		const summary = combinedOnly
+			? `+${hiddenAfter} ${t("overlay.more", OVERLAY_MORE)}`
+			: formatOverflowMarker("overlay.later", OVERLAY_LATER, hiddenAfter);
 		lines.push(truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", summary)}`));
 		return this.withTrailingSpacer(lines);
 	}

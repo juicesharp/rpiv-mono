@@ -7,6 +7,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Overflowing overlay lists now render a focused window anchored at the first
+  unfinished task in display order, backfilling from earlier tasks so the
+  window stays full, with `… N earlier` / `… N later` markers for the hidden
+  sides; at the minimum row budget, where two marker rows do not fit, both
+  hidden sides fold into a single plain `+N more` row.
+
 ## [2.15.0] - 2026-10-24
 
 ### Fixed
@@ -67,7 +75,6 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - **`typebox` is declared as a `peerDependencies: "*"` entry, no longer a `dependencies` entry.** Pi provides `typebox` to extensions and aliases the bare specifier to its own bundled copy at load time, so the copy this manifest installed was dead weight at best and a second live instance at worst. Pi 0.99.1 warns at every startup about the old shape ("Host-provided extension packages must be declared in peerDependencies with a \"*\" range, not dependencies: typebox"); this clears it once the release is installed. Contributed in #282; reported in #266, #268, #272 and #277.
-
 ## [2.11.0] - 2026-09-21
 
 ## [2.10.1] - 2026-09-13

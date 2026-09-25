@@ -6,6 +6,8 @@
 
   "overlay.heading": "Todos",
   "overlay.more": "more",
+  "overlay.earlier": "… {count} earlier",
+  "overlay.later": "… {count} later",
   "overlay.expandHint": "{key} to expand",
   "overlay.collapsed": "collapsed",
 

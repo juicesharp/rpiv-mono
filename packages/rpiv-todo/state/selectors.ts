@@ -61,38 +61,37 @@ export function selectTaskSubjectById(state: TaskState, id: number): string | un
 }
 
 /**
- * Overlay layout decision. Encapsulates the "drop completed first, then
- * truncate non-completed tail" rule. `budget` is the body-slot count (caller passes
- * `getMaxWidgetLines() - 1` to reserve the heading row); on overflow the
- * selector reserves one more slot internally for the summary row. Returns
- * the visible task slice plus the overflow summary parts.
+ * Overlay layout decision. Focus-window rule: when the visible list overflows
+ * the budget, anchor the window at the first unfinished task in display order
+ * and backfill from earlier tasks so the window stays full; when every task is
+ * completed, the final window is shown. Each overflow marker row
+ * (`… N earlier` / `… N later`) consumes one budget slot. `budget` is the
+ * body-slot count (caller passes `getMaxWidgetLines() - 1` to reserve the
+ * heading row). Returns the visible slice plus the hidden counts on either
+ * side.
  */
 export interface OverlayLayout {
 	visible: readonly Task[];
-	hiddenCompleted: number;
-	truncatedTail: number;
+	hiddenBefore: number;
+	hiddenAfter: number;
 }
 export function selectOverlayLayout(state: TaskState, budget: number): OverlayLayout {
 	const all = selectVisibleTasks(state);
 	if (all.length <= budget) {
-		return { visible: all, hiddenCompleted: 0, truncatedTail: 0 };
+		return { visible: all, hiddenBefore: 0, hiddenAfter: 0 };
 	}
-	const innerBudget = budget - 1;
-	const nonCompleted = all.filter((t) => t.status !== "completed");
-	const totalCompleted = all.length - nonCompleted.length;
-	if (nonCompleted.length <= innerBudget) {
-		const kept = new Set<Task>(nonCompleted);
-		for (const t of all) {
-			if (kept.size >= innerBudget) break;
-			if (t.status === "completed") kept.add(t);
-		}
-		const visible = all.filter((t) => kept.has(t));
-		const shownCompleted = visible.filter((t) => t.status === "completed").length;
-		return { visible, hiddenCompleted: totalCompleted - shownCompleted, truncatedTail: 0 };
+	const focusIndex = all.findIndex((t) => t.status !== "completed");
+	const anchor = focusIndex === -1 ? all.length : focusIndex;
+	// One marker row reserved up front; a second only when both sides hide
+	// tasks and the budget still fits at least one task row (budget >= 3).
+	let slots = budget - 1;
+	let start = Math.min(anchor, all.length - slots);
+	if (start > 0 && start + slots < all.length && budget >= 3) {
+		slots = budget - 2;
+		start = Math.min(anchor, all.length - slots);
 	}
-	const visible = nonCompleted.slice(0, innerBudget);
-	const truncatedTail = nonCompleted.length - innerBudget;
-	return { visible, hiddenCompleted: totalCompleted, truncatedTail };
+	const visible = all.slice(start, start + slots);
+	return { visible, hiddenBefore: start, hiddenAfter: all.length - start - visible.length };
 }
 
 /**

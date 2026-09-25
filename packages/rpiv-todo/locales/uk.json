@@ -8,6 +8,8 @@
 
   "overlay.heading": "Завдання",
   "overlay.more": "ще",
+  "overlay.earlier": "… {count} вище",
+  "overlay.later": "… {count} нижче",
   "overlay.expandHint": "{key} — розгорнути",
   "overlay.collapsed": "згорнуто",
 

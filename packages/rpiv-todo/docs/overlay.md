@@ -53,20 +53,24 @@ Rows longer than the terminal width are truncated with `…`.
 ## Overflow
 
 The content-row budget is `maxWidgetLines` (default `12`), and the heading counts
-against it. When there are more tasks than fit:
+against it. When there are more tasks than fit, the overlay renders a focused
+window instead of the whole list:
 
-1. one row is reserved for the summary line;
-2. completed tasks are dropped first, newest first — the oldest completed rows
-   are the last completed rows to go;
-3. if the unfinished tasks alone still overflow, the tail of that list is
-   truncated;
-4. the last row becomes `+N more (X completed, Y pending)`.
+1. the window anchors at the first unfinished task in display order;
+2. if fewer tasks remain after that anchor than fit, the window backfills from
+   earlier tasks so it stays full;
+3. each hidden side spends one budget row on a marker — `… N earlier` above,
+   `… N later` below;
+4. when every task is completed, the final window is shown.
+
+At the minimum budget of `3` there is no room for two marker rows, so both
+hidden sides fold into a single bottom `+N more` summary.
 
 Use Pi's tool-output expansion shortcut (`ctrl+o` by default) to expand the
 widget and show every task. Collapsing Pi's tool output reapplies the configured
-row budget. Unfinished work is therefore the last thing to disappear in the
-compact view. See [configuration.md](./configuration.md#maxwidgetlines) for the
-budget's floor and reload semantics.
+row budget and its focused window. See
+[configuration.md](./configuration.md#maxwidgetlines) for the budget's floor and
+reload semantics.
 
 ## Completed tasks fading out
 
@@ -113,7 +117,8 @@ tasks. Tombstoned tasks are never listed.
 
 ## Localization
 
-The overlay heading, the `+N more` summary, the collapse hint, the `/todos`
+The overlay heading, the `… N earlier` / `… N later` overflow markers, the
+collapse hint, the `/todos`
 section headers, and the status words all localize through
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
 when that package is installed. Bundled locales: `de`, `en`, `es`, `fr`, `pt`,

@@ -46,7 +46,8 @@ extension only reads it.
 ## `maxWidgetLines`
 
 **Default `12`.** The content-row budget for the overlay — the heading row and,
-on overflow, the `+N more` summary row both count against it. Only the trailing
+on overflow, the `… N earlier` / `… N later` marker rows all count against it.
+Only the trailing
 blank spacer sits outside the budget, so `12` renders up to 13 terminal rows.
 
 - Floor of `3`. A number below `3` falls back to the default.

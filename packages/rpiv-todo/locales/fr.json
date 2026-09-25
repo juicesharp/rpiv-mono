@@ -8,6 +8,8 @@
 
   "overlay.heading": "Tâches",
   "overlay.more": "autres",
+  "overlay.earlier": "… {count} plus tôt",
+  "overlay.later": "… {count} plus tard",
   "overlay.expandHint": "{key} pour développer",
   "overlay.collapsed": "réduit",
 

@@ -8,6 +8,8 @@
 
   "overlay.heading": "Задачи",
   "overlay.more": "ещё",
+  "overlay.earlier": "… {count} выше",
+  "overlay.later": "… {count} ниже",
   "overlay.expandHint": "{key} — развернуть",
   "overlay.collapsed": "свёрнуто",
 

@@ -165,10 +165,26 @@ describe("TodoOverlay — showIds gate", () => {
 	});
 });
 
-describe("TodoOverlay — overflow collapse", () => {
-	it("drops completed first when dropping is enough", async () => {
-		// 12 total = 8 pending + 4 completed. budget=10. All pending fit,
-		// plus 2 of the 4 completed (in natural order). 2 completed hidden.
+describe("TodoOverlay — overflow focus window", () => {
+	it("starts at the top when the first task is unfinished", async () => {
+		// 12 pending tasks → budget=11 → marker reserves one row, visible first 10.
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 12; i++) actions.push({ action: "create", subject: `t${i}` });
+		const { widget } = await setup(actions);
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(13);
+		expect(lines[1]).toContain("t1");
+		expect(lines[10]).toContain("t10");
+		expect(lines[11]).toContain("└─");
+		expect(lines[11]).toContain("… 2 later");
+		expect(lines.join("\n")).not.toContain("t11");
+		expect(lines.join("\n")).not.toContain("earlier");
+	});
+
+	it("hides a completed tail behind the later marker", async () => {
+		// 8 pending + 4 completed = 12 total. The window starts at the first task
+		// (already unfinished), so the trailing completed pair folds into the
+		// later marker.
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
 		for (let i = 1; i <= 8; i++) actions.push({ action: "create", subject: `p${i}` });
 		for (let i = 9; i <= 12; i++) {
@@ -177,46 +193,70 @@ describe("TodoOverlay — overflow collapse", () => {
 		}
 		const { widget } = await setup(actions);
 		const lines = widget.render(200);
-		// heading + 10 visible + 1 summary + trailing spacer = 13
 		expect(lines).toHaveLength(13);
-		// All pending present
 		for (let i = 1; i <= 8; i++) expect(lines.join("\n")).toContain(`p${i}`);
-		// Last row is the trailing spacer; the summary sits just above it
-		expect(lines[lines.length - 1]).toBe("");
-		expect(lines[lines.length - 2]).toContain("+2 more");
-		expect(lines[lines.length - 2]).toContain("2 completed");
+		expect(lines.join("\n")).toContain("c9");
+		expect(lines.join("\n")).toContain("c10");
+		expect(lines.join("\n")).not.toContain("c11");
+		expect(lines[lines.length - 2]).toContain("… 2 later");
+		expect(lines.join("\n")).not.toContain("earlier");
 	});
 
-	it("truncates pending tail when dropping all completed isn't enough", async () => {
-		// 12 pending tasks → budget=10 → visible first 10, 2 pending truncated.
+	it("anchors the window at the first unfinished task", async () => {
+		// 3 completed + 12 pending = 15 total → both markers, 9 task rows.
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
-		for (let i = 1; i <= 12; i++) actions.push({ action: "create", subject: `t${i}` });
-		const { widget } = await setup(actions);
-		const lines = widget.render(200);
-		expect(lines).toHaveLength(13);
-		expect(lines[lines.length - 1]).toBe("");
-		const summary = lines[lines.length - 2];
-		expect(summary).toContain("+2 more");
-		expect(summary).toContain("2 pending");
-		expect(summary).not.toContain("completed");
-	});
-
-	it("summary contains both 'completed' and 'pending' when mixed overflow", async () => {
-		// 12 pending + 3 completed = 15 total. budget=10. All 12 pending won't
-		// fit — visible = first 10 pending, truncatedTail = 2 pending, hidden
-		// completed = 3. Summary: "+5 more (3 completed, 2 pending)".
-		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
-		for (let i = 1; i <= 12; i++) actions.push({ action: "create", subject: `p${i}` });
-		for (let i = 13; i <= 15; i++) {
+		for (let i = 1; i <= 3; i++) {
 			actions.push({ action: "create", subject: `c${i}` });
 			actions.push({ action: "update", id: i, status: "completed" });
 		}
+		for (let i = 4; i <= 15; i++) actions.push({ action: "create", subject: `p${i}` });
 		const { widget } = await setup(actions);
-		// Last line is the trailing spacer, so the summary is the second-to-last.
-		const summary = widget.render(200).slice(-2)[0];
-		expect(summary).toContain("+5 more");
-		expect(summary).toContain("3 completed");
-		expect(summary).toContain("2 pending");
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(13);
+		expect(lines[1]).toMatch(/^├─/);
+		expect(lines[1]).toContain("… 3 earlier");
+		expect(lines[2]).toContain("p4");
+		expect(lines[10]).toContain("p12");
+		expect(lines[11]).toMatch(/^└─/);
+		expect(lines[11]).toContain("… 3 later");
+		expect(lines.join("\n")).not.toContain("c3");
+		expect(lines.join("\n")).not.toContain("p13");
+	});
+
+	it("backfills from earlier tasks so the window stays full", async () => {
+		// 9 completed + 3 pending = 12 total → the anchor is near the end, so the
+		// window shifts backward and keeps 10 task rows; only the earlier marker.
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 9; i++) {
+			actions.push({ action: "create", subject: `c${i}` });
+			actions.push({ action: "update", id: i, status: "completed" });
+		}
+		for (let i = 10; i <= 12; i++) actions.push({ action: "create", subject: `p${i}` });
+		const { widget } = await setup(actions);
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(13);
+		expect(lines[1]).toContain("… 2 earlier");
+		expect(lines[2]).toContain("c3");
+		expect(lines[11]).toContain("p12");
+		expect(lines[11]).toContain("└─");
+		expect(lines.join("\n")).not.toContain("c2");
+		expect(lines.join("\n")).not.toContain("later");
+	});
+
+	it("shows the final window when every task is completed", async () => {
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 13; i++) {
+			actions.push({ action: "create", subject: `t${i}` });
+			actions.push({ action: "update", id: i, status: "completed" });
+		}
+		const { widget } = await setup(actions);
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(13);
+		expect(lines[1]).toContain("… 3 earlier");
+		expect(lines[2]).toContain("t4");
+		expect(lines[11]).toContain("t13");
+		expect(lines[11]).toContain("└─");
+		expect(lines.join("\n")).not.toContain("later");
 	});
 
 	it("hides overflowed completed tasks on the next agent turn too", async () => {
@@ -229,18 +269,18 @@ describe("TodoOverlay — overflow collapse", () => {
 		const { widget, overlay } = await setup(actions);
 		const beforeNextTurn = widget.render(200).join("\n");
 		expect(beforeNextTurn).toContain("Todos (5/16)");
-		expect(beforeNextTurn).toContain("+6 more");
-		expect(beforeNextTurn).toContain("5 completed");
+		expect(beforeNextTurn).toContain("… 6 later");
 		overlay.hideCompletedTasksFromPreviousTurn();
 		const afterNextTurn = widget.render(200).join("\n");
 		expect(afterNextTurn).toContain("Todos (0/11)");
 		expect(afterNextTurn).toContain("p11");
-		expect(afterNextTurn).not.toContain("+1 more");
+		expect(afterNextTurn).not.toContain("earlier");
+		expect(afterNextTurn).not.toContain("later");
 		expect(afterNextTurn).not.toContain("completed");
 	});
 
 	it("does not engage overflow at exactly 11 visible tasks", async () => {
-		// 11 tasks → all fit (heading + 11 = 12), plus trailing spacer = 13. No summary row.
+		// 11 tasks → all fit (heading + 11 = 12), plus trailing spacer = 13. No marker rows.
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
 		for (let i = 1; i <= 11; i++) actions.push({ action: "create", subject: `t${i}` });
 		const { widget } = await setup(actions);
@@ -259,25 +299,46 @@ describe("TodoOverlay — overflow collapse", () => {
 		const { widget } = await setup(actions, { getToolsExpanded: () => toolsExpanded });
 
 		const collapsed = widget.render(200).join("\n");
-		expect(collapsed).toContain("+7 more");
+		expect(collapsed).toContain("… 7 later");
 		expect(collapsed).not.toContain("t17");
 
 		toolsExpanded = true;
 		const expanded = widget.render(200);
 		expect(expanded).toHaveLength(19); // heading + 17 tasks + trailing spacer
 		expect(expanded.join("\n")).toContain("t17");
-		expect(expanded.join("\n")).not.toContain(" more");
+		expect(expanded.join("\n")).not.toContain("earlier");
+		expect(expanded.join("\n")).not.toContain("later");
 		expect(expanded[expanded.length - 2]).toContain("└─");
 
 		toolsExpanded = false;
-		expect(widget.render(200).join("\n")).toContain("+7 more");
+		expect(widget.render(200).join("\n")).toContain("… 7 later");
 	});
 
 	it("keeps the configured budget when the host has no expansion-state API", async () => {
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
 		for (let i = 1; i <= 17; i++) actions.push({ action: "create", subject: `t${i}` });
 		const { widget } = await setup(actions);
-		expect(widget.render(200).join("\n")).toContain("+7 more");
+		expect(widget.render(200).join("\n")).toContain("… 7 later");
+	});
+
+	it("folds both hidden sides into one summary on a two-row body budget", async () => {
+		// maxWidgetLines=3 → heading + 2 body rows. With an unfinished anchor in
+		// the middle there is no room for two marker rows, so the overflow folds
+		// into a single legacy `+N more` bottom summary.
+		writeConfigFile(JSON.stringify({ maxWidgetLines: 3 }));
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 2; i++) {
+			actions.push({ action: "create", subject: `c${i}` });
+			actions.push({ action: "update", id: i, status: "completed" });
+		}
+		for (let i = 3; i <= 5; i++) actions.push({ action: "create", subject: `p${i}` });
+		const { widget } = await setup(actions);
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(4);
+		expect(lines[1]).toContain("p3");
+		expect(lines[2]).toContain("+4 more");
+		expect(lines.join("\n")).not.toContain("earlier");
+		expect(lines.join("\n")).not.toContain("later");
 	});
 });
 
