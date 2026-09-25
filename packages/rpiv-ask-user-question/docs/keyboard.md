@@ -17,6 +17,7 @@ adapts to the size of your terminal.
 | `Ctrl+G` | Open Pi's configured external editor with the current custom-answer draft. | `Type something.` input |
 | `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
 | `Ctrl+]` | Collapse or expand the dialog. Configurable via `collapseKey`. | Everywhere, including while collapsed |
+| `PageUp` / `PageDown` | Scroll the focused option's preview content by ~one screenful when it overflows the preview height budget. | Question tabs whose focused option carries a preview |
 
 The table names the default keys; the dialog actually follows your Pi keybindings.
 Confirm listens to both `tui.select.confirm` and `tui.input.submit`, and a key bound to
@@ -88,6 +89,22 @@ answers you cannot see.
 The default `ctrl+]` is free in Terminal.app, iTerm2, Warp, tmux, zellij and screen. On
 keyboard layouts where `]` sits on the shifted layer — Latin American `es-AR` / `es-MX`,
 among others — set a different `collapseKey`, or `"off"` to disable the shortcut.
+
+## Preview scrolling
+
+When the focused option's preview is taller than its height budget (see `MAX_PREVIEW_HEIGHT_*`
+in `view/components/preview/markdown-content-cache.ts`), the box body scrolls instead of
+just hiding the tail: `PageDown` scrolls down, `PageUp` scrolls up, and the scroll position
+resets whenever you move to another option, switch tabs, or open the notes editor.
+The bottom border doubles as the scroll indicator:
+
+- ` ✂ N lines hidden · PgDn ▼ ` — at the top, more content below
+- ` ▲ PgUp · N lines hidden ` — at the bottom, more content above
+- ` ▲ N lines hidden · PgUp/PgDn ▼ ` — mid-scroll, content in both directions
+
+`↑`/`↓` keep their option-navigation meaning while a preview is focused; only `PageUp`/
+`PageDown` move inside the preview. The same scrolling applies in both the side-by-side
+(≥100 columns) and the stacked (narrow terminal) layouts.
 
 ## Layout
 
