@@ -43,6 +43,26 @@ export function selectOverlayTasks(state: TaskState, keepRecentCompleted: number
 }
 
 /**
+ * Partition overlay-eligible tasks into the active strip (`in_progress`) and
+ * the remainder, each preserving id order. Runs AFTER `selectOverlayTasks`
+ * (the completed-recency filter) so its input is already fade-aware — active
+ * tasks are never faded anyway, so `active` is stable regardless of filter.
+ * The overlay renders `active` first (all visible in-progress work stays on
+ * screen even when the focus window below would have hidden it) and passes
+ * `rest` to `selectOverlayLayout`.
+ */
+export interface ActivePartition {
+	active: Task[];
+	rest: Task[];
+}
+export function selectActivePartition(tasks: readonly Task[]): ActivePartition {
+	return {
+		active: tasks.filter((t) => t.status === "in_progress"),
+		rest: tasks.filter((t) => t.status !== "in_progress"),
+	};
+}
+
+/**
  * Group visible tasks by status. Iteration order at the call site uses
  * (`completed`, `inProgress`, `pending`) to match the `/todos` header part
  * order pinned by `todo.command.test.ts`.

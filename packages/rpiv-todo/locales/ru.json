@@ -10,6 +10,7 @@
   "overlay.more": "ещё",
   "overlay.earlier": "… {count} выше",
   "overlay.later": "… {count} ниже",
+  "overlay.moreActive": "… {count} ещё активных",
   "overlay.expandHint": "{key} — развернуть",
   "overlay.collapsed": "свёрнуто",
 

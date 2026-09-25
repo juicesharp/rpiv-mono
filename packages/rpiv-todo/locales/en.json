@@ -8,6 +8,7 @@
   "overlay.more": "more",
   "overlay.earlier": "… {count} earlier",
   "overlay.later": "… {count} later",
+  "overlay.moreActive": "… {count} more active",
   "overlay.expandHint": "{key} to expand",
   "overlay.collapsed": "collapsed",
 

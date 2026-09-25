@@ -81,6 +81,7 @@ pi.on("session_start", async (_e, ctx) => {
 
 ## Overlay Data Flow
 - **Overflow layout is a selector** — `selectOverlayLayout(state, budget)` anchors a focus window at the first unfinished task and backfills from earlier tasks to keep the window full, reserving one marker row (`… N earlier` / `… N later`) per hidden side inside the budget; a degenerate two-row body budget folds both sides into one legacy `+N more` summary (`state/selectors.ts`)
+- **Active strip hoist** — `selectActivePartition(tasks)` splits overlay-eligible tasks into `in_progress` (all rendered under the heading) and the rest (fed to `selectOverlayLayout` with the remaining budget); a strip taller than the budget caps at `B-2` rows + `… N more active` marker, and the degenerate `B=2` budget skips hoisting entirely; Pi's tool-expansion mode bypasses the strip and renders natural order (`todo-overlay.ts`)
 - **Completed-task fading is a recency rule** — the reducer stamps a monotonic `completedSeq` on transition into `completed` (persisted inside the task snapshot, so replay preserves it); `selectOverlayTasks(state, KEEP_RECENT_COMPLETED=3)` keeps only the newest stamped completions and drops stale ones immediately — no `agent_start` bookkeeping, no per-turn hide sets
 - **`renderCall` reads the foreground slot** — `ToolRenderContext` carries no session id, so render hooks render `getRenderState()`; child-session calls degrade to a `#id` suffix
 - **Trailing spacer row** — the rendered widget is one line taller than `maxWidgetLines` by design (`withTrailingSpacer`)

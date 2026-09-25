@@ -10,6 +10,7 @@
   "overlay.more": "ще",
   "overlay.earlier": "… {count} вище",
   "overlay.later": "… {count} нижче",
+  "overlay.moreActive": "… {count} ще активних",
   "overlay.expandHint": "{key} — розгорнути",
   "overlay.collapsed": "згорнуто",
 

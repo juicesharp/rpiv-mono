@@ -55,6 +55,9 @@ by status.
   newer completions displace them — the overlay keeps only the freshest
   finished work and drops stale completions immediately, without waiting for a
   turn boundary. The panel disappears entirely when the list empties.
+- **Every active task stays on screen.** All `in_progress` rows are hoisted
+  into an active strip under the heading — parallel work never hides behind
+  the overflow markers, and excess actives collapse into `… N more active`.
 - **The overlay never eats your terminal.** Past the row budget it shows a
   focused window anchored at the first unfinished task, backfilling from earlier
   tasks so the window stays full, with `… N earlier` / `… N later` markers for

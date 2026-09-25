@@ -10,6 +10,7 @@
   "overlay.more": "autres",
   "overlay.earlier": "… {count} plus tôt",
   "overlay.later": "… {count} plus tard",
+  "overlay.moreActive": "… {count} actives en plus",
   "overlay.expandHint": "{key} pour développer",
   "overlay.collapsed": "réduit",
 

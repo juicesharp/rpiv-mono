@@ -18,6 +18,7 @@ import { COLLAPSE_KEY_OFF, getMaxWidgetLines, resolveCollapseKey } from "./confi
 import { t } from "./state/i18n-bridge.js";
 import {
 	KEEP_RECENT_COMPLETED,
+	selectActivePartition,
 	selectHasActive,
 	selectOverlayLayout,
 	selectOverlayTasks,
@@ -34,11 +35,16 @@ const OVERLAY_HEADING = "Todos";
 const OVERLAY_MORE = "more";
 const OVERLAY_EARLIER = "… {count} earlier";
 const OVERLAY_LATER = "… {count} later";
+const OVERLAY_MORE_ACTIVE = "… {count} more active";
 const OVERLAY_EXPAND_HINT = "{key} to expand";
 const OVERLAY_COLLAPSED = "collapsed";
 
 /** Localized overflow marker with the {count} placeholder spliced (same pattern as overlay.expandHint's {key}). */
-function formatOverflowMarker(key: "overlay.earlier" | "overlay.later", fallback: string, count: number): string {
+function formatOverflowMarker(
+	key: "overlay.earlier" | "overlay.later" | "overlay.moreActive",
+	fallback: string,
+	count: number,
+): string {
 	return t(key, fallback).replace("{count}", String(count));
 }
 
@@ -143,14 +149,46 @@ export class TodoOverlay {
 		// Pi's global tool-output expansion mode is read on every render so its
 		// expand/collapse shortcut also expands this live widget. Optional chaining
 		// preserves compatibility with hosts predating getToolsExpanded().
-		const bodyBudget = this.uiCtx?.getToolsExpanded?.() === true ? overlayTasks.length : getMaxWidgetLines() - 1;
-		const layout = selectOverlayLayout(overlayState, bodyBudget);
+		const expanded = this.uiCtx?.getToolsExpanded?.() === true;
+		const bodyBudget = expanded ? overlayTasks.length : getMaxWidgetLines() - 1;
+
+		// Active strip: all in_progress rows render first so parallel work stays
+		// visible instead of hiding behind the focus window's `… N later` marker.
+		// A degenerate two-row body budget (maxWidgetLines=3) fits only one marker
+		// row and cannot express the active strip PLUS the folded `+N more`
+		// summary, so the strip is skipped there and the window runs over the whole
+		// filtered list exactly like before. Expansion mode shows everything, so
+		// the same strip renders naturally with room for all rows.
+		const { active, rest } =
+			expanded || bodyBudget <= 2 ? { active: [], rest: overlayTasks } : selectActivePartition(overlayTasks);
+
+		// Active overflow: when the strip itself exceeds the budget, cap it at
+		// B-2 rows and spend the last row on a `… N more active` marker — parallel
+		// work still gets priority over the rest of the list, but never breaks
+		// maxWidgetLines. No rest rows render in this mode.
+		if (active.length > bodyBudget - 2) {
+			for (const task of active.slice(0, bodyBudget - 2)) {
+				lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
+			}
+			const hiddenActive = active.length - (bodyBudget - 2);
+			const marker = formatOverflowMarker("overlay.moreActive", OVERLAY_MORE_ACTIVE, hiddenActive);
+			lines.push(truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", marker)}`));
+			return this.withTrailingSpacer(lines);
+		}
+
+		for (const task of active) {
+			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
+		}
+
+		const restState = { tasks: rest, nextId: snapshot.nextId };
+		const restBudget = expanded ? rest.length : bodyBudget - active.length;
+		const layout = selectOverlayLayout(restState, restBudget);
 
 		// Focus-window overflow: one marker row per hidden side. A degenerate
-		// two-row body budget (maxWidgetLines=3) fits only one marker row, so both
-		// hidden sides fold into a single legacy `+N more` bottom summary instead of
-		// breaking the row cap.
-		const combinedOnly = layout.hiddenBefore > 0 && layout.hiddenAfter > 0 && bodyBudget < 3;
+		// two-row REST budget fits only one marker row, so both hidden sides fold
+		// into a single legacy `+N more` bottom summary instead of breaking the
+		// row cap.
+		const combinedOnly = layout.hiddenBefore > 0 && layout.hiddenAfter > 0 && restBudget < 3;
 		const hiddenBefore = combinedOnly ? 0 : layout.hiddenBefore;
 		const hiddenAfter = combinedOnly ? layout.hiddenBefore + layout.hiddenAfter : layout.hiddenAfter;
 

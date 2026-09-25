@@ -52,8 +52,16 @@ Rows longer than the terminal width are truncated with `…`.
 ## Overflow
 
 The content-row budget is `maxWidgetLines` (default `12`), and the heading counts
-against it. When there are more tasks than fit, the overlay renders a focused
-window instead of the whole list:
+against it. Before the window is laid out, every `in_progress` task is hoisted
+into an **active strip** rendered directly under the heading — parallel work
+always stays visible instead of hiding behind the `… N later` marker. The
+strip spends its own rows out of the same budget, so the window over the
+remaining tasks gets `budget - strip height` rows. When the strip itself is
+taller than the budget, only the first `budget - 2` active rows render, the
+last row reports `… N more active`, and no other tasks are shown.
+
+When the remaining tasks still overflow what is left of the budget, the
+overlay renders a focused window over them instead of the whole list:
 
 1. the window anchors at the first unfinished task in display order;
 2. if fewer tasks remain after that anchor than fit, the window backfills from
@@ -63,7 +71,9 @@ window instead of the whole list:
 4. when every task is completed, the final window is shown.
 
 At the minimum budget of `3` there is no room for two marker rows, so both
-hidden sides fold into a single bottom `+N more` summary.
+hidden sides fold into a single bottom `+N more` summary — and no active
+strip is hoisted there either, since a strip plus a fold marker would not
+leave a single task row.
 
 Use Pi's tool-output expansion shortcut (`ctrl+o` by default) to expand the
 widget and show every task. Collapsing Pi's tool output reapplies the configured

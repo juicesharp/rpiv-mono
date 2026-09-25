@@ -10,6 +10,7 @@
   "overlay.more": "weitere",
   "overlay.earlier": "… {count} früher",
   "overlay.later": "… {count} später",
+  "overlay.moreActive": "… {count} weitere aktiv",
   "overlay.expandHint": "{key} zum Ausklappen",
   "overlay.collapsed": "eingeklappt",
 
