@@ -51,6 +51,12 @@ for a key removes it, and emptying the record drops the field entirely.
 `addBlockedBy` and `removeBlockedBy` are additive — do not resend the whole
 array.
 
+The schema declares the conditional requirement formally via an `anyOf`
+constraint (mirroring the runtime validation): `create` calls must carry
+`subject`; the other actions must not need it. Models rely on the formal
+schema, so the requirement lives in the schema — not only in prose and the
+runtime error.
+
 ## Status transitions
 
 | From | Allowed targets |

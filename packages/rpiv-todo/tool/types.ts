@@ -77,52 +77,66 @@ export interface TaskMutationParams {
 // copy. Field order and wording are pinned by registration tests.
 // ---------------------------------------------------------------------------
 
-export const TodoParamsSchema = Type.Object({
-	action: StringEnum(["create", "update", "list", "get", "delete", "clear"] as const),
-	subject: Type.Optional(Type.String({ description: "Task subject line (required for create)" })),
-	description: Type.Optional(Type.String({ description: "Long-form task description" })),
-	activeForm: Type.Optional(
-		Type.String({
-			description: "Present-continuous spinner label shown while status is in_progress (e.g. 'writing tests')",
-		}),
-	),
-	status: Type.Optional(
-		StringEnum(["pending", "in_progress", "completed", "deleted"] as const, {
-			description:
-				"Set this task's status (update): one of pending, in_progress, completed, deleted. When action is list, filters returned tasks by this status.",
-		}),
-	),
-	blockedBy: Type.Optional(
-		Type.Array(Type.Number(), {
-			description: "Initial blockedBy ids (create only)",
-		}),
-	),
-	addBlockedBy: Type.Optional(
-		Type.Array(Type.Number(), {
-			description: "Task ids to add to blockedBy (update only, additive merge)",
-		}),
-	),
-	removeBlockedBy: Type.Optional(
-		Type.Array(Type.Number(), {
-			description: "Task ids to remove from blockedBy (update only, additive merge)",
-		}),
-	),
-	owner: Type.Optional(Type.String({ description: "Agent/owner assigned to this task" })),
-	metadata: Type.Optional(
-		Type.Record(Type.String(), Type.Unknown(), {
-			description: "Arbitrary metadata; pass null value for a key to delete that key on update",
-		}),
-	),
-	id: Type.Optional(
-		Type.Number({
-			description: "Task id (required for update, get, delete)",
-		}),
-	),
-	includeDeleted: Type.Optional(
-		Type.Boolean({
-			description: "If true, list action returns deleted (tombstoned) tasks as well. Default: false.",
-		}),
-	),
-});
+export const TodoParamsSchema = {
+	...Type.Object({
+		action: StringEnum(["create", "update", "list", "get", "delete", "clear"] as const),
+		subject: Type.Optional(Type.String({ description: "Task subject line (required for create)" })),
+		description: Type.Optional(Type.String({ description: "Long-form task description" })),
+		activeForm: Type.Optional(
+			Type.String({
+				description: "Present-continuous spinner label shown while status is in_progress (e.g. 'writing tests')",
+			}),
+		),
+		status: Type.Optional(
+			StringEnum(["pending", "in_progress", "completed", "deleted"] as const, {
+				description:
+					"Set this task's status (update): one of pending, in_progress, completed, deleted. When action is list, filters returned tasks by this status.",
+			}),
+		),
+		blockedBy: Type.Optional(
+			Type.Array(Type.Number(), {
+				description: "Initial blockedBy ids (create only)",
+			}),
+		),
+		addBlockedBy: Type.Optional(
+			Type.Array(Type.Number(), {
+				description: "Task ids to add to blockedBy (update only, additive merge)",
+			}),
+		),
+		removeBlockedBy: Type.Optional(
+			Type.Array(Type.Number(), {
+				description: "Task ids to remove from blockedBy (update only, additive merge)",
+			}),
+		),
+		owner: Type.Optional(Type.String({ description: "Agent/owner assigned to this task" })),
+		metadata: Type.Optional(
+			Type.Record(Type.String(), Type.Unknown(), {
+				description: "Arbitrary metadata; pass null value for a key to delete that key on update",
+			}),
+		),
+		id: Type.Optional(
+			Type.Number({
+				description: "Task id (required for update, get, delete)",
+			}),
+		),
+		includeDeleted: Type.Optional(
+			Type.Boolean({
+				description: "If true, list action returns deleted (tombstoned) tasks as well. Default: false.",
+			}),
+		),
+	}),
+	// Formalize the runtime requirement (previously only enforced inside execute()):
+	// `create` requires `subject`, and `update`/`list`/`get`/`delete`/`clear` do not.
+	// Models rely on the formal `required` array and omit parameters that are only
+	// described in prose, producing rejected calls ("subject required for create").
+	// Keep the action list in sync with the StringEnum above.
+	anyOf: [
+		{ properties: { action: { const: "create" } }, required: ["action", "subject"] },
+		{
+			properties: { action: { enum: ["update", "list", "get", "delete", "clear"] } },
+			required: ["action"],
+		},
+	],
+};
 
 export type TodoParams = Static<typeof TodoParamsSchema>;
