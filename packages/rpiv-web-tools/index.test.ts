@@ -2398,6 +2398,18 @@ describe("web_search.execute — per-call provider override", () => {
 		expect(literals).toEqual(["brave"]);
 		expect(params.properties.provider.description).toContain("Default provider: brave (source: default)");
 	});
+
+	it("does not expose an unknown active provider", () => {
+		process.env.WEB_SEARCH_PROVIDER = "unknown";
+		process.env.EXA_API_KEY = "exa-key";
+		const { captured } = registerAndCapture();
+		const params = captured.tools.get("web_search")?.parameters as unknown as {
+			properties: { provider: { anyOf: Array<{ const: string }>; description: string } };
+		};
+		const literals = params.properties.provider?.anyOf?.map((e) => e.const) ?? [];
+		expect(literals).toEqual(["exa"]);
+		expect(params.properties.provider.description).toContain("Default provider: unknown (source: env)");
+	});
 });
 
 // WEB_SEARCH_PROVIDER — middle precedence tier between the per-call override
