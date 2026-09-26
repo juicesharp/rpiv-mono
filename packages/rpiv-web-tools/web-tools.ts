@@ -128,10 +128,38 @@ function resolveProviderBaseUrl(meta: ProviderMeta, config: WebToolsConfig): str
 	return meta.defaultBaseUrl ?? "";
 }
 
-// Known provider names — derived once from PROVIDERS so the schema enum,
-// the per-call override validation, and the error messages all stay in sync
-// when a provider is added or removed.
+// Known provider names — derived once from PROVIDERS so validation and error
+// messages stay in sync when a provider is added or removed.
 const KNOWN_PROVIDER_NAMES = PROVIDERS.map((p) => p.name) as readonly string[];
+
+function isProviderConfigured(meta: ProviderMeta, config: WebToolsConfig): boolean {
+	const apiKey = resolveProviderApiKey(meta.name, config);
+	if (apiKey) return true;
+	if (!meta.baseUrlEnvVar) return false;
+	const envUrl = process.env[meta.baseUrlEnvVar]?.trim();
+	const configUrl = config.baseUrls?.[meta.name]?.trim();
+	return Boolean(envUrl || configUrl);
+}
+
+function getVisibleProviderNames(config: WebToolsConfig): {
+	active: { name: string; source: "env" | "config" | "default" };
+	names: string[];
+} {
+	const active = resolveActiveProviderName(config);
+	const configured = PROVIDERS.filter((meta) => isProviderConfigured(meta, config)).map((meta) => meta.name);
+	const names = configured.filter((name) => name !== active.name);
+	if (KNOWN_PROVIDER_NAMES.includes(active.name)) names.unshift(active.name);
+	if (names.length === 0) names.push(DEFAULT_PROVIDER_NAME);
+	return { active, names };
+}
+
+function providerSelectionDescription(names: readonly string[], active: { name: string; source: string }): string {
+	return (
+		"Search provider to use for this call only, overriding the active provider set via /web-tools. " +
+		`Configured providers: ${names.join(", ")}. Default provider: ${active.name} (source: ${active.source}). ` +
+		"Omit to use the configured active provider. The named provider must have its API key/URL configured or the call throws."
+	);
+}
 
 // Uniform "unknown provider" error for both the per-call override path and the
 // WEB_SEARCH_PROVIDER env path so misconfiguration surfaces the same shape.
@@ -307,7 +335,9 @@ function buildEmptyResultsEnvelope(query: string, providerName: string) {
 // ---------------------------------------------------------------------------
 
 export function registerWebSearchTool(pi: ExtensionAPI): void {
-	const guidance = validateGuidanceFields(loadConfig().guidance?.web_search);
+	const config = loadConfig();
+	const guidance = validateGuidanceFields(config.guidance?.web_search);
+	const visibleProviders = getVisibleProviderNames(config);
 
 	pi.registerTool({
 		name: "web_search",
@@ -330,13 +360,8 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 			),
 			provider: Type.Optional(
 				Type.Union(
-					KNOWN_PROVIDER_NAMES.map((name) => Type.Literal(name)),
-					{
-						description:
-							"Search provider to use for this call only, overriding the active provider set via /web-tools. " +
-							`Valid values: ${KNOWN_PROVIDER_NAMES.join(", ")}. ` +
-							"Omit to use the configured active provider. The named provider must have its API key/URL configured (via env var or /web-tools) or the call throws — there is no silent fallback.",
-					},
+					visibleProviders.names.map((name) => Type.Literal(name)),
+					{ description: providerSelectionDescription(visibleProviders.names, visibleProviders.active) },
 				),
 			),
 		}),
