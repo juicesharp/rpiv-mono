@@ -17,6 +17,8 @@ export { formatStatusLabel };
 export const STATUS_GLYPH: Record<TaskStatus, string> = {
 	pending: "○",
 	in_progress: "◐",
+	failed: "✗",
+	awaiting_user: "◷",
 	completed: "●",
 	deleted: "⊘",
 };
@@ -26,9 +28,11 @@ export const STATUS_GLYPH: Record<TaskStatus, string> = {
  * successful delete is visually distinct from the error branch (which uses
  * `error` + `✗`)..
  */
-export const STATUS_COLOR: Record<TaskStatus, "dim" | "warning" | "success" | "muted"> = {
+export const STATUS_COLOR: Record<TaskStatus, "dim" | "warning" | "success" | "muted" | "error"> = {
 	pending: "dim",
 	in_progress: "warning",
+	failed: "error",
+	awaiting_user: "warning",
 	completed: "success",
 	deleted: "muted",
 };
@@ -58,6 +62,10 @@ export function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
 			return theme.fg("dim", "○");
 		case "in_progress":
 			return theme.fg("warning", "◐");
+		case "failed":
+			return theme.fg("error", "✗");
+		case "awaiting_user":
+			return theme.fg("warning", "◷");
 		case "completed":
 			return theme.fg("success", "✓");
 		case "deleted":
@@ -72,14 +80,28 @@ export function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
 export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean): string {
 	const glyph = overlayStatusGlyph(t.status, theme);
 	const subjectColor =
-		t.status === "in_progress" ? "accent" : t.status === "completed" || t.status === "deleted" ? "muted" : "text";
+		t.status === "failed"
+			? "error"
+			: t.status === "awaiting_user"
+				? "warning"
+				: t.status === "in_progress"
+					? "accent"
+					: t.status === "completed" || t.status === "deleted"
+						? "muted"
+						: "text";
 	let subject = theme.fg(subjectColor, sanitizeTerminalText(t.subject));
 	if (t.status === "completed" || t.status === "deleted") {
 		subject = theme.strikethrough(subject);
 	}
 	let line = `${glyph}`;
 	if (showId) line += ` ${theme.fg("dim", `#${t.id}`)}`;
+	if (t.status === "failed" || t.status === "awaiting_user") {
+		line += ` ${theme.fg(STATUS_COLOR[t.status], `[${formatStatusLabel(t.status)}]`)}`;
+	}
 	line += ` ${subject}`;
+	if ((t.status === "failed" || t.status === "awaiting_user") && t.description) {
+		line += ` ${theme.fg("muted", `— ${sanitizeTerminalText(t.description)}`)}`;
+	}
 	if (t.status === "in_progress" && t.activeForm) {
 		line += ` ${theme.fg("muted", `(${sanitizeTerminalText(t.activeForm)})`)}`;
 	}
@@ -96,7 +118,11 @@ export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean): s
 export function formatCommandTaskLine(t: Task, glyph: string): string {
 	const form = t.status === "in_progress" && t.activeForm ? ` (${sanitizeTerminalText(t.activeForm)})` : "";
 	const block = t.blockedBy?.length ? `    ⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}` : "";
-	return `  ${glyph} #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}`;
+	const reason =
+		(t.status === "failed" || t.status === "awaiting_user") && t.description
+			? ` — ${sanitizeTerminalText(t.description)}`
+			: "";
+	return `  ${glyph} #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}${reason}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +164,7 @@ export function renderTodoCall(
  */
 export function renderTodoResult(result: { details?: unknown }, theme: Theme): Text {
 	const details = result.details as TaskDetails | undefined;
+	if (details?.error) return new Text(theme.fg("error", `✗ ${sanitizeTerminalText(details.error)}`), 0, 0);
 	let status: TaskStatus | undefined;
 	if (details) {
 		const params = details.params as TaskMutationParams;

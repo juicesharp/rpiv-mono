@@ -56,6 +56,10 @@ export function formatStatusLabel(status: TaskStatus): string {
 			return t("status.pending", STATUS_LABEL_PENDING);
 		case "in_progress":
 			return t("status.in_progress", STATUS_LABEL_IN_PROGRESS);
+		case "failed":
+			return t("status.failed", "failed");
+		case "awaiting_user":
+			return t("status.awaiting_user", "awaiting user");
 		case "completed":
 			return t("status.completed", STATUS_LABEL_COMPLETED);
 		case "deleted":

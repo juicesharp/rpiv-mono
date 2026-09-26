@@ -1,5 +1,7 @@
 {
   "status.pending": "pending",
+  "status.failed": "failed",
+  "status.awaiting_user": "awaiting user",
   "status.in_progress": "in progress",
   "status.completed": "completed",
   "status.deleted": "deleted",
@@ -12,6 +14,8 @@
   "command.no_todos": "No todos yet. Ask the agent to add some!",
   "command.requires_interactive": "/todos requires interactive mode",
   "command.section.pending": "── Pending ──",
+  "command.section.failed": "── Failed ──",
+  "command.section.awaiting_user": "── Awaiting User ──",
   "command.section.in_progress": "── In Progress ──",
   "command.section.completed": "── Completed ──"
 }

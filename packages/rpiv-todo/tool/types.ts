@@ -23,7 +23,7 @@ export const MSG_NO_TODOS = "No todos yet. Ask the agent to add some!";
 // Public domain types
 // ---------------------------------------------------------------------------
 
-export type TaskStatus = "pending" | "in_progress" | "completed" | "deleted";
+export type TaskStatus = "pending" | "in_progress" | "failed" | "awaiting_user" | "completed" | "deleted";
 
 export type TaskAction = "create" | "update" | "list" | "get" | "delete" | "clear";
 
@@ -87,9 +87,9 @@ export const TodoParamsSchema = Type.Object({
 		}),
 	),
 	status: Type.Optional(
-		StringEnum(["pending", "in_progress", "completed", "deleted"] as const, {
+		StringEnum(["pending", "in_progress", "failed", "awaiting_user", "completed", "deleted"] as const, {
 			description:
-				"Set this task's status (update): one of pending, in_progress, completed, deleted. When action is list, filters returned tasks by this status.",
+				"Set status (update), or filter (list): pending = not started; in_progress = actively running; failed = execution/check failed; awaiting_user = waiting for user action or acceptance; completed; deleted. For failed/awaiting_user, description must explain the failure or the required user action.",
 		}),
 	),
 	blockedBy: Type.Optional(

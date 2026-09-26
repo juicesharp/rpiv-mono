@@ -14,6 +14,8 @@ export function selectVisibleTasks(state: TaskState): readonly Task[] {
 export interface TasksByStatus {
 	pending: readonly Task[];
 	inProgress: readonly Task[];
+	failed: readonly Task[];
+	awaitingUser: readonly Task[];
 	completed: readonly Task[];
 }
 export function selectTasksByStatus(state: TaskState): TasksByStatus {
@@ -21,6 +23,8 @@ export function selectTasksByStatus(state: TaskState): TasksByStatus {
 	return {
 		pending: visible.filter((t) => t.status === "pending"),
 		inProgress: visible.filter((t) => t.status === "in_progress"),
+		failed: visible.filter((t) => t.status === "failed"),
+		awaitingUser: visible.filter((t) => t.status === "awaiting_user"),
 		completed: visible.filter((t) => t.status === "completed"),
 	};
 }
@@ -30,14 +34,18 @@ export interface TodoCounts {
 	total: number;
 	pending: number;
 	inProgress: number;
+	failed: number;
+	awaitingUser: number;
 	completed: number;
 }
 export function selectTodoCounts(state: TaskState): TodoCounts {
 	const groups = selectTasksByStatus(state);
 	return {
-		total: groups.pending.length + groups.inProgress.length + groups.completed.length,
+		total: selectVisibleTasks(state).length,
 		pending: groups.pending.length,
 		inProgress: groups.inProgress.length,
+		failed: groups.failed.length,
+		awaitingUser: groups.awaitingUser.length,
 		completed: groups.completed.length,
 	};
 }
@@ -78,7 +86,18 @@ export function selectOverlayLayout(state: TaskState, budget: number): OverlayLa
 		return { visible: all, hiddenCompleted: 0, truncatedTail: 0 };
 	}
 	const innerBudget = budget - 1;
-	const nonCompleted = all.filter((t) => t.status !== "completed");
+	// Keep failures and user handoffs visible before untouched backlog on overflow.
+	const priority: Record<TaskStatus, number> = {
+		in_progress: 0,
+		failed: 1,
+		awaiting_user: 2,
+		pending: 3,
+		completed: 4,
+		deleted: 5,
+	};
+	const nonCompleted = all
+		.filter((t) => t.status !== "completed")
+		.sort((a, b) => priority[a.status] - priority[b.status]);
 	const totalCompleted = all.length - nonCompleted.length;
 	if (nonCompleted.length <= innerBudget) {
 		const kept = new Set<Task>(nonCompleted);
@@ -100,7 +119,7 @@ export function selectOverlayLayout(state: TaskState, budget: number): OverlayLa
  * uses this to pick the heading icon (`accent`+`●` vs `dim`+`○`).
  */
 export function selectHasActive(state: TaskState): boolean {
-	return selectVisibleTasks(state).some((t) => t.status === "in_progress" || t.status === "pending");
+	return selectVisibleTasks(state).some((t) => t.status !== "completed");
 }
 
 export const ACTIVE_STATUSES: ReadonlySet<TaskStatus> = new Set(["pending", "in_progress"]);
