@@ -2376,27 +2376,27 @@ describe("web_search.execute — per-call provider override", () => {
 		expect(stub.calls[0].url).toContain("api.search.brave.com");
 	});
 
-	it("schema declares the provider enum with all known names", () => {
+	it("schema exposes only configured providers and identifies the default", () => {
+		process.env.EXA_API_KEY = "exa-key";
+		process.env.JINA_API_KEY = "jina-key";
+		writeConfig({ provider: "exa" });
 		const { captured } = registerAndCapture();
 		const params = captured.tools.get("web_search")?.parameters as unknown as {
-			properties: { provider: { anyOf: Array<{ const: string }> } };
+			properties: { provider: { anyOf: Array<{ const: string }>; description: string } };
 		};
 		const literals = params.properties.provider?.anyOf?.map((e) => e.const) ?? [];
-		expect(literals).toEqual(
-			expect.arrayContaining([
-				"brave",
-				"tavily",
-				"serper",
-				"exa",
-				"youcom",
-				"jina",
-				"firecrawl",
-				"perplexity",
-				"searxng",
-				"ollama",
-			]),
-		);
-		expect(literals).toHaveLength(10);
+		expect(literals).toEqual(["exa", "jina"]);
+		expect(params.properties.provider.description).toContain("Default provider: exa (source: config)");
+	});
+
+	it("schema keeps the built-in default when no provider is configured", () => {
+		const { captured } = registerAndCapture();
+		const params = captured.tools.get("web_search")?.parameters as unknown as {
+			properties: { provider: { anyOf: Array<{ const: string }>; description: string } };
+		};
+		const literals = params.properties.provider?.anyOf?.map((e) => e.const) ?? [];
+		expect(literals).toEqual(["brave"]);
+		expect(params.properties.provider.description).toContain("Default provider: brave (source: default)");
 	});
 });
 

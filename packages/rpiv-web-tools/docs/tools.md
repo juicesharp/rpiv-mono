@@ -14,9 +14,8 @@ search provider's API and returns titled results with URLs and snippets.
 web_search({
   query: string,                    // required — natural-language query
   max_results?: number,             // 1-10, default 5
-  provider?:                        // per-call override; see below
-    | "brave" | "tavily" | "serper" | "exa" | "youcom" | "jina"
-    | "firecrawl" | "perplexity" | "searxng" | "ollama",
+  provider?:                        // configured providers only; see below
+    | "<configured-provider>",
 })
 ```
 
@@ -53,12 +52,16 @@ When the provider returns zero results, the envelope collapses to
 
 ### Per-call `provider` override
 
-The optional `provider` parameter routes a single call to a different backend
-without mutating persisted config and without a session restart. The named
-provider must have its own credentials — the override does **not** inherit the
-active provider's key, and an unconfigured target throws the usual `… is not
-set` error rather than silently falling back, so the caller can detect the
-misconfiguration.
+The optional `provider` parameter routes a single call to a different configured
+backend without mutating persisted config and without a session restart. At tool
+registration, the schema exposes only providers with a resolved API key or
+explicit base URL, plus the active provider. The provider description identifies
+the default provider and its source (`env`, `config`, or `default`).
+
+The named provider must have its own credentials — the override does **not**
+inherit the active provider's key, and an unconfigured target throws the usual
+`… is not set` error rather than silently falling back, so the caller can detect
+the misconfiguration.
 
 An override also short-circuits the `WEB_SEARCH_PROVIDER` environment variable
 entirely: that tier is neither read nor validated when an override is present,
