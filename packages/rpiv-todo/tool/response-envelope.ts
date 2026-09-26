@@ -12,7 +12,11 @@ import type { Task, TaskAction, TaskDetails, TaskMutationParams } from "./types.
 function formatListLine(t: Task): string {
 	const block = t.blockedBy?.length ? ` ⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}` : "";
 	const form = t.status === "in_progress" && t.activeForm ? ` (${sanitizeTerminalText(t.activeForm)})` : "";
-	return `[${t.status}] #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}`;
+	const reason =
+		(t.status === "failed" || t.status === "awaiting_user") && t.description
+			? ` — ${sanitizeTerminalText(t.description)}`
+			: "";
+	return `[${t.status}] #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}${reason}`;
 }
 
 /**

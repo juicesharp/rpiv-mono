@@ -51,9 +51,9 @@ by status.
 - **Tasks survive `/reload` and compaction.** Each tool call carries the full
   post-mutation snapshot, and the list is replayed from the session branch. No
   disk writes, nothing to lose.
-- **Finished work gets out of the way.** Completed rows stay visible for the rest
-  of the turn, then drop at the start of the next one; the panel disappears
-  entirely when the list empties.
+- **Finished work gets out of the way; unfinished outcomes stay clear.** Completed
+  rows drop at the start of the next turn. Failed execution and tasks awaiting
+  your action have distinct labels and explanations, and stay visible.
 - **The overlay never eats your terminal.** Past the row budget it drops
   completed tasks first, truncates unfinished ones last, and tells you what it
   hid with `+3 more (2 completed, 1 pending)`.

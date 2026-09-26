@@ -56,8 +56,8 @@ export const DEFAULT_PROMPT_SNIPPET = "Manage a task list to track multi-step pr
 export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"Use `todo` for complex work with 3+ steps, when the user gives you a list of tasks, or immediately after receiving new instructions to capture requirements. Skip it for single trivial tasks and purely conversational requests.",
 	"When starting a task from the todo list, mark it in_progress BEFORE beginning work. Mark it completed IMMEDIATELY when done — never batch completions. Exactly one task in_progress at a time.",
-	"Never mark a task completed if tests are failing, the implementation is partial, or you hit unresolved errors — keep it in_progress and create a new task for the blocker instead.",
-	"Task status is a 4-state machine: pending → in_progress → completed, plus deleted as a tombstone. Pass activeForm (present-continuous label, e.g. 'researching existing tool') when marking in_progress.",
+	"Never mark a task completed if its checks failed or work is incomplete. Use failed when execution/checks fail, with the exact failure and retry state in description. Use awaiting_user when waiting for user input, acceptance or user-owned testing; describe exactly what the user must do. Do not leave stopped work in_progress or reset failed work to pending.",
+	"Task statuses: pending (not started), in_progress (actively working), failed (execution/check failed), awaiting_user (needs user action/acceptance), completed, deleted (tombstone). Only one in_progress. On retry, failed/awaiting_user -> in_progress; complete only after new evidence. Split a failed execution attempt from a separate user-acceptance task so both facts remain visible. Pass activeForm when starting work.",
 	'To change a task\'s status, call update with the task id and the target status, e.g. {"action":"update","id":3,"status":"completed"} or {"action":"update","id":3,"status":"in_progress","activeForm":"writing tests"}. status is the field that changes the task; an update without a mutable field (status or another) is rejected.',
 	"Use blockedBy to express dependencies (A is blocked by B). On create, pass blockedBy as the initial set. On update, use addBlockedBy / removeBlockedBy (additive merge — do not resend the full array). Cycles are rejected.",
 	"list hides tombstoned (deleted) tasks by default; pass includeDeleted:true to see them. Pass status to filter by a single status.",
@@ -70,7 +70,7 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 		name: TOOL_NAME,
 		label: TOOL_LABEL,
 		description:
-			"Manage a task list for tracking multi-step progress. Actions: create (new task), update (change status/fields/dependencies), list (all tasks, optionally filtered by status), get (single task details), delete (tombstone), clear (reset all). Status: pending → in_progress → completed, plus deleted tombstone. Use this to plan and track multi-step work like research, design, and implementation.",
+			"Manage a task list for tracking multi-step progress. Actions: create (new task), update (change status/fields/dependencies), list (all tasks, optionally filtered by status), get (single task details), delete (tombstone), clear (reset all). Status: pending, in_progress, failed, awaiting_user, completed, deleted. Failures and user handoffs require an explanation in description. Use this to plan and track multi-step work like research, design, and implementation.",
 		promptSnippet: guidance.promptSnippet ?? DEFAULT_PROMPT_SNIPPET,
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: TodoParamsSchema,
@@ -124,8 +124,18 @@ export function registerTodosCommand(pi: ExtensionAPI): void {
 			if (counts.completed > 0) header.push(`${counts.completed}/${counts.total} ${formatStatusLabel("completed")}`);
 			if (counts.inProgress > 0) header.push(`${counts.inProgress} ${formatStatusLabel("in_progress")}`);
 			if (counts.pending > 0) header.push(`${counts.pending} ${formatStatusLabel("pending")}`);
+			if (counts.failed > 0) header.push(`${counts.failed} ${formatStatusLabel("failed")}`);
+			if (counts.awaitingUser > 0) header.push(`${counts.awaitingUser} ${formatStatusLabel("awaiting_user")}`);
 
 			const lines: string[] = [header.join(" · ")];
+			if (groups.failed.length > 0) {
+				lines.push(t("command.section.failed", "── Failed ──"));
+				for (const task of groups.failed) lines.push(formatCommandTaskLine(task, "✗"));
+			}
+			if (groups.awaitingUser.length > 0) {
+				lines.push(t("command.section.awaiting_user", "── Awaiting User ──"));
+				for (const task of groups.awaitingUser) lines.push(formatCommandTaskLine(task, "◷"));
+			}
 			if (groups.pending.length > 0) {
 				lines.push(t("command.section.pending", SECTION_PENDING));
 				for (const task of groups.pending) lines.push(formatCommandTaskLine(task, "○"));
