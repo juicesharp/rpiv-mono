@@ -102,6 +102,24 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		expect(options).not.toHaveProperty("headers");
 	});
 
+	it("passes the pi session id to the runtime completion for opencode session attribution", async () => {
+		setAdvisorModel({ provider: "opencode-go", id: "m" } as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx({ sessionId: "session-123" });
+		const runtime = {
+			completeSimple: vi.fn(function (this: unknown, ..._args: unknown[]) {
+				return Promise.resolve(resp({ text: "runtime advice" }));
+			}),
+		};
+		Object.defineProperty(ctx.modelRegistry, "runtime", { value: runtime });
+
+		await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		const options = runtime.completeSimple.mock.calls[0]?.[2] as Record<string, unknown> | undefined;
+		// Session id feeds opencode session attribution (see execute.ts).
+		expect(options).toHaveProperty("sessionId", "session-123");
+	});
+
 	it("uses the legacy completion path when the host has no runtime facade", async () => {
 		setAdvisorModel({ provider: "a", id: "m" } as never);
 		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "legacy advice" }) as never);
@@ -114,6 +132,19 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		expect(completeSimple).toHaveBeenCalledTimes(1);
 		const options = vi.mocked(completeSimple).mock.calls[0]?.[2] as Record<string, unknown> | undefined;
 		expect(options).toMatchObject({ apiKey: "test-key", headers: {} });
+	});
+
+	it("passes the pi session id to the legacy completion for opencode session attribution", async () => {
+		setAdvisorModel({ provider: "opencode-go", id: "m" } as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "legacy advice" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx({ sessionId: "session-456" });
+
+		await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		const options = vi.mocked(completeSimple).mock.calls[0]?.[2] as Record<string, unknown> | undefined;
+		// Same contract as the runtime path (see execute.ts).
+		expect(options).toHaveProperty("sessionId", "session-456");
 	});
 
 	it("uses compacted session context instead of raw branch messages", async () => {

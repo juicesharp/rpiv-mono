@@ -141,9 +141,15 @@ export async function executeAdvisor(
 		// to this path: explicit overrides would bypass that resolution and
 		// reintroduce the endpoint mismatch.
 		const completeSimple = runtimeCompleteSimple ?? (await loadCompleteSimple());
+		// opencode hosts reject requests lacking x-opencode-session. Hosts with
+		// the runtime facade derive that header from options.sessionId (pi core
+		// provider-attribution); pi-ai >= 0.87 also derives it provider-level.
+		// Legacy hosts without the facade depend on their own pi-ai version and
+		// may still lack the header (known limitation).
+		const sessionId = ctx.sessionManager.getSessionId();
 		const requestOptions = runtimeCompleteSimple
-			? { signal, reasoning: effort }
-			: { apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort };
+			? { signal, reasoning: effort, sessionId }
+			: { apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort, sessionId };
 
 		// Single dispatch point — both attempts reuse the SAME `messages` and
 		// `requestOptions`, so the retry cannot diverge from attempt 1. `tools: []`
