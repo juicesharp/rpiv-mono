@@ -171,6 +171,15 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 			if (newMetadata === undefined) delete updated.metadata;
 			else updated.metadata = newMetadata;
 
+			// Completion-order stamp: assigned exactly once, on the transition
+			// INTO completed (same→same updates and field edits on an already-
+			// completed task keep the original seq). Deterministic — max+1 over
+			// the current snapshot, no clock. `completed` only transitions to
+			// `deleted`, so a stamp never needs clearing.
+			if (newStatus === "completed" && current.status !== "completed") {
+				updated.completedSeq = 1 + Math.max(0, ...state.tasks.map((t) => t.completedSeq ?? 0));
+			}
+
 			const newTasks = [...state.tasks];
 			newTasks[idx] = updated;
 			return {

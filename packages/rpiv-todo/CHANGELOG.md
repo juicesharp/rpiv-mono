@@ -7,6 +7,28 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- All `in_progress` tasks now render in an active strip directly under the
+  heading so parallel work stays visible; when the strip itself overflows
+  the row budget it is capped at `budget - 2` rows with a trailing
+  `… N more active` marker (localized in all nine locales). The default
+  guidance now allows several tasks to be `in_progress` at once when work
+  runs in parallel.
+
+### Changed
+
+- Overflowing overlay lists now render a focused window anchored at the first
+  unfinished task in display order, backfilling from earlier tasks so the
+  window stays full, with `… N earlier` / `… N later` markers for the hidden
+  sides; at the minimum row budget, where two marker rows do not fit, both
+  hidden sides fold into a single plain `+N more` row.
+- Completed tasks now fade by recency instead of at agent-turn boundaries: a
+  monotonic `completedSeq` is stamped on completion and the overlay keeps only
+  the 3 most recently completed rows — a just-finished task stays visible
+  until newer completions displace it, and stale completions disappear
+  mid-turn rather than in bulk at the next `agent_start`.
+
 ## [2.11.0] - 2026-09-21
 
 ## [2.10.1] - 2026-09-13

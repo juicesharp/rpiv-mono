@@ -8,6 +8,9 @@
 
   "overlay.heading": "Tarefas",
   "overlay.more": "mais",
+  "overlay.earlier": "… {count} anteriores",
+  "overlay.later": "… {count} posteriores",
+  "overlay.moreActive": "… {count} mais ativas",
   "overlay.expandHint": "{key} para expandir",
   "overlay.collapsed": "recolhido",
 

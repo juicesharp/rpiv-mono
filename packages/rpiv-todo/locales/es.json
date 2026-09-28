@@ -8,6 +8,9 @@
 
   "overlay.heading": "Tareas",
   "overlay.more": "más",
+  "overlay.earlier": "… {count} anteriores",
+  "overlay.later": "… {count} posteriores",
+  "overlay.moreActive": "… {count} más activas",
   "overlay.expandHint": "{key} para expandir",
   "overlay.collapsed": "contraído",
 

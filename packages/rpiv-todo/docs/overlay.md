@@ -52,27 +52,45 @@ Rows longer than the terminal width are truncated with `…`.
 ## Overflow
 
 The content-row budget is `maxWidgetLines` (default `12`), and the heading counts
-against it. When there are more tasks than fit:
+against it. Before the window is laid out, every `in_progress` task is hoisted
+into an **active strip** rendered directly under the heading — parallel work
+always stays visible instead of hiding behind the `… N later` marker. The
+strip spends its own rows out of the same budget, so the window over the
+remaining tasks gets `budget - strip height` rows. When the strip itself is
+taller than the budget, only the first `budget - 2` active rows render, the
+last row reports `… N more active`, and no other tasks are shown.
 
-1. one row is reserved for the summary line;
-2. completed tasks are dropped first, newest first — the oldest completed rows
-   are the last completed rows to go;
-3. if the unfinished tasks alone still overflow, the tail of that list is
-   truncated;
-4. the last row becomes `+N more (X completed, Y pending)`.
+When the remaining tasks still overflow what is left of the budget, the
+overlay renders a focused window over them instead of the whole list:
+
+1. the window anchors at the first unfinished task in display order;
+2. if fewer tasks remain after that anchor than fit, the window backfills from
+   earlier tasks so it stays full;
+3. each hidden side spends one budget row on a marker — `… N earlier` above,
+   `… N later` below;
+4. when every task is completed, the final window is shown.
+
+At the minimum budget of `3` there is no room for two marker rows, so both
+hidden sides fold into a single bottom `+N more` summary — and no active
+strip is hoisted there either, since a strip plus a fold marker would not
+leave a single task row.
 
 Use Pi's tool-output expansion shortcut (`ctrl+o` by default) to expand the
 widget and show every task. Collapsing Pi's tool output reapplies the configured
-row budget. Unfinished work is therefore the last thing to disappear in the
-compact view. See [configuration.md](./configuration.md#maxwidgetlines) for the
-budget's floor and reload semantics.
+row budget and its focused window. See
+[configuration.md](./configuration.md#maxwidgetlines) for the budget's floor and
+reload semantics.
 
 ## Completed tasks fading out
 
-A completed task stays on screen for the remainder of the turn in which it was
-completed. At the start of the next agent turn, every completed row that has
-already been displayed is hidden from later renders. Reloading or compacting the
-session resets that tracking, so a fresh session shows the full list again.
+A completed task stays on screen until it has been displaced by 3 newer
+completions — the overlay keeps only the 3 most recently finished rows (by a
+monotonic `completedSeq` stamped when the task is completed, persisted inside
+the task snapshot so recency survives reload and compaction replay). Fading is
+immediate and deterministic: no agent-turn boundary is involved, and the
+heading's `(done/total)` counts exclude faded rows. Tasks completed before
+this feature existed carry no stamp and rank oldest, ordered among themselves
+by id.
 
 ## Collapsing
 
@@ -112,7 +130,8 @@ tasks. Tombstoned tasks are never listed.
 
 ## Localization
 
-The overlay heading, the `+N more` summary, the collapse hint, the `/todos`
+The overlay heading, the `… N earlier` / `… N later` overflow markers, the
+collapse hint, the `/todos`
 section headers, and the status words all localize through
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n)
 when that package is installed. Bundled locales: `de`, `en`, `es`, `fr`, `pt`,

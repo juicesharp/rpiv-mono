@@ -36,6 +36,13 @@ export interface Task {
 	blockedBy?: number[];
 	owner?: string;
 	metadata?: Record<string, unknown>;
+	/**
+	 * Monotonically increasing completion order — assigned by the reducer when a
+	 * task transitions into `completed` (never reassigned, never cleared).
+	 * Persisted via the snapshot envelope, so recency survives replay. Older
+	 * snapshots may lack it; readers rank missing as oldest (tie-break by id).
+	 */
+	completedSeq?: number;
 }
 
 /**

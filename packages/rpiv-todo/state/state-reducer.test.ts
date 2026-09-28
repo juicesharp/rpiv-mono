@@ -209,3 +209,50 @@ describe("isTransitionValid", () => {
 		expect(isTransitionValid("completed", "deleted")).toBe(true);
 	});
 });
+
+describe("applyTaskMutation — completedSeq stamping", () => {
+	it("assigns seq 1 to the first completion and increments per completion", () => {
+		let state = stateWith(task({ id: 1, subject: "a" }), task({ id: 2, subject: "b" }));
+		state = applyTaskMutation(state, "update", { id: 1, status: "completed" }).state;
+		state = applyTaskMutation(state, "update", { id: 2, status: "completed" }).state;
+		expect(state.tasks[0].completedSeq).toBe(1);
+		expect(state.tasks[1].completedSeq).toBe(2);
+	});
+
+	it("continues the sequence past existing stamped tasks", () => {
+		const state = stateWith(
+			task({ id: 1, subject: "old", status: "completed", completedSeq: 7 }),
+			task({ id: 2, subject: "new" }),
+		);
+		const result = applyTaskMutation(state, "update", { id: 2, status: "completed" });
+		expect(result.state.tasks[1].completedSeq).toBe(8);
+	});
+
+	it("stamps on in_progress → completed the same as pending → completed", () => {
+		const state = stateWith(task({ id: 1, subject: "a", status: "in_progress" }));
+		const result = applyTaskMutation(state, "update", { id: 1, status: "completed" });
+		expect(result.state.tasks[0].completedSeq).toBe(1);
+	});
+
+	it("leaves the stamp untouched on completed → completed field updates", () => {
+		const state = stateWith(task({ id: 1, subject: "a", status: "completed", completedSeq: 4 }));
+		const result = applyTaskMutation(state, "update", { id: 1, subject: "renamed" });
+		expect(result.state.tasks[0].completedSeq).toBe(4);
+	});
+
+	it("does not stamp while pending, in_progress, or deleted", () => {
+		const base = stateWith(task({ id: 1, subject: "a" }));
+		const inProgress = applyTaskMutation(base, "update", { id: 1, status: "in_progress" }).state;
+		expect(inProgress.tasks[0].completedSeq).toBeUndefined();
+		const deleted = applyTaskMutation(inProgress, "delete", { id: 1 }).state;
+		expect(deleted.tasks[0].completedSeq).toBeUndefined();
+	});
+
+	it("keeps the stamp on the tombstone after completed → deleted", () => {
+		let state = stateWith(task({ id: 1, subject: "a" }));
+		state = applyTaskMutation(state, "update", { id: 1, status: "completed" }).state;
+		state = applyTaskMutation(state, "delete", { id: 1 }).state;
+		expect(state.tasks[0].status).toBe("deleted");
+		expect(state.tasks[0].completedSeq).toBe(1);
+	});
+});

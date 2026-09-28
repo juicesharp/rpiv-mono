@@ -51,12 +51,17 @@ by status.
 - **Tasks survive `/reload` and compaction.** Each tool call carries the full
   post-mutation snapshot, and the list is replayed from the session branch. No
   disk writes, nothing to lose.
-- **Finished work gets out of the way.** Completed rows stay visible for the rest
-  of the turn, then drop at the start of the next one; the panel disappears
-  entirely when the list empties.
-- **The overlay never eats your terminal.** Past the row budget it drops
-  completed tasks first, truncates unfinished ones last, and tells you what it
-  hid with `+3 more (2 completed, 1 pending)`.
+- **Finished work gets out of the way.** Completed rows stay visible until 3
+  newer completions displace them — the overlay keeps only the freshest
+  finished work and drops stale completions immediately, without waiting for a
+  turn boundary. The panel disappears entirely when the list empties.
+- **Every active task stays on screen.** All `in_progress` rows are hoisted
+  into an active strip under the heading — parallel work never hides behind
+  the overflow markers, and excess actives collapse into `… N more active`.
+- **The overlay never eats your terminal.** Past the row budget it shows a
+  focused window anchored at the first unfinished task, backfilling from earlier
+  tasks so the window stays full, with `… N earlier` / `… N later` markers for
+  what it hid.
 - **The agent can sequence work, not just list it.** `blockedBy` dependencies are
   validated before anything is written — dangling ids, deleted dependencies,
   self-blocks, and cycles are all rejected.

@@ -64,7 +64,7 @@ describe("replayFromBranch", () => {
 		expect(state.nextId).toBe(3);
 	});
 
-	it("clones tasks so mutating the fixture does not mutate replayed state", () => {
+	it("clones tasks so mutating the fixture does not mutate replayed state", async () => {
 		const fixture: Task = taskFixture(1, "original");
 		const ctx = createMockCtx({
 			branch: buildBranch([{ action: "create", params: {}, tasks: [fixture], nextId: 2 }]),
@@ -73,6 +73,25 @@ describe("replayFromBranch", () => {
 		const replayed = state.tasks[0];
 		expect(replayed).not.toBe(fixture);
 		expect(replayed.subject).toBe("original");
+	});
+
+	it("preserves completedSeq through a snapshot round-trip", () => {
+		// The stamp rides inside the persisted task objects — reload/compaction
+		// replay must not lose it, or recency ranking silently regresses to the
+		// unstamped path.
+		const ctx = createMockCtx({
+			branch: buildBranch([
+				{
+					action: "update",
+					params: {},
+					tasks: [taskFixture(1, "done", { status: "completed", completedSeq: 42 }), taskFixture(2, "todo")],
+					nextId: 3,
+				},
+			]),
+		});
+		const state = replayFromBranch(ctx);
+		expect(state.tasks[0].completedSeq).toBe(42);
+		expect(state.tasks[1].completedSeq).toBeUndefined();
 	});
 
 	it("skips non-message entries in the branch (defensive type guard)", () => {
