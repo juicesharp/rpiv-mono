@@ -29,6 +29,20 @@ describe("formatContent", () => {
 		expect(formatContent(op, state)).toBe("Updated #1");
 	});
 
+	it("update — appends skipped-task notice when an earlier task is still open", () => {
+		const state = stateWith(t({ id: 1, subject: "first" }), t({ id: 2, subject: "second", status: "completed" }));
+		const op: Op = { kind: "update", id: 2, fromStatus: "in_progress", toStatus: "completed", changed: true };
+		expect(formatContent(op, state)).toBe(
+			"Updated #2 (in_progress → completed)\nSkipped earlier tasks still open: #1 first. Decide now for each: complete it, delete it, or keep it with a stated reason.",
+		);
+	});
+
+	it("update — no skipped-task notice when nothing earlier is open", () => {
+		const state = stateWith(t({ id: 1, subject: "first", status: "completed" }), t({ id: 2, subject: "second", status: "completed" }));
+		const op: Op = { kind: "update", id: 2, fromStatus: "in_progress", toStatus: "completed", changed: true };
+		expect(formatContent(op, state)).toBe("Updated #2 (in_progress → completed)");
+	});
+
 	it("update — reports 'No change' when changed is false (no-effect update)", () => {
 		const state = stateWith(t({ id: 1, subject: "x" }));
 		const op: Op = { kind: "update", id: 1, fromStatus: "pending", toStatus: "pending", changed: false };
