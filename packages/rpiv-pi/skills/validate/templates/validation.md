@@ -53,17 +53,20 @@ _Optional subsection — include when risks not covered by the plan surface (mis
 
 - {file:line — risk not covered by the plan}
 
-### Manual Testing Required:
+### Manual Verification Results
 
-{Bulleted checklist when manual criteria exist:}
+| Criterion / source | Procedure and expected outcome | Observed outcome | Result | Evidence |
+|---|---|---|---|---|
+| {plan location or acceptance ID and statement} | {procedure; expected outcome} | {actual observation or missing prerequisite} | {passed / failed / unverified / deferred} | {artifact path, run ID, or conversation decision reference; if unavailable, state why} |
 
-1. {area}:
-   - [ ] {verifiable step}
-   - [ ] {verifiable step}
+{Repeat for every manual criterion and manual acceptance item. For deferred items, include the existing approved deferral reason. When none exist, replace the table with:}
 
-{Or, when the plan has no manual criteria:}
+None — no manual verification criteria apply.
 
-None — {one-line reason, e.g., "the plan explicitly requires no functional changes, only documentation and tests."}
+### Verification Blockers
+
+- {Failed or unverified criterion}: {specific blocker}; next action: {required action and responsible party}.
+- {Or:} None — no verification blockers remain.
 
 ### Recommendations:
 
