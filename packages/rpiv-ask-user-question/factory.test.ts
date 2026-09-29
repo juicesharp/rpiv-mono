@@ -342,7 +342,7 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 		],
 	};
 
-	it("Space toggles items, then DOWN to Next + Enter confirms selected labels", async () => {
+	it("commits checked options and custom text together through Next", async () => {
 		const tool = register();
 		const { custom } = driveCustom((c) => {
 			c.handleInput(KEY.SPACE); // toggle Frontend ON
@@ -350,6 +350,7 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 			c.handleInput(KEY.SPACE); // toggle Backend ON
 			c.handleInput(KEY.DOWN); // → DevOps (not toggled)
 			c.handleInput(KEY.DOWN); // → "Type something." row
+			for (const char of "GraphQL") c.handleInput(char);
 			c.handleInput(KEY.DOWN); // → Next sentinel
 			c.handleInput(KEY.ENTER); // commit + advance (single question → submit)
 		});
@@ -358,7 +359,7 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 			| ToolResult
 			| undefined;
 		expect(r?.details.cancelled).toBe(false);
-		expect(r?.details.answers[0].answer).toBeNull();
+		expect(r?.details.answers[0].answer).toBe("GraphQL");
 		expect(r?.details.answers[0].selected).toEqual(["Frontend", "Backend"]);
 	});
 

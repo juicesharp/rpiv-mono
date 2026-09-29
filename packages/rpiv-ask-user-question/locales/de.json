@@ -26,6 +26,6 @@
 
   "editor.failed": "Externer Editor fehlgeschlagen",
 
-  "rpc.multi_instructions": "Gib die Nummern aller zutreffenden Optionen durch Komma getrennt ein (z. B. \"1,3\") oder tippe eine eigene Antwort als Text.",
+  "rpc.multi_instructions": "Gib die Nummern aller zutreffenden Optionen durch Kommas getrennt ein (z. B. \"1,3\"). Füge \"; eigene Antwort\" hinzu, um eigenen Text einzuschließen, oder gib nur eigenen Text ein.",
   "rpc.custom_answer_title": "Gib deine Antwort ein:"
 }

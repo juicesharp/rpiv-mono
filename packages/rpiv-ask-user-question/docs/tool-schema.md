@@ -77,8 +77,8 @@ code. The `content[0].text` string is written for the model, not for a log.
       questionIndex: number,
       question: string,
       kind: "option" | "custom" | "multi",
-      answer: string | null,       // option label, typed text, or null for multi
-      selected?: string[],         // chosen labels, multi-select only
+      answer: string | null,       // option label, custom text, or null
+      selected?: string[],         // chosen labels, multi-select only; can accompany answer
       notes?: string,              // free-text note, when you wrote one
       preview?: string,            // echoed back when the chosen option carried a preview
     }>,

@@ -198,11 +198,26 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining('"Pick colors?"="red, blue"') });
 	});
 
+	it("multi-select preserves numeric selections and custom text separated by a semicolon", async () => {
+		const tool = register();
+		const input = vi.fn(async () => "1,3; another color");
+		const r = await run(tool, MULTI, ctxRpc({ input }));
+		expect(r?.details).toMatchObject({
+			answers: [{ kind: "multi", selected: ["red", "blue"], answer: "another color" }],
+		});
+		expect(r?.content[0]).toMatchObject({
+			text: expect.stringContaining('"Pick colors?"="red, blue, another color"'),
+		});
+	});
+
 	it("multi-select treats non-index input as a typed custom answer, not a silent drop", async () => {
 		const tool = register();
 		const input = vi.fn(async () => "red, something else entirely");
 		const r = await run(tool, MULTI, ctxRpc({ input }));
 		expect(r?.details).toMatchObject({ cancelled: false });
+		expect(r?.details).toMatchObject({
+			answers: [{ kind: "multi", selected: [], answer: "red, something else entirely" }],
+		});
 		expect(r?.content[0]).toMatchObject({
 			text: expect.stringContaining('"Pick colors?"="red, something else entirely"'),
 		});

@@ -212,11 +212,12 @@ export class WrappingSelect implements Component {
 		const continuationPrefix = " ".repeat(visibleWidth(rowPrefix));
 		const contentWidth = Math.max(WrappingSelect.MIN_CONTENT_WIDTH, width - visibleWidth(rowPrefix));
 
+		const { label, isConfirmed } = this.deriveConfirmedState(item, index);
 		if (this.shouldRenderAsInlineInput(item, isActive)) {
-			return this.renderInlineInputRow(rowPrefix, continuationPrefix, contentWidth);
+			const inputLines = this.renderInlineInputRow(rowPrefix, continuationPrefix, contentWidth);
+			return isConfirmed ? [...inputLines, this.theme.description(`${continuationPrefix}✔ Selected`)] : inputLines;
 		}
 
-		const { label, isConfirmed } = this.deriveConfirmedState(item, index);
 		const applySelectedStyle = isActive || isConfirmed;
 
 		return [

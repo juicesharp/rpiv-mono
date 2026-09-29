@@ -503,7 +503,7 @@ describe("WrappingSelect.setConfirmedIndex", () => {
 		expect(lines[2]).not.toContain("Type something.");
 		expect(lines[2]).toContain("<S>");
 	});
-	it("when focused on kind:'other' row, inline-input rendering wins over confirmed marker", () => {
+	it("shows that the focused custom row is selected without hiding its editor", () => {
 		const s = new WrappingSelect(
 			[
 				{ kind: "option", label: "Alpha" },
@@ -515,11 +515,11 @@ describe("WrappingSelect.setConfirmedIndex", () => {
 		s.setSelectedIndex(1);
 		s.setFocused(true);
 		s.setConfirmedIndex(1, "Hello");
-		s.setInputBuffer("World");
+		s.setInputBuffer("Hello");
 		const lines = s.render(40);
-		expect(lines[1]).toContain("World");
+		expect(lines[1]).toContain("Hello");
 		expect(lines[1]).toContain(CURSOR_MARKER);
-		expect(lines[1]).not.toContain("✔");
+		expect(lines[2]).toContain("✔ Selected");
 	});
 	it("clamps index to valid range", () => {
 		const s = new WrappingSelect(
