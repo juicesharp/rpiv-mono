@@ -11,11 +11,10 @@ import { EMPTY_STATE, type TaskState } from "./state.js";
 const sessions = new Map<string, TaskState>();
 
 /**
- * Ctx-less render pointer: which slot do the ctx-free readers (the overlay's
- * `getSnapshot()`, the tool's `renderCall()`) render? Set when the first UI
- * session claims the foreground, before the overlay is loaded (creator-ownership
- * — see `index.ts`). A *distinct* concept from the three task-state mutation
- * seams; it is not a 4th writer of task state.
+ * Legacy render pointer for direct users of TodoOverlay / registerTodoTool.
+ * The extension factory supplies its own instance-local getter instead, so
+ * cached modules can serve independent UI runtimes without sharing a foreground.
+ * This pointer is not a writer of task state.
  */
 let activeRenderSession = "";
 

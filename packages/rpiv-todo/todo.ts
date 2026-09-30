@@ -64,7 +64,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"Subject must be short and imperative (e.g. 'Research existing tool'); description is for long-form detail. activeForm is a present-continuous label shown while in_progress.",
 ];
 
-export function registerTodoTool(pi: ExtensionAPI): void {
+export function registerTodoTool(pi: ExtensionAPI, readState = getRenderState): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
 	pi.registerTool({
 		name: TOOL_NAME,
@@ -81,16 +81,11 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 			return buildToolResult(params.action, params as TaskMutationParams, result.state, result.op);
 		},
 
-		// renderCall reflects the FOREGROUND slot, not the calling session's. Pi's
-		// `ToolRenderContext` carries no session identity (no sessionManager/sessionId),
-		// so this ctx-less hook cannot re-key by caller. For the foreground session's
-		// own transcript that is exactly right. A detached/child call rendered in the
-		// lane-transcript viewer whose task lives only in the child's slot misses the
-		// foreground lookup and falls back to `#<id>` (see renderTodoCall). That is the
-		// safe outcome: per-session ids restart at 1, so searching sibling slots could
-		// surface the WRONG subject — the `#<id>` fallback is intentional, not a gap.
+		// ToolRenderContext has no session identity. The factory supplies its own
+		// foreground getter so independent runtimes never look up a sibling's task.
+		// Direct callers retain the legacy getter; unknown ids still render as #id.
 		renderCall(args, theme, _context) {
-			return renderTodoCall(args as never, theme, getRenderState());
+			return renderTodoCall(args as never, theme, readState());
 		},
 
 		renderResult(result, _opts, theme, _context) {

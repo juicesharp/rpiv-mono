@@ -1,12 +1,13 @@
-import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
+import type { Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createMockCtx, createMockPi, makeTheme } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, type vi } from "vitest";
 import registerTodo from "./index.js";
 import { EMPTY_STATE } from "./state/state.js";
-import { getActiveRenderSession, getRenderState, getState } from "./state/store.js";
+import { getState } from "./state/store.js";
 import { __resetState } from "./todo.js";
 
 // Capture the extension's registered handlers + tool + command. Each registerTodo()
-// call builds a fresh closure (fresh module-level `todoOverlay`), so isolation
+// call builds a fresh closure (fresh instance-local `todoOverlay`), so isolation
 // between tests is automatic given __resetState() clears the store.
 function setup() {
 	__resetState();
@@ -21,6 +22,14 @@ function setup() {
 	if (!tool) throw new Error("todo tool not registered");
 	if (!cmd) throw new Error("todos command not registered");
 	return { sessionStart, sessionShutdown, tool, cmd };
+}
+
+function renderCall(tool: ToolDefinition | undefined): string {
+	if (!tool?.renderCall) throw new Error("todo renderCall was not registered");
+	return tool
+		.renderCall({ action: "get", id: 1 }, makeTheme() as unknown as Theme, undefined as never)
+		.render(200)
+		.join("\n");
 }
 
 beforeEach(() => __resetState());
@@ -119,7 +128,7 @@ describe("rpiv-todo — per-session todo store isolation (Phase 1 baseline)", ()
 		// Creator-ownership: the render slot is still the parent's. The first UI
 		// session claims the pointer before lazy overlay loading, and a child cannot
 		// re-set it.
-		expect(getRenderState().tasks.map((t) => t.subject)).toEqual(["parent-task"]);
+		expect(renderCall(tool)).toContain("parent-task");
 		// Sanity: the child's task DID land in its own slot.
 		expect(getState("child").tasks.map((t) => t.subject)).toEqual(["child-task"]);
 	});
@@ -178,7 +187,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 		const parentCtx = createMockCtx({ hasUI: true, sessionId: PARENT });
 
 		await start?.({}, parentCtx);
-		expect(getActiveRenderSession()).toBe(PARENT);
+		expect(renderCall(tool)).toContain("#1");
 
 		// Create a parent task; pump tool_execution_end so the overlay renders it.
 		await tool?.execute?.(
@@ -190,9 +199,9 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 		);
 		await toolEnd?.({ toolName: "todo", isError: false });
 
-		// Overlay registered a widget on the parent ui and renders the parent slot.
+		// Overlay registration and tool rendering both belong to the parent UI.
 		expect(widgetSpy(parentCtx)).toHaveBeenCalled();
-		expect(getRenderState().tasks.map((t) => t.subject)).toEqual(["parent task"]);
+		expect(renderCall(tool)).toContain("parent task");
 	});
 
 	it("a child session_start (distinct sid, hasUI) does not claim foreground or rebind the overlay", async () => {
@@ -213,9 +222,8 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 		// Child session_start — distinct sid, hasUI true. Gate skips it.
 		await start?.({}, childCtx);
 
-		// Foreground unchanged; overlay still renders the parent slot.
-		expect(getActiveRenderSession()).toBe(PARENT);
-		expect(getRenderState().tasks.map((t) => t.subject)).toEqual(["parent task"]);
+		// Foreground unchanged; rendering still resolves the parent slot.
+		expect(renderCall(tool)).toContain("parent task");
 		// Child ui was never bound — setUICtx/update skipped by the sid gate.
 		expect(widgetSpy(childCtx)).not.toHaveBeenCalled();
 	});
@@ -248,7 +256,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 
 		// Child slot holds the child task; the overlay (foreground = parent) shows parent's.
 		expect(getState(CHILD).tasks.map((t) => t.subject)).toEqual(["child task"]);
-		expect(getRenderState().tasks.map((t) => t.subject)).toEqual(["parent task"]);
+		expect(renderCall(tool)).toContain("parent task");
 	});
 
 	it("a child session_shutdown does not dispose the foreground overlay", async () => {
@@ -269,9 +277,8 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 		// Child shuts down — distinct sid; the teardown gate skips it.
 		await shutdown?.({}, childCtx);
 
-		// Foreground pointer + parent slot intact; no dispose call on the parent ui.
-		expect(getActiveRenderSession()).toBe(PARENT);
-		expect(getRenderState().tasks.map((t) => t.subject)).toEqual(["parent task"]);
+		// Parent rendering stays intact; no dispose call is made on the parent UI.
+		expect(renderCall(tool)).toContain("parent task");
 		expect(widgetSpy(parentCtx)).not.toHaveBeenCalledWith(WIDGET_KEY, undefined);
 	});
 
@@ -293,7 +300,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 
 		// Dispose path fires setWidget(KEY, undefined); pointer cleared; slot evicted.
 		expect(widgetSpy(parentCtx)).toHaveBeenCalledWith(WIDGET_KEY, undefined);
-		expect(getActiveRenderSession()).toBe("");
+		expect(renderCall(tool)).toContain("#1");
 		expect(getState(PARENT).tasks).toEqual([]);
 	});
 
@@ -320,8 +327,20 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 		// finally guarantees the foreground pointer is cleared and the slot evicted —
 		// so the next hasUI session_start can reclaim a clean foreground.
 		await expect(shutdown?.({}, parentCtx)).rejects.toThrow("stale ui proxy");
-		expect(getActiveRenderSession()).toBe("");
+		expect(renderCall(tool)).toContain("#1");
 		expect(getState(PARENT).tasks).toEqual([]);
+		const replacement = createMockCtx({ hasUI: true, sessionId: "replacement" });
+		await start?.({}, replacement);
+		await tool?.execute?.(
+			"tc",
+			{ action: "create", subject: "replacement task" } as never,
+			undefined,
+			undefined,
+			replacement as never,
+		);
+		await toolEnd?.({ toolName: "todo", isError: false });
+		expect(renderCall(tool)).toContain("replacement task");
+		expect(widgetSpy(replacement)).toHaveBeenCalled();
 	});
 
 	it("a headless launcher (hasUI:false) never constructs an overlay, nor does a headless child", async () => {
@@ -332,8 +351,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 		await start?.({}, headlessCtx);
 		await start?.({}, childHeadlessCtx);
 
-		// No foreground claimed; no widget registered on either ui.
-		expect(getActiveRenderSession()).toBe("");
+		// Neither headless session registers a widget.
 		expect(widgetSpy(headlessCtx)).not.toHaveBeenCalled();
 		expect(widgetSpy(childHeadlessCtx)).not.toHaveBeenCalled();
 	});

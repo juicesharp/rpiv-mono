@@ -7,6 +7,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Independent extension runtimes sharing a cached module now bind their todo widgets and tool-call rendering to their own foreground sessions. Starting or shutting down one runtime no longer claims or clears another runtime's render binding.
+
+### Changed
+
+- The extension factory no longer updates the legacy module-global render pointer. The existing foreground accessor exports remain available for direct callers, but integrations must explicitly select their legacy foreground or supply an instance-local state getter to `TodoOverlay` and `registerTodoTool`.
+
 ## [2.11.0] - 2026-09-21
 
 ## [2.10.1] - 2026-09-13
