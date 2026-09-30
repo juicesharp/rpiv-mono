@@ -52,7 +52,7 @@ export const OptionSchema = Type.Object({
 				"Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format.",
 		}),
 	),
-});
+}, { additionalProperties: false });
 
 export const QuestionSchema = Type.Object({
 	question: Type.String({
@@ -76,7 +76,7 @@ export const QuestionSchema = Type.Object({
 				"Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.",
 		}),
 	),
-});
+}, { additionalProperties: false });
 
 export const QuestionsSchema = Type.Array(QuestionSchema, {
 	minItems: 1,
@@ -86,7 +86,7 @@ export const QuestionsSchema = Type.Array(QuestionSchema, {
 
 export const QuestionParamsSchema = Type.Object({
 	questions: QuestionsSchema,
-});
+}, { additionalProperties: false });
 
 export type OptionData = Static<typeof OptionSchema>;
 export type QuestionData = Static<typeof QuestionSchema>;
