@@ -33,8 +33,8 @@ import { auditCtxFor, failAuditWrite, failedArgs, recordFatalFailure } from "../
 import { allocateStageNumber, persistStageSuccess } from "../audit-rows.js";
 import { lifecycleCtxFor, scriptStageRef } from "../events.js";
 import type { Artifact } from "../handle.js";
-import { formatError, nowIso } from "../internal-utils.js";
-import { FAIL_SCRIPT_THREW, FAIL_VALIDATION_EXHAUSTED } from "../messages.js";
+import { formatError, nowIso, withTimeout } from "../internal-utils.js";
+import { ERR_SCHEMA_TIMEOUT, FAIL_SCRIPT_THREW, FAIL_VALIDATION_EXHAUSTED } from "../messages.js";
 import { finalizeOutput, type Output, outputMeta } from "../output.js";
 import type { RunContext, WorkflowHostContext } from "../types.js";
 import {
@@ -43,6 +43,12 @@ import {
 	runValidationRetryLoop,
 	validateOutputData,
 } from "../validate-output.js";
+import {
+	clampRange,
+	DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
+	MAX_VALIDATION_RETRY_TIMEOUT_MS,
+	MIN_VALIDATION_RETRY_TIMEOUT_MS,
+} from "../validation-bounds.js";
 import type { AdvanceFn, ChainOutcome } from "./failure.js";
 import type { ResolvedStage } from "./resolve-stage.js";
 
@@ -76,6 +82,15 @@ export async function runScript(
 	// envelope, the success/failure row, and lifecycle bookkeeping share it
 	// (mirrors `produceAndValidateOutput` on the skill path).
 	const stageNumber = allocateStageNumber(run.state);
+	// Match the skill path deadline. This bounds waiting, not cancellation
+	// of the inner validator or interruption of synchronous JavaScript.
+	const rawTimeout = stage.def.validateTimeoutMs;
+	const timeoutMs = clampRange(
+		typeof rawTimeout === "number" && Number.isFinite(rawTimeout) ? rawTimeout : undefined,
+		MIN_VALIDATION_RETRY_TIMEOUT_MS,
+		DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
+		MAX_VALIDATION_RETRY_TIMEOUT_MS,
+	);
 
 	// `halt: "recorded"` = invokeRun already recorded the terminal failure.
 	const result = await runValidationRetryLoop<Output, "recorded">(
@@ -106,7 +121,11 @@ export async function runScript(
 				// single catch site (today's contract).
 				return {
 					kind: "ok",
-					result: await Promise.resolve(validateOutputData(stage.def.outputSchema, output.data)),
+					result: await withTimeout(
+						Promise.resolve(validateOutputData(stage.def.outputSchema, output.data)),
+						timeoutMs,
+						ERR_SCHEMA_TIMEOUT("outputSchema", timeoutMs),
+					),
 				};
 			},
 			onRetry: async (attempt) => {
