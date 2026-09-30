@@ -85,6 +85,12 @@ Rebind or disable the shortcut with the `collapseKey` option; see
 `"off"` while the panel is collapsed, the hint becomes a static `collapsed`
 label rather than advertising an unbindable key.
 
+In Pi fullscreen mode with mouse support (verified with Pi 0.85.1), left-click
+anywhere on the heading row to collapse or expand the panel. Task rows, wheel
+and drag events, and clicks with modifier keys are left unhandled. Clicking does
+not move keyboard focus and works even when `collapseKey` is `"off"`. Regular
+terminal mode and Pi versions without mouse dispatch retain keyboard-only control.
+
 ## `/todos`
 
 `/todos` prints the whole list grouped by status, independent of the overlay's

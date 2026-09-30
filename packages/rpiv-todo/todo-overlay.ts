@@ -68,6 +68,21 @@ export class TodoOverlay {
 					this.tui = tui;
 					return {
 						render: (width: number) => this.renderWidget(this.uiCtx?.theme ?? factoryTheme, width),
+						// Structural typing keeps this usable with the pinned Pi version,
+						// which predates fullscreen mouse dispatch and TuiMouseEvent.
+						handleMouse: (event: {
+							type: string;
+							button: string;
+							y: number;
+							shift: boolean;
+							alt: boolean;
+							ctrl: boolean;
+						}) => {
+							if (event.type !== "click" || event.button !== "left" || event.y !== 0) return undefined;
+							if (event.shift || event.alt || event.ctrl) return undefined;
+							this.toggleCollapse();
+							return { handled: true };
+						},
 						invalidate: () => {
 							// No rendered strings are cached. Pi invalidates on theme changes;
 							// the next render reads uiCtx.theme.
