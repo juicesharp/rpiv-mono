@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Pi provides `typebox` to extensions; it is now declared in `peerDependencies` (`"*"`) instead of `dependencies`, clearing Pi's host-provided extension package warning and avoiding a duplicate installed copy.
+
 ## [2.11.0] - 2026-09-21
 
 ## [2.10.1] - 2026-09-13

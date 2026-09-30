@@ -69,12 +69,12 @@
 		]
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-coding-agent": "*"
+		"@earendil-works/pi-coding-agent": "*",
+		"typebox": "*"
 	},
 	"dependencies": {
 		"@juicesharp/rpiv-config": "^2.11.0",
-		"@mlflow/core": "~0.2.0",
-		"typebox": "^1.1.24"
+		"@mlflow/core": "~0.2.0"
 	},
 	"engines": {
 		"node": ">=20"

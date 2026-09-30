@@ -113,11 +113,11 @@
 	},
 	"dependencies": {
 		"@juicesharp/rpiv-config": "^2.11.0",
-		"jiti": "^2.7.0",
-		"typebox": "^1.1.24"
+		"jiti": "^2.7.0"
 	},
 	"peerDependencies": {
 		"@earendil-works/pi-coding-agent": "*",
-		"@standard-schema/spec": "*"
+		"@standard-schema/spec": "*",
+		"typebox": "*"
 	}
 }
