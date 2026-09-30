@@ -116,13 +116,30 @@ function withoutCustomDraft(state: QuestionnaireState, tab: number): ReadonlyMap
 	return drafts;
 }
 
+/**
+ * Row to focus when entering a tab: the row that produced its saved answer, so revisiting
+ * an answered question never lands on row 0 where a stray Enter would overwrite the answer.
+ * Unanswered tabs (and the Submit tab, which has no items) start at row 0.
+ */
+function answeredRowIndex(answer: QuestionAnswer | undefined, items: readonly WrappingSelectItem[]): number {
+	if (!answer) return 0;
+	const rowKind = ({ option: "option", custom: "other", multi: "next" } as const)[answer.kind];
+	const index = items.findIndex(
+		(item) => item.kind === rowKind && (rowKind !== "option" || item.label === answer.answer),
+	);
+	return Math.max(0, index);
+}
+
 function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyContext): ApplyResult {
 	const notesValue = notesValueFor(state, nextTab);
+	const items = ctx.itemsByTab[nextTab] ?? [];
+	const optionIndex = answeredRowIndex(state.answers.get(nextTab), items);
+	const focused = items[optionIndex];
 	const transitioned: QuestionnaireState = {
 		...state,
 		currentTab: nextTab,
-		optionIndex: 0,
-		inputMode: false,
+		optionIndex,
+		inputMode: focused ? ROW_INTENT_META[focused.kind].activatesInputMode : false,
 		notesVisible: false,
 		submitChoiceIndex: 0,
 		multiSelectChecked: syncMultiSelectFromAnswers(state.answers, ctx.questions, nextTab),

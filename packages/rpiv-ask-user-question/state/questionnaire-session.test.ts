@@ -291,8 +291,10 @@ describe("QuestionnaireSession — custom-answer drafts", () => {
 		session.dispatch(UP);
 		session.dispatch(TAB);
 		session.dispatch(TAB);
+		// Revisiting the custom-answered tab refocuses its input with the confirmed text.
 		expect(session.component.render(120).join("\n")).toContain("first-latest");
 
+		session.dispatch(UP);
 		session.dispatch(TAB);
 		expect(session.component.render(120).join("\n")).toContain("second");
 	});
