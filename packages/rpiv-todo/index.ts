@@ -24,15 +24,7 @@ import type { KeyId } from "@earendil-works/pi-tui";
 import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.js";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
 import { replayFromBranch } from "./state/replay.js";
-import {
-	clearActiveRenderSession,
-	evictSession,
-	getActiveRenderSession,
-	getRenderState,
-	replaceState,
-	setActiveRenderSession,
-	sid,
-} from "./state/store.js";
+import { evictSession, getState, replaceState, sid } from "./state/store.js";
 import { registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.js";
 import type { TodoOverlay } from "./todo-overlay.js";
 
@@ -130,6 +122,10 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	const loadTodoOverlay = makeTodoOverlayLoader(importOverlay);
 	let uiCtx: ExtensionUIContext | undefined;
 	let lifecycleGeneration = 0;
+	// The SDK caches the module but calls this factory for each independent runtime.
+	// Keep creator ownership within this instance, never across the whole process.
+	let activeRenderSession = "";
+	const getRenderState = () => getState(activeRenderSession);
 
 	async function updateTodoOverlay(
 		resetCompletedDisplayState = false,
@@ -141,13 +137,13 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		const { TodoOverlay } = await loadTodoOverlay();
 		if (generation !== lifecycleGeneration || !uiCtx) return;
 
-		todoOverlay ??= new TodoOverlay();
+		todoOverlay ??= new TodoOverlay(getRenderState);
 		todoOverlay.setUICtx(uiCtx);
 		if (resetCompletedDisplayState) todoOverlay.resetCompletedDisplayState();
 		todoOverlay.update();
 	}
 
-	registerTodoTool(pi);
+	registerTodoTool(pi, getRenderState);
 	registerTodosCommand(pi);
 
 	// Collapse/expand hotkey for the todo overlay. The key is resolved once at
@@ -184,7 +180,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		try {
 			const id = sid(ctx);
 			replaceState(id, replayFromBranch(ctx));
-			isForeground = id === getActiveRenderSession();
+			isForeground = id === activeRenderSession;
 		} catch (e) {
 			if (!isStaleCtxError(e)) throw e;
 		}
@@ -205,12 +201,10 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 			return;
 		}
 		if (!ctx.hasUI) return;
-		// First UI-bearing session_start claims the foreground (the interactive
-		// launcher, by spawn-ordering) without eagerly loading the overlay.
-		if (getActiveRenderSession() === "") setActiveRenderSession(id);
-		// Only the foreground re-binds/refreshes the shared overlay. A child
-		// (distinct sid) is skipped — does not rebind to a relay/stale ui.
-		if (id !== getActiveRenderSession()) return;
+		// The first UI-bearing session owns this instance's overlay. A child routed
+		// through the same instance must not rebind it to a relay or stale UI.
+		if (activeRenderSession === "") activeRenderSession = id;
+		if (id !== activeRenderSession) return;
 		const generation = ++lifecycleGeneration;
 		uiCtx = ctx.ui;
 		await updateTodoOverlay(true, generation);
@@ -240,7 +234,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		// Overlay teardown is sid-gated: a child shutdown (distinct sid) must not
 		// dispose the foreground's overlay. Only the foreground's own shutdown
 		// (or an unknown/stale sid) tears it down and clears the pointer.
-		if (s === "" || s === getActiveRenderSession()) {
+		if (s === "" || s === activeRenderSession) {
 			// Invalidate pending imports before clearing the foreground binding so a
 			// replaced session cannot inherit the stale overlay or UI context.
 			lifecycleGeneration++;
@@ -254,7 +248,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 				todoOverlay?.dispose();
 			} finally {
 				todoOverlay = undefined;
-				clearActiveRenderSession();
+				activeRenderSession = "";
 			}
 		}
 	});

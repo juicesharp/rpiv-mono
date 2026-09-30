@@ -11,10 +11,15 @@ The widget is mounted above the Pi editor under the key `rpiv-todos`.
 
 | Stage | Condition |
 | --- | --- |
-| Created | At the first session start that has a UI. A headless session never creates it. |
+| Created | At the first session start with a UI and visible tasks in each extension instance. A headless session never creates it. |
 | Registered | Only while at least one overlay-visible task exists. The widget unregisters itself when the list empties, and re-registers when a task reappears. |
-| Bound | Only the foreground session's overlay is refreshed. A detached or child session has its own task state and never rebinds or repaints the foreground panel. |
-| Disposed | On the foreground session's shutdown. A child session shutting down leaves the overlay alone. |
+| Bound | Each extension instance owns its foreground session's overlay. A detached or child session routed through that same instance has its own task state and never rebinds the foreground panel. |
+| Disposed | On that instance's foreground session shutdown. Other instances and child-session shutdowns leave its overlay alone. |
+
+Hosts may cache the extension module while initializing multiple independent
+instances. Each instance binds both its widget and tool-call rendering to its
+own foreground session; another instance cannot claim or clear that binding.
+Session replacement releases the old binding before the new session starts.
 
 Task state is partitioned by session id, so parallel sessions cannot read or
 overwrite each other's lists. Nothing is written to disk: on session start,

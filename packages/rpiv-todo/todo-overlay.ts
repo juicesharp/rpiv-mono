@@ -7,7 +7,7 @@
  * getMaxWidgetLines(); plus a trailing spacer row so the widget renders up
  * to 13 lines), Pi tool-output expansion awareness, auto-hide when empty.
  *
- * Reads live state via `getRenderState()` (the ctx-less foreground slot) at render
+ * Reads live state via the owning instance's snapshot getter at render
  * time — NEVER `replayFromBranch` from `tool_execution_end` (branch is stale;
  * `message_end` runs after).
  */
@@ -36,6 +36,9 @@ export class TodoOverlay {
 	private hiddenCompletedTaskIds = new Set<number>();
 	private lastNextId: number | undefined;
 	private collapsed = false;
+
+	// The default preserves direct callers using the legacy foreground accessor.
+	constructor(private readonly readState = getRenderState) {}
 
 	setUICtx(ctx: ExtensionUIContext): void {
 		// Identity-compare so repeat session_start handlers are idempotent;
@@ -110,7 +113,7 @@ export class TodoOverlay {
 	}
 
 	private getSnapshot() {
-		const state = getRenderState();
+		const state = this.readState();
 		if (this.lastNextId !== undefined && state.nextId < this.lastNextId) {
 			this.resetCompletedDisplayState();
 		}
