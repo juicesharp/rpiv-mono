@@ -2,7 +2,6 @@
 name: validate
 description: Verify that an implementation plan was correctly executed by running each phase's success criteria against the working tree and producing a validation report. Use after the implement skill completes, when the user asks to "validate the plan", wants a post-implementation audit, or needs to confirm a feature is fully shipped per its plan.
 argument-hint: "[plan-path] [--goal <path>] [--baseline <path>] [--scope <path>] [--acceptance <path>]"
-allowed-tools: Read, Bash(git *), Bash(make *), Glob, Grep
 shell-timeout: 10
 disable-model-invocation: true
 contract:
@@ -61,6 +60,12 @@ echo "recent plans:"
 node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/plans 10
 ```
 
+## Execution Rules
+
+Use the available tools needed to execute the plan's verification procedures, including shell commands, browser interactions, artifact inspection, and explicitly prescribed native workflows. Follow the host's authorization rules. This skill does not grant unavailable tools or additional permissions.
+
+If a required capability is unavailable, record the affected criterion as unverified with the exact missing prerequisite. Continue independent checks.
+
 ## Steps
 
 ### Step 1: Input Handling and Context Discovery
@@ -68,8 +73,8 @@ node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/plans 10
 When invoked:
 
 1. **Determine context** — fresh or existing conversation?
-   - If existing: review what was implemented in this session, then proceed to Step 2.
-   - If fresh: continue with the substeps below.
+   - If existing: review what was implemented in this session for context.
+   - In either case, continue with the substeps below; existing context does not replace reading the selected plan.
 
 2. **Locate the plan**:
    - If plan path provided, use it.
@@ -89,8 +94,8 @@ When invoked:
 
    **If `in_repo:` in the Metadata block is `no`:**
    - Skip git-based evidence gathering (git log, git diff).
-   - Validate via file inspection, the plan's `#### Automated Verification:` commands, and the plan checklist.
-   - Note in report: "Git history unavailable — validation based on file inspection only".
+   - Validate via file inspection and execution of the plan's automated and manual verification procedures.
+   - Note in report: "Git history unavailable — validation based on file inspection and executed verification"; identify any checks that remain unverified.
 
    Otherwise:
    - `git log --oneline -n 20` — recent commits for implementation context.
@@ -115,9 +120,15 @@ For each phase in the plan:
    - Document pass/fail status
    - If failures, investigate root cause
 
-3. **Assess manual criteria**:
-   - List what needs manual testing
-   - Provide clear steps for user verification
+3. **Execute manual verification**:
+   - "Manual" describes the verification method, not who must perform it. Execute every manual criterion yourself when available tools and authorization permit. Do not hand an executable check to the user merely because the plan labels it manual.
+   - Include both checked and unchecked criteria. A plan checkbox is a claim to verify, not evidence and not permission to skip the criterion.
+   - Follow the stated procedure and expected outcome. Inspect actual behavior and resulting artifacts. When live execution is required, fixtures, mocks, historical runs, and passing unit tests are not substitutes.
+   - For asynchronous work, await its authoritative terminal state and inspect the required outputs. A successful launch is not a successful verification.
+   - Record each criterion's source location, procedure, expected outcome, observed outcome, evidence location, and result: passed, failed, or unverified. Record approved deferrals separately with their existing reason.
+   - Ask the owner only for genuinely required inputs, authorization, or subjective acceptance decisions. Never invent owner input or infer acceptance from technical completion.
+   - If a prerequisite is missing or the procedure cannot be completed, record unverified and the specific blocker. Do not weaken the criterion or silently defer it. Continue checks that do not depend on that prerequisite.
+   - Verification may exercise the application and generate required outputs; it does not authorize implementation fixes or changes to plan criteria.
 
 4. **Think deeply about edge cases**:
    - Were error conditions handled?
@@ -156,7 +167,7 @@ For each phase in the plan:
    - **An item the plan marked `deferred`** (with a reason, matching an `## Out of Scope` line): do not run its command; record the deferral under `#### Deviations from Plan:` as a non-blocking note quoting the reason — the deferral was legible and gate-approved. An item the plan never disposed of at all is judged exactly like an `implemented` one — silence does not defer.
    - **An item the plan marked `rebound`** (`command` + `reason` present; else undisposed): run the rebound command instead of the inventory's. Exit 0 ⇒ met, noted under `#### Deviations from Plan:` with the reason and both commands. Non-zero ⇒ fails like `implemented`, rebound command in the `blockers:` entry. Never run both and keep the passing one.
    - **An item with a `command`** (not deferred): RUN it as written from the repo root. Exit 0 ⇒ the item holds — record it met. Non-zero ⇒ the item fails: force **`verdict: fail`**, report it under **Deviations from Plan** quoting the item's `statement`, and add a `blockers:` entry for it (Step 3.2's shape — the item's `command` verbatim; attribute `file`/`line` to the in-delta file the command or the item's statement most directly names). A failing acceptance command with a sound premise is never "pre-existing debt" — the inventory is future-tense by construction. Only when the command itself is unrunnable as written (a path that never existed at any revision, a malformed invocation) rule the ITEM unmeasurable, non-blocking, under `#### Potential Issues:` — never silently rewrite the command into something weaker.
-   - **An item with only a `manual` procedure** (not deferred): record it under the report's manual-verification section with its procedure — homework for the human, never a blocker.
+   - **An item with only a `manual` procedure** (not deferred): execute it using Step 2.3. Record the acceptance item ID and statement alongside its evidence in `### Manual Verification Results`. A failed or unverified item forces `verdict: fail`. Do not classify it as homework for the human or automatically non-blocking.
 
 ### Step 3: Write the Validation Report
 
@@ -172,8 +183,12 @@ For each phase in the plan:
 2. **Determine verdict** (`status` is always `ready` — written once):
    - `verdict: pass` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes (excluding whole-plan failures ruled pre-existing/non-blocking per Step 2.6), no Deviations from Plan and no Potential Issues require action, every plan `risks:` flag ruled `pass`, every scope-floor finding and quarantine-manifest entry (Step 2.7) is explained, and every non-deferred `--acceptance` item with a command passed (Step 2.10).
    - `verdict: fail` — any phase fails verification, any automated command fails (excluding whole-plan failures ruled pre-existing/non-blocking per Step 2.6), any Deviations / Potential Issues list items that require action, **any plan risk flag ruled `pass: false`** (a flagged risk shipped unaddressed), **any scope-floor finding or quarantined/refused file you could not rule benign** (Step 2.7), or **any non-deferred acceptance item whose command fails** (Step 2.10).
+   - A passing verdict additionally requires every required manual criterion and every non-deferred manual acceptance item to have passed.
+   - Any required manual criterion that failed or remains unverified forces `verdict: fail`. Explain whether this represents an observed defect or an incomplete verification; do not present missing prerequisites as proven implementation defects.
+   - Existing explicitly defined non-blocking exceptions remain applicable only to the checks they describe. Do not extend command-failure exceptions to manual criteria.
    - When the plan carried a `risks:` array, add a `risk_rulings: [{ id, pass }]` field to the report frontmatter — one ruling per flag.
-   - When any failure forcing `verdict: fail` is NOT already captured by a `pass: false` risk ruling — a whole-plan gate command, a phase's automated command failing on files inside the run's delta, or a failing acceptance-item command (Step 2.10) — add a `blockers:` array to the report frontmatter, one entry per failing command: `blockers: [{ id: b1, command: "<the failing command, verbatim-runnable from the repo root>", file: "<in-delta file the failure attributes to>", line: <line> }]` (`file`/`line` come from Step 2.6's attribution, or Step 2.10's for an acceptance item; number ids `b1`, `b2`, …). These structured entries are the ONLY handles the workflow's remediation arm may act on — a blocking failure recorded only in the report prose is invisible to it, and the run stops at the validate gate instead of looping. Omit the field when every blocking failure already rides a failing ruling.
+   - When a blocking command failure is NOT already captured by a `pass: false` risk ruling — a whole-plan gate command, a phase's automated command failing on files inside the run's delta, a failing acceptance-item command (Step 2.10), or a reproducible command failure from manual verification — add a `blockers:` array to the report frontmatter, one entry per failing command: `blockers: [{ id: b1, command: "<the failing command, verbatim-runnable from the repo root>", file: "<in-delta file the failure attributes to>", line: <line> }]` (`file`/`line` come from the actual failure attribution, using Step 2.6 or Step 2.10 where applicable; number ids `b1`, `b2`, …). Use this field only for actual failing, reproducible commands that fit the existing schema and attribution rules. Never invent a command or implementation file for a browser observation, missing prerequisite, or owner decision. Omit the field when no eligible command failures remain.
+   - For blocking manual failures without such a command, record the criterion, evidence, blocker, and required next action under `### Verification Blockers`. These failures still force `verdict: fail`. The workflow's remediation arm uses structured failing risk rulings and command blockers; a prose-only blocker must stop at the validation gate for resolution rather than receive a fabricated automatic-remediation handle.
 
 3. **Write the artifact** using the Write tool (no Edit — this skill writes once per run). Read `templates/validation.md`, fill every `{placeholder}` with the values determined above and the observations gathered in Step 2, apply the section-omission rules in the template (omit `#### Pattern Conformance:` and `#### Potential Issues:` entirely when empty; keep all other sections and emit `None — …` literals when empty), and Write the result to the target path.
 
@@ -192,16 +207,17 @@ Follow-up footer:
 
 ---
 
-💬 Follow-up: if findings are localized, fix them and re-run `/skill:validate`. If findings imply plan-level changes, escalate to `/skill:revise <plan-path>` first.
+💬 Follow-up: for localized implementation defects, use `/skill:implement` to fix them and re-run `/skill:validate`. For missing inputs, authorization, owner acceptance, or tool access, obtain the specific prerequisite and re-run the affected verification. If findings imply plan-level changes, escalate to `/skill:revise <plan-path>` first.
 
-**Next step:** `/skill:commit` — group the validated changes into atomic commits (skip if `verdict: fail` — fix the gaps first, then re-run `/skill:validate`).
+**Next step:** `/skill:commit` — group the validated changes into atomic commits (skip if `verdict: fail` — resolve defects or verification blockers first, then re-run `/skill:validate`).
 
 > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
 
 ## Handle Follow-ups
 
-- **Validate does not edit code or plans.** It produces a report. Fixes happen in implement; plan revisions happen in revise.
-- **Localized gaps.** If findings are small and localized, fix them in-place and re-run `/skill:validate` for a fresh report.
+- **Validate does not edit implementation code or plan checkboxes.** It executes verification and writes its results. Implementation fixes belong to implement; plan revisions belong to revise.
+- **Localized gaps.** Use implement to fix localized implementation defects, then re-run `/skill:validate` for a fresh report.
+- **Missing prerequisites.** Request the specific input, authorization, owner decision, or tool access needed. Keep the affected criterion unverified until its procedure is completed; do not send missing prerequisites into code remediation.
 - **Plan-level gaps.** If findings imply the plan itself is wrong (missing phases, wrong approach, untestable success criteria), escalate to `/skill:revise <plan-path>` first, then re-implement, then re-validate.
 - **No append mode.** Each validation run produces a fresh report — there is no `## Follow-up` append. The previous block's `Next step:` stays valid only when `verdict: pass`.
 
@@ -210,7 +226,7 @@ Follow-up footer:
 If you were part of the implementation:
 - Review the conversation history
 - Check your todo list for what was completed
-- Focus validation on work done in this session
+- Validate the full selected plan and supplied acceptance inventory. Use session history as context, not as a limit on verification coverage.
 - Be honest about any shortcuts or incomplete items
 
 ## Important Guidelines
@@ -220,7 +236,7 @@ If you were part of the implementation:
 3. **Document everything** - Both successes and issues
 4. **Think critically** - Question if the implementation truly solves the problem
 5. **Consider maintenance** - Will this be maintainable long-term?
-6. **Repo-located scratch lives under `.rpiv/tmp/`, nowhere else** - Any file you create while running a plan's commands or a risk ruling's `procedure` — a driver script, a fixture, a captured payload — goes under `.rpiv/tmp/` (exempt from the workflow's scope floor) or outside the repo entirely. The floor counts **untracked** files too (`git status -uall`): scratch left anywhere else is an undeclared write the next `implement-scope-check` flags. Delete repo-located scratch when its command is done regardless.
+6. **Distinguish temporary scratch from required verification artifacts** - Temporary drivers and fixtures belong under `.rpiv/tmp/` (exempt from the workflow's scope floor) or outside the repository. The floor counts **untracked** files too (`git status -uall`): scratch left elsewhere can be flagged as an undeclared write. Remove temporary scratch when finished, but first preserve any evidence cited by the report in a durable evidence location. Preserve required native run artifacts and application outputs in their prescribed locations; do not relocate or delete them as scratch. Record verification-created outputs so scope review can distinguish them from unrelated implementation changes. Preserve pre-existing artifacts.
 
 ## Validation Checklist
 
@@ -235,7 +251,9 @@ Always verify:
 - [ ] No regressions introduced
 - [ ] Error handling is robust
 - [ ] Documentation updated if needed
-- [ ] Manual test steps are clear
+- [ ] Every required manual criterion was executed and passed
+- [ ] Manual acceptance items were executed or explicitly deferred under the existing rules
+- [ ] Failed and unverified checks have evidence, blockers, and next actions recorded
 
 ## Relationship to Other Skills
 
