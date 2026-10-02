@@ -36,7 +36,8 @@ rpiv-mono/
 | Command | Description |
 |---|---|
 | `npm install` | One install at root; workspace symlinks under `node_modules/` |
-| `npm run check` | Biome (`--write --error-on-warnings`) + `tsc --noEmit -p tsconfig.base.json` |
+| `npm run check` | Host-provided-dep guard, then Biome (`--write --error-on-warnings`) + `tsc --noEmit -p tsconfig.base.json` |
+| `npm run check:host-provided-deps` | Read-only guard — no host-provided package (`typebox`, `@earendil-works/pi-*`) in any install-time dependency field (peer-pinned `"*"` instead), and no `typebox` import specifier outside the host's alias table |
 | `npx tsc --noEmit -p tsconfig.base.json` | **Read-only whole-tree typecheck** (no formatter side effects) — the check write-scoped probes (elaborate/implement lanes) run when they must not rewrite files outside their own set |
 | `npm run check:files -- <paths...>` | Path-scoped Biome (`--write --error-on-warnings`) — rewrites ONLY the paths it is given; **the path-scoped auto-fix lint form** a phase's `#### Automated Verification:` uses to stay write-scoped to its own `files:` set |
 | `npm test` | Vitest at root (single runner; `include: ['packages/*/**/*.test.ts']` walks every package) |
@@ -53,6 +54,7 @@ Husky hooks (local-only):
 
 - **Lockstep versions**: every `packages/*/package.json` shares one `version`. Enforced by `sync-versions.js` (exit 1 on drift). `"private": true` packages bump too but are skipped at publish. **Naming**: directory `rpiv-<feature>` ↔ npm `@juicesharp/rpiv-<feature>`.
 - **Sibling deps as `peerDependencies: "*"`** — `rpiv-pi` peer-pins every registered sibling and `pi-*` runtime; bundlers never include them.
+- **Host-provided packages as `peerDependencies: "*"`, never `dependencies`** — Pi ships `typebox` and the `@earendil-works/pi-{ai,agent-core,coding-agent,tui}` trio (plus the legacy `@mariozechner/*` spellings) itself and aliases the bare specifier to its own copy at load time. An installed copy bypasses that alias and puts two live copies of the same module in one process (schemas built by one, validated by the other) — Pi warns about every such manifest at startup. Enforced by `scripts/check-host-provided-deps.mjs` (`npm run check:host-provided-deps`, the first stage of `npm run check`) across the root manifest and all `packages/*`. `devDependencies` are exempt (root dev-time pins resolve for `tsc`/Vitest only) and `jiti` is **not** host-provided — the extension loader does not alias it, so it stays a real `dependencies` entry. The same script also scans `packages/**/*.ts` for `typebox` import specifiers and rejects any subpath outside the host's six aliases (`typebox`, `typebox/compile`, `typebox/value` + the `@sinclair/typebox` spellings) — the manifest half alone would only move an unaliased import from a warning to `ERR_MODULE_NOT_FOUND`.
 - **`files` arrays** explicitly list `.ts` source + asset directories (e.g., `prompts/`); `.rpiv/` is never shipped; directory entries need a `!**/*.test.ts` negation (as in rpiv-pi/rpiv-web-tools/rpiv-workflow/rpiv-advisor) to keep co-located tests out of the tarball; dev-only fixture trees are excluded the same way (rpiv-pi's `built-ins/__fixtures__/`).
 - **`type: "module"` everywhere** with Node16 resolution; relative imports use `.js` extensions from `.ts` source. Test files co-locate as `*.test.ts` next to production sources.
 - **No decision-code citations in committed `.ts`** — comments state the contract in place, never cite parenthesized plan/phase codes; enforced by `scripts/check-no-decision-codes.mjs` (`npm run check:decision-codes`, the first pre-commit stage).
@@ -65,7 +67,7 @@ Husky hooks (local-only):
 
 <important if="you are adding a new sibling Pi extension package">
 ## Adding a Sibling Package (cross-layer checklist)
-1. Create `packages/rpiv-<name>/` with `package.json` matching the lockstep version, `pi.extensions: ["./index.ts"]`, and the relevant `peerDependencies` (`pi-coding-agent`, `pi-tui`/`pi-ai` as needed)
+1. Create `packages/rpiv-<name>/` with `package.json` matching the lockstep version, `pi.extensions: ["./index.ts"]`, and the relevant `peerDependencies` (`pi-coding-agent`, `pi-tui`/`pi-ai` as needed; `"typebox": "*"` whenever the source imports `typebox` — host-provided packages are always peer-pinned `"*"`, never `dependencies`; and import only `typebox`, `typebox/value`, or `typebox/compile`, the specifiers the host aliases)
 2. Populate the `files` array with all shipped `.ts` source + any asset directory (e.g. `prompts/`, `locales/`)
 3. Add the sibling to `siblings.ts` — see `.rpiv/guidance/packages/rpiv-pi/extensions/rpiv-core/architecture.md`
 4. Pin in `packages/rpiv-pi/package.json` `peerDependencies` as `"*"`

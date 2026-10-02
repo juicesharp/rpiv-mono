@@ -5,7 +5,7 @@ The Pi-binding / adapter layer — the **only** part of `rpiv-telemetry` that to
 
 ## Dependencies
 - **`@earendil-works/pi-coding-agent`** (peer): `ExtensionAPI`/`ExtensionContext` — type-only except `pi.on(...)`, `pi.events.on(...)`, `ctx.sessionManager`
-- **`typebox`** (`Type`, `Static`, `Value`): runtime payload validation — used **only** on the untyped EventBus boundary
+- **`typebox`** (`peerDependencies: "*"`, host-provided): `Type`, `Static`, `Value` for runtime payload validation — used **only** on the untyped EventBus boundary. Pi supplies and aliases `typebox` at load time, so it is never a `dependencies` entry (v2.12.0, #282)
 - Inward to siblings: `../config`, `../dispatcher`, `../providers`, `../types/events` (the `TelemetryEvent` union). Direction is strictly inward — nothing downstream imports back in
 
 ## Consumers

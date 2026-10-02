@@ -4,7 +4,7 @@
 The LLM tool contract surface: TypeBox parameter schemas, pure runtime parameter validation, the canonical `{ content, details }` result envelope builder, and the per-answer scalar formatter that bridges runtime state into the LLM-visible text channel.
 
 ## Dependencies
-- **`typebox`** (regular dep, moved out of peers — installers that skip peer deps must still get it): `Type` builder + `Static` type extraction
+- **`typebox`** (`peerDependencies: "*"`, host-provided): `Type` builder + `Static` type extraction. Pi supplies and aliases `typebox` at load time, so it is never a `dependencies` entry — an installed copy is the duplicate runtime module the loader maps away (v2.12.0, #282)
 - **`../state/row-intent.js`**: `LABELS_BY_KIND` / `ROW_INTENT_META` — the ONLY outbound state dep in this layer (the `i18n-bridge` dep left with the chat escape hatch; the tool layer is now fully i18n-free)
 
 ## Inbound / Outbound

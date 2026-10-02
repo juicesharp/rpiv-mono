@@ -7,9 +7,10 @@
 		"packages/*"
 	],
 	"scripts": {
-		"check": "biome check --write --error-on-warnings . && tsc --noEmit -p tsconfig.base.json",
+		"check": "npm run check:host-provided-deps && biome check --write --error-on-warnings . && tsc --noEmit -p tsconfig.base.json",
 		"check:files": "biome check --write --error-on-warnings",
 		"check:decision-codes": "node scripts/check-no-decision-codes.mjs",
+		"check:host-provided-deps": "node scripts/check-host-provided-deps.mjs",
 		"build:site": "npm run build --workspace=@juicesharp/rpiv-site",
 		"test": "vitest run",
 		"coverage": "vitest run --coverage",
