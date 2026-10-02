@@ -8,6 +8,8 @@ import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 export interface QuestionnaireState {
 	currentTab: number;
 	optionIndex: number;
+	/** Pointer-only highlight; never moves keyboard focus or activates the custom-answer editor. */
+	hoveredOptionIndex?: number;
 	inputMode: boolean;
 	notesVisible: boolean;
 	answers: ReadonlyMap<number, QuestionAnswer>;

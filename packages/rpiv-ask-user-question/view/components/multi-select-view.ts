@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { displayLabel } from "../../state/i18n-bridge.js";
 import type { QuestionData } from "../../tool/types.js";
+import { optionPointerRows, type PointerRow } from "../pointer-target.js";
 import type { StatefulView } from "../stateful-view.js";
 import { renderInlineInputRow } from "./inline-input.js";
 
@@ -28,6 +29,7 @@ export interface MultiSelectOtherRowProps {
 }
 
 export interface MultiSelectViewProps {
+	hoveredIndex?: number;
 	rows: ReadonlyArray<{ checked: boolean; active: boolean }>;
 	other: MultiSelectOtherRowProps;
 	nextActive: boolean;
@@ -48,12 +50,14 @@ export interface MultiSelectViewProps {
 interface MultiSelectLayout {
 	lines: string[];
 	focusedRange: [number, number];
+	items: number[];
 }
 
 /** Mutable row accumulator threaded through the append helpers during a layout miss. */
 interface MultiSelectBuild {
 	lines: string[];
 	focusedRange: [number, number];
+	items: number[];
 }
 
 export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
@@ -87,6 +91,10 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 		return this.layout(width).lines;
 	}
 
+	pointerRows(width: number): (PointerRow | undefined)[] {
+		return optionPointerRows(this.layout(width).items, width);
+	}
+
 	focusedItemRowRange(width: number): [number, number] {
 		return this.layout(width).focusedRange;
 	}
@@ -98,7 +106,7 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 	private layout(width: number): MultiSelectLayout {
 		if (this.cachedLayout?.width === width) return this.cachedLayout.value;
 
-		const build: MultiSelectBuild = { lines: [], focusedRange: [0, 0] };
+		const build: MultiSelectBuild = { lines: [], focusedRange: [0, 0], items: [] };
 		const contentWidth = Math.max(1, width - this.prefixVisibleWidth());
 		const numberWidth = String(Math.max(1, this.question.options.length + 1)).length;
 
@@ -106,11 +114,12 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 
 		const otherStart = build.lines.length;
 		build.lines.push(...this.renderOtherRow(contentWidth, numberWidth));
+		build.items.push(...Array<number>(build.lines.length - otherStart).fill(this.question.options.length));
 		if (this.props.other.active) build.focusedRange = [otherStart, build.lines.length];
 
 		this.appendNextRow(build, width);
 
-		const value = { lines: build.lines, focusedRange: build.focusedRange };
+		const value = { lines: build.lines, focusedRange: build.focusedRange, items: build.items };
 		this.cachedLayout = { width, value };
 		return value;
 	}
@@ -125,7 +134,8 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 			// Checked and active rows share the accent hue, matching the dialog's selection rhythm.
 			const box = row.checked ? this.theme.fg("accent", CHECKED) : this.theme.fg("muted", UNCHECKED);
 			const label = truncateToWidth(opt.label, contentWidth, "…");
-			const styledLabel = row.active ? this.theme.fg("accent", this.theme.bold(label)) : label;
+			const styledLabel =
+				row.active || this.props.hoveredIndex === i ? this.theme.fg("accent", this.theme.bold(label)) : label;
 			const number = String(i + 1).padStart(numberWidth, " ");
 			build.lines.push(
 				truncateToWidth(`${pointer}${number}${NUMBER_SEPARATOR}${box}${BOX_LABEL_GAP}${styledLabel}`, width, ""),
@@ -135,6 +145,7 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 					build.lines.push(CONTINUATION_INDENT + this.theme.fg("muted", segment));
 				}
 			}
+			build.items.push(...Array<number>(build.lines.length - start).fill(i));
 			if (row.active) build.focusedRange = [start, build.lines.length];
 		}
 	}
@@ -142,10 +153,12 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 	private appendNextRow(build: MultiSelectBuild, width: number): void {
 		const nextStart = build.lines.length;
 		const nextPointer = this.props.nextActive ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
-		const nextLabel = this.props.nextActive
-			? this.theme.fg("accent", this.theme.bold(this.props.nextLabel))
-			: this.props.nextLabel;
+		const nextLabel =
+			this.props.nextActive || this.props.hoveredIndex === this.question.options.length + 1
+				? this.theme.fg("accent", this.theme.bold(this.props.nextLabel))
+				: this.props.nextLabel;
 		build.lines.push(truncateToWidth(`${nextPointer}${nextLabel}`, width, ""));
+		build.items.push(this.question.options.length + 1);
 		if (this.props.nextActive) build.focusedRange = [nextStart, build.lines.length];
 	}
 
@@ -171,7 +184,7 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 
 		return wrapTextWithAnsi(other.inputBuffer || displayLabel("other"), contentWidth).map((segment, index) => {
 			const line = `${index === 0 ? rowPrefix : continuationPrefix}${segment}`;
-			return other.active ? selectedText(line) : line;
+			return other.active || this.props.hoveredIndex === this.question.options.length ? selectedText(line) : line;
 		});
 	}
 

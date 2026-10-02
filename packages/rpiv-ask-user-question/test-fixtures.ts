@@ -36,6 +36,7 @@ export function makeQuestionnaireState(over: Partial<QuestionnaireState> = {}): 
 	return {
 		currentTab: over.currentTab ?? 0,
 		optionIndex: over.optionIndex ?? 0,
+		...(over.hoveredOptionIndex !== undefined ? { hoveredOptionIndex: over.hoveredOptionIndex } : {}),
 		inputMode: over.inputMode ?? false,
 		notesVisible: over.notesVisible ?? false,
 		answers: over.answers ?? new Map(),

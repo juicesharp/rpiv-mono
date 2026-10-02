@@ -47,6 +47,7 @@
 		"state/external-editor.ts",
 		"state/i18n-bridge.ts",
 		"state/key-router.ts",
+		"state/mouse-input.ts",
 		"state/questionnaire-session.ts",
 		"state/row-intent.ts",
 		"state/selectors/contract.ts",
@@ -74,6 +75,7 @@
 		"view/components/wrapping-select.ts",
 		"view/dialog-builder.ts",
 		"view/props-adapter.ts",
+		"view/pointer-target.ts",
 		"view/stateful-view.ts",
 		"view/tab-components.ts",
 		"view/tab-content-strategy.ts"

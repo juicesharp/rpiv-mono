@@ -19,6 +19,7 @@ const SPACE_KEY = " ";
 
 export type QuestionnaireAction =
 	| { kind: "nav"; nextIndex: number; inputValue: string }
+	| { kind: "hover"; index: number | undefined }
 	| { kind: "input_clear" }
 	| { kind: "input_edit"; value: string }
 	| { kind: "input_replace"; value: string }
@@ -174,11 +175,7 @@ function routeInputMode(
 	// Newline takes precedence over confirmation if a user configuration binds
 	// the same physical key to both semantic actions.
 	if (kb.matches(data, KEYBIND_NEW_LINE)) return { kind: "ignore" };
-	if (isConfirm(kb, data)) {
-		const answer = buildSingleSelectAnswer(state, runtime);
-		if (!answer) return { kind: "ignore" };
-		return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
-	}
+	if (isConfirm(kb, data)) return confirmationAction(state, runtime);
 	// Treat Pi's Ctrl+U line-kill binding as an explicit whole-draft clear,
 	// independent of the current cursor position.
 	if (kb.matches(data, KEYBIND_CLEAR)) return { kind: "input_clear" };
@@ -205,12 +202,7 @@ function routeSubmitTab(
 		const next = wrapTab(state.submitChoiceIndex + delta, 2);
 		return { kind: "submit_nav", nextIndex: (next === 1 ? 1 : 0) as 0 | 1 };
 	}
-	if (isConfirm(kb, data)) {
-		// D1 (revised): Submit always submits; Cancel always cancels. The warning header
-		// is informational only — `allAnswered(state)` no longer gates submission. Partial
-		// answers flow through `orderedAnswers()` in the host.
-		return state.submitChoiceIndex === 1 ? { kind: "cancel" } : { kind: "submit" };
-	}
+	if (isConfirm(kb, data)) return confirmationAction(state, runtime);
 	// Global note (#182): `n` on the Submit tab opens the notes editor scoped to the whole
 	// questionnaire at the pseudo-index (`questions.length` in notesByTab). Reachable only
 	// with the editor closed — `routeKey` dispatches notesVisible traffic to
@@ -240,26 +232,7 @@ function routeMultiSelectTab(
 		if (focusedMeta?.activatesInputMode) return { kind: "ignore" };
 		return { kind: "toggle", index: state.optionIndex };
 	}
-	if (isConfirm(kb, data)) {
-		// Enter on the "Type something." row is handled by the inputMode block above
-		// (→ confirm kind:"custom"). Defensive: never enter the toggle/multi_confirm
-		// path for an inputMode-activating row.
-		if (focusedMeta?.activatesInputMode) return { kind: "ignore" };
-		// Enter on a regular row toggles (matching Space) — committing the question is now
-		// gated behind explicit focus on a row whose META declares `autoSubmitsInMulti`
-		// (the Next sentinel), so Enter on options is a no-cost way to flip checkboxes
-		// without leaving the keyboard home row.
-		if (!focusedMeta?.autoSubmitsInMulti) return { kind: "toggle", index: state.optionIndex };
-		// Enter on Next: carry autoAdvanceTab so the host can advance to the next tab in
-		// multi-question mode, OR submit the dialog in single-question mode
-		// (autoAdvanceTab === undefined when !isMulti). Without this, a single multi-select
-		// question would have no way to commit at all.
-		return {
-			kind: "multi_confirm",
-			selected: buildMultiSelected(state, runtime),
-			autoAdvanceTab: computeAutoAdvanceTab(state, runtime),
-		};
-	}
+	if (isConfirm(kb, data)) return confirmationAction(state, runtime);
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 	return { kind: "ignore" };
 }
@@ -270,13 +243,32 @@ function routeSingleSelectTab(
 	state: QuestionnaireState,
 	runtime: QuestionnaireRuntime,
 ): QuestionnaireAction {
-	if (isConfirm(kb, data)) {
-		const answer = buildSingleSelectAnswer(state, runtime);
-		if (!answer) return { kind: "ignore" };
-		return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
-	}
+	if (isConfirm(kb, data)) return confirmationAction(state, runtime);
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 	return { kind: "ignore" };
+}
+
+/** Semantic confirmation shared by keyboard and pointer input; independent of physical keybindings. */
+export function confirmationAction(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
+	if (state.collapsed || state.notesVisible) return { kind: "ignore" };
+	if (runtime.isMulti && state.currentTab === runtime.questions.length) {
+		// Partial submission is intentional; the warning is informational only.
+		return state.submitChoiceIndex === 1 ? { kind: "cancel" } : { kind: "submit" };
+	}
+	if (!state.inputMode && runtime.questions[state.currentTab]?.multiSelect) {
+		const meta = runtime.currentItem ? ROW_INTENT_META[runtime.currentItem.kind] : undefined;
+		if (!meta || meta.activatesInputMode) return { kind: "ignore" };
+		if (!meta.autoSubmitsInMulti) return { kind: "toggle", index: state.optionIndex };
+		return {
+			kind: "multi_confirm",
+			selected: buildMultiSelected(state, runtime),
+			autoAdvanceTab: computeAutoAdvanceTab(state, runtime),
+		};
+	}
+	const answer = buildSingleSelectAnswer(state, runtime);
+	return answer
+		? { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) }
+		: { kind: "ignore" };
 }
 
 export function routeKey(data: string, state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {

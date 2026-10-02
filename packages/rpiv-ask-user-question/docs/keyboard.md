@@ -34,6 +34,33 @@ without leaving the home row.
 `Type something.` (it is an inline text input, so the space character belongs to your
 answer).
 
+## Mouse
+
+In Pi 1.0 or newer, fullscreen mode also accepts pointer input when your terminal
+reports it. Older Pi versions and regular mode keep the keyboard controls above.
+
+| Gesture | What it does |
+| --- | --- |
+| Hover an option | Highlight it and show its preview without answering or changing keyboard focus |
+| Left-click a single-select option | Confirm that option, including clicks on its wrapped description |
+| Left-click a multi-select option | Toggle its checkbox without submitting |
+| Left-click `Type something.` | Focus the inline editor; never submit an empty answer |
+| Left-click `Next` / `Submit` | Commit the multi-select question |
+| Left-click `Submit answers` / `Cancel` | Activate that row on the Submit tab |
+
+The preview column, column gap, borders, and overflow arrows are not option targets.
+Tab switching remains keyboard-only. Hover leaves the custom-answer editor alone
+while you type; notes and external-editor input remain keyboard-only. Keyboard input
+clears the hover highlight and keeps its existing confirmation bindings.
+
+The host recognizes clicks on release, so pressing or dragging cannot confirm an
+option. Repeated clicks in the same double-click gesture cannot answer the next
+question accidentally. Mouse-wheel events and modified clicks remain available to
+Pi; the extension does not enable or disable terminal mouse reporting. In terminals
+that reserve Shift+drag for native text selection, that escape hatch stays available.
+Multiplexers or terminals that do not report unpressed pointer motion can still
+support clicks without hover.
+
 ## The rows the dialog adds
 
 | Row | Label | Appended to |

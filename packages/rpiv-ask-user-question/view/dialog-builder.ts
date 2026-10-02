@@ -5,6 +5,7 @@ import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionData } from "../tool/types.js";
 import type { PreviewPaneProps } from "./components/preview/preview-pane.js";
 import type { TabBar } from "./components/tab-bar.js";
+import { type PointerRow, type PointerTarget, pointerTargetAt } from "./pointer-target.js";
 import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
 import { QuestionTabStrategy, SubmitTabStrategy, type TabContentStrategy } from "./tab-content-strategy.js";
@@ -145,6 +146,7 @@ export interface DialogConfig {
  */
 export class DialogView implements StatefulView<DialogProps> {
 	private liveProps: DialogProps;
+	private lastPointerRows: (PointerRow | undefined)[] = [];
 	private readonly config: DialogConfig;
 	private readonly questionStrategy: TabContentStrategy;
 	private readonly submitStrategy: TabContentStrategy | undefined;
@@ -180,6 +182,10 @@ export class DialogView implements StatefulView<DialogProps> {
 
 	handleInput(_data: string): void {}
 
+	pointerTargetAt(x: number, y: number): PointerTarget | undefined {
+		return pointerTargetAt(this.lastPointerRows, x, y);
+	}
+
 	// Invalidation is driven by `QuestionnairePropsAdapter.invalidate()`, which
 	// owns the full set of renderables (binding registries + extras like
 	// `notesInput`). DialogView has no cached layout of its own.
@@ -192,7 +198,7 @@ export class DialogView implements StatefulView<DialogProps> {
 
 		// Cache heading rows (avoid double construction in render and container build).
 		const headingRowCache = strategy.headingRows(state);
-		const headingCount = headingRowCache.length;
+		const headingCount = headingRowCache.reduce((rows, component) => rows + component.render(width).length, 0);
 
 		// Build container WITHOUT residual spacer — spacer handled below based on overflow.
 		const natural = this.buildContainerFromStrategy(strategy, headingRowCache).render(width);
@@ -202,6 +208,7 @@ export class DialogView implements StatefulView<DialogProps> {
 		const topFixed = 1 + (this.config.isMulti && this.config.tabBar ? 2 : 0) + 1;
 		const bottomFixed = 1 + strategy.footerRowCount;
 		const middleRows = natural.length - topFixed - bottomFixed;
+		const pointerRows = this.buildPointerRows(strategy, headingCount, topFixed, width);
 
 		// Residual spacer: equalizes total height across tabs (only needed when no overflow).
 		const spacerRows = Math.max(
@@ -215,12 +222,17 @@ export class DialogView implements StatefulView<DialogProps> {
 		const termRows = this.config.getTerminalRows();
 
 		if (natural.length + spacerRows <= termRows) {
+			this.lastPointerRows = [...pointerRows, ...Array<undefined>(spacerRows).fill(undefined)];
 			return renderFitsTerminal(natural, spacerRows);
 		}
 
 		// OVERFLOW — apply 3-region partition with scroll-to-focus.
 		const availableMiddle = Math.max(0, termRows - topFixed - bottomFixed);
 		if (availableMiddle === 0) {
+			this.lastPointerRows = [...pointerRows.slice(0, topFixed), ...pointerRows.slice(-bottomFixed)].slice(
+				0,
+				termRows,
+			);
 			return renderChromeOnly(natural, topFixed, bottomFixed, termRows);
 		}
 
@@ -238,6 +250,16 @@ export class DialogView implements StatefulView<DialogProps> {
 			this.config.theme,
 		);
 
+		const middlePointerRows = pointerRows.slice(topFixed + scrollStart, topFixed + scrollStart + availableMiddle);
+		// Overflow arrows replace content, so the hidden underlying option must not be clickable.
+		if (scrollStart > 0) middlePointerRows[0] = undefined;
+		if (scrollStart + availableMiddle < middleRows) middlePointerRows[middlePointerRows.length - 1] = undefined;
+		this.lastPointerRows = [
+			...pointerRows.slice(0, topFixed),
+			...middlePointerRows,
+			...pointerRows.slice(-bottomFixed),
+		].slice(0, termRows);
+
 		const result = [
 			...natural.slice(0, topFixed),
 			...scrollableMiddle,
@@ -246,6 +268,32 @@ export class DialogView implements StatefulView<DialogProps> {
 		// Safety: never exceed terminal rows (covers the availableMiddle === 0 case
 		// where topFixed + bottomFixed > termRows).
 		return result.length > termRows ? result.slice(0, termRows) : result;
+	}
+
+	/** Same chrome/body/footer partition as rendering; the overflow path slices both arrays together. */
+	private buildPointerRows(
+		strategy: TabContentStrategy,
+		headingCount: number,
+		topFixed: number,
+		width: number,
+	): (PointerRow | undefined)[] {
+		const state = this.liveProps.state;
+		const bodyHeight = strategy.bodyComponent(state).render(width).length;
+		const bodyRows = strategy.bodyPointerRows?.(width, state) ?? [];
+		const rows: (PointerRow | undefined)[] = Array<undefined>(topFixed + headingCount).fill(undefined);
+		rows.push(...Array.from({ length: bodyHeight }, (_, i) => bodyRows[i]));
+		const midHeight = strategy.midRows(state).reduce((n, component) => n + component.render(width).length, 0);
+		rows.push(...Array<undefined>(1 + midHeight + 1).fill(undefined));
+		for (const component of strategy.footerRows(state)) {
+			const height = component.render(width).length;
+			if (component === this.config.submitPicker) {
+				rows.push(
+					{ start: 0, end: width, target: { kind: "submit", index: 0 } },
+					{ start: 0, end: width, target: { kind: "submit", index: 1 } },
+				);
+			} else rows.push(...Array<undefined>(height).fill(undefined));
+		}
+		return rows;
 	}
 
 	private buildContainerFromStrategy(strategy: TabContentStrategy, headingRowCache: Component[]): Container {

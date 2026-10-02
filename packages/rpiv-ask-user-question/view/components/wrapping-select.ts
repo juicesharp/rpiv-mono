@@ -55,6 +55,7 @@ export class WrappingSelect implements Component {
 	private totalItemsForNumbering: number;
 
 	private selectedIndex = 0;
+	private hoveredIndex: number | undefined;
 	private focused = true;
 	private inputBuffer = "";
 	private inputCursorOffset: number | undefined = undefined;
@@ -96,6 +97,10 @@ export class WrappingSelect implements Component {
 
 	setSelectedIndex(index: number): void {
 		this.selectedIndex = Math.max(0, Math.min(index, this.items.length - 1));
+	}
+
+	setHoveredIndex(index: number | undefined): void {
+		this.hoveredIndex = index;
 	}
 
 	setFocused(focused: boolean): void {
@@ -150,6 +155,21 @@ export class WrappingSelect implements Component {
 			lines.push(this.theme.scrollInfo(`  (${this.selectedIndex + 1}/${this.items.length})`));
 		}
 		return lines;
+	}
+
+	/** Shares renderItem's wrapped-row math; the scroll indicator is deliberately not a target. */
+	itemRowMap(width: number): (number | undefined)[] {
+		const { startIndex, endIndex } = this.computeVisibleWindow();
+		const numberWidth = String(Math.max(1, this.totalItemsForNumbering)).length;
+		const rows: (number | undefined)[] = [];
+		for (let i = startIndex; i < endIndex; i++) {
+			const item = this.items[i];
+			if (!item) continue;
+			const count = this.computeItemRowCount(item, i, i === this.selectedIndex && this.focused, width, numberWidth);
+			rows.push(...Array<number>(count).fill(i));
+		}
+		if (this.hasItemsOutsideWindow(startIndex, endIndex)) rows.push(undefined);
+		return rows;
 	}
 
 	/**
@@ -217,7 +237,7 @@ export class WrappingSelect implements Component {
 		}
 
 		const { label, isConfirmed } = this.deriveConfirmedState(item, index);
-		const applySelectedStyle = isActive || isConfirmed;
+		const applySelectedStyle = isActive || isConfirmed || index === this.hoveredIndex;
 
 		return [
 			...this.renderLabelBlock(label, rowPrefix, continuationPrefix, contentWidth, applySelectedStyle),

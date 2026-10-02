@@ -1,3 +1,4 @@
+import { optionPointerRows, type PointerRow } from "../pointer-target.js";
 import type { StatefulView } from "../stateful-view.js";
 import { WrappingSelect, type WrappingSelectItem, type WrappingSelectTheme } from "./wrapping-select.js";
 
@@ -21,6 +22,7 @@ export interface OptionListViewConfig {
  */
 export interface OptionListViewProps {
 	selectedIndex: number;
+	hoveredIndex?: number;
 	focused: boolean;
 	inputBuffer: string;
 	inputCursorOffset?: number;
@@ -46,6 +48,7 @@ export class OptionListView implements StatefulView<OptionListViewProps> {
 
 	setProps(props: OptionListViewProps): void {
 		this.select.setSelectedIndex(props.selectedIndex);
+		this.select.setHoveredIndex(props.hoveredIndex);
 		this.select.setFocused(props.focused);
 		this.select.setConfirmedIndex(props.confirmed?.index, props.confirmed?.labelOverride);
 		this.select.setInputBuffer(props.inputBuffer);
@@ -60,6 +63,10 @@ export class OptionListView implements StatefulView<OptionListViewProps> {
 
 	render(width: number): string[] {
 		return this.select.render(width);
+	}
+
+	pointerRows(width: number): (PointerRow | undefined)[] {
+		return optionPointerRows(this.select.itemRowMap(width), width);
 	}
 
 	focusedItemRowRange(width: number): [number, number] {
