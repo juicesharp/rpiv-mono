@@ -15,7 +15,6 @@ const KEYBIND_CLEAR = "tui.editor.deleteToLineStart";
 const KEYBIND_EXTERNAL_EDITOR = "app.editor.external";
 
 const NOTES_ACTIVATE_KEY = "n";
-const SPACE_KEY = " ";
 
 export type QuestionnaireAction =
 	| { kind: "nav"; nextIndex: number; inputValue: string }
@@ -218,7 +217,7 @@ function routeSubmitTab(
 	// it (cancel, tab switch, submit-nav, confirm): a literal `n` byte matches none of them
 	// under default bindings, and a user who deliberately binds one of those actions to
 	// `n` keeps that mapping because the earlier branch still wins (Enter still submits).
-	if (data === NOTES_ACTIVATE_KEY) {
+	if (matchesKey(data, NOTES_ACTIVATE_KEY)) {
 		return { kind: "notes_enter" };
 	}
 	return { kind: "ignore" };
@@ -235,7 +234,7 @@ function routeMultiSelectTab(
 	// Space toggles the focused row's checkbox. Suppressed on rows whose META declares
 	// `blocksMultiToggle` (the Next sentinel) or `activatesInputMode` (the "Type
 	// something." row — it is an inline input, not a checkable option).
-	if (data === SPACE_KEY) {
+	if (matchesKey(data, Key.space)) {
 		if (focusedMeta?.blocksMultiToggle) return { kind: "ignore" };
 		if (focusedMeta?.activatesInputMode) return { kind: "ignore" };
 		return { kind: "toggle", index: state.optionIndex };
@@ -337,7 +336,7 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 	// "Type something.") is irrelevant: the gate sits ABOVE the multi-select
 	// toggle block and the Next sentinel never activates inputMode, so `n` is
 	// neither swallowed earlier nor blocked by `blocksMultiToggle`.
-	if (data === NOTES_ACTIVATE_KEY) {
+	if (matchesKey(data, NOTES_ACTIVATE_KEY)) {
 		return { kind: "notes_enter" };
 	}
 
