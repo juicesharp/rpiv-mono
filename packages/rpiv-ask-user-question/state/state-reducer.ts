@@ -303,6 +303,10 @@ const toggleCollapsedHandler: Handler<"toggle_collapsed"> = (s, _a, _c) => ({
 	state: { ...s, collapsed: !s.collapsed },
 	effects: [{ kind: "set_overlay_hidden", hidden: !s.collapsed }],
 });
+const hoverHandler: Handler<"hover"> = (state, action, _ctx) => ({
+	state: { ...state, hoveredOptionIndex: action.index },
+	effects: [],
+});
 const ignoreHandler: Handler<"ignore"> = (s, _a, _c) => ({ state: s, effects: [] });
 
 /**
@@ -327,6 +331,7 @@ const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
 	submit: submitHandler,
 	submit_nav: submitNavHandler,
 	toggle_collapsed: toggleCollapsedHandler,
+	hover: hoverHandler,
 	ignore: ignoreHandler,
 };
 
@@ -336,6 +341,9 @@ const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
  * `ignore` is also handled outside the reducer by `handleIgnoreInline` in the runtime fast path.
  */
 export function reduce(state: QuestionnaireState, action: QuestionnaireAction, ctx: ApplyContext): ApplyResult {
+	if (action.kind !== "hover" && state.hoveredOptionIndex !== undefined) {
+		state = { ...state, hoveredOptionIndex: undefined };
+	}
 	const handler = HANDLERS[action.kind] as Handler<typeof action.kind>;
 	return handler(state, action as never, ctx);
 }

@@ -21,6 +21,7 @@ import {
 	READY_PROMPT,
 	REVIEW_HEADING,
 } from "./dialog-builder.js";
+import type { PointerRow } from "./pointer-target.js";
 import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
 
@@ -69,6 +70,9 @@ export interface TabContentStrategy {
 
 	/** Body Component placed at the body slot. */
 	bodyComponent(state: DialogState): Component;
+
+	/** Optional pointer map parallel to the body's rendered lines. */
+	bodyPointerRows?(width: number, state: DialogState): (PointerRow | undefined)[];
 
 	/** Natural rendered height of `bodyComponent(state)` at given width. */
 	bodyHeight(width: number, state: DialogState): number;
@@ -121,6 +125,13 @@ export class QuestionTabStrategy implements TabContentStrategy {
 		const mso = this.config.tabsByIndex[state.currentTab]?.multiSelect;
 		if (question?.multiSelect === true && mso) return mso;
 		return this.config.getPreviewPane();
+	}
+
+	bodyPointerRows(width: number, state: DialogState): (PointerRow | undefined)[] {
+		const body = this.bodyComponent(state) as Component & {
+			pointerRows?: (width: number) => (PointerRow | undefined)[];
+		};
+		return body.pointerRows?.(width) ?? [];
 	}
 
 	bodyHeight(width: number, _state: DialogState): number {

@@ -10,6 +10,23 @@ import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import type { QuestionnaireAction } from "./key-router.js";
 import { type Effect, reduce } from "./state-reducer.js";
 
+describe("reduce — hover", () => {
+	it("is a pure highlight transition with no input, answer, or focus effects", () => {
+		const state = makeState();
+		const result = reduce(state, { kind: "hover", index: 2 }, makeCtx());
+		expect(result.state).toEqual({ ...state, hoveredOptionIndex: 2 });
+		expect(result.effects).toEqual([]);
+		expect(state.hoveredOptionIndex).toBeUndefined();
+	});
+
+	it("clears pointer state on non-hover transitions", () => {
+		const state = makeState({ hoveredOptionIndex: 1 });
+		const result = reduce(state, { kind: "nav", nextIndex: 0, inputValue: "" }, makeCtx());
+		expect(result.state.hoveredOptionIndex).toBeUndefined();
+		expect(state.hoveredOptionIndex).toBe(1);
+	});
+});
+
 describe("reduce — nav", () => {
 	it("regular nav keeps the active draft buffer intact", () => {
 		const r = reduce(makeState(), { kind: "nav", nextIndex: 1, inputValue: "" }, makeCtx());

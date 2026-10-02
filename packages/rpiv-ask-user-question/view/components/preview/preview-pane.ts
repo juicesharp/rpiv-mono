@@ -1,5 +1,6 @@
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { QuestionData } from "../../../tool/types.js";
+import type { PointerRow } from "../../pointer-target.js";
 import type { StatefulView } from "../../stateful-view.js";
 import type { OptionListView } from "../option-list-view.js";
 import type { PreviewBlockRenderer } from "./preview-block-renderer.js";
@@ -143,6 +144,17 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 				this.props.notesVisible,
 			),
 		];
+	}
+
+	/** Only the option column is interactive; preview text and the column gap are not. */
+	pointerRows(width: number): (PointerRow | undefined)[] {
+		if (this.question.multiSelect === true || !this.previewBlock.hasAnyPreview() || this.props.inputMode) {
+			return this.optionListView.pointerRows(width);
+		}
+		const mode = decideLayout(this.getTerminalWidth(), width);
+		const optionsWidth = mode === "side-by-side" ? columnWidths(width, this.getAdaptiveLeft(width)).leftWidth : width;
+		const rows = this.optionListView.pointerRows(optionsWidth);
+		return [...rows, ...Array<undefined>(Math.max(0, this.render(width).length - rows.length)).fill(undefined)];
 	}
 
 	focusedItemRowRange(width: number): [number, number] {

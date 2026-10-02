@@ -44,6 +44,7 @@ export const selectMultiSelectProps: PerTabSelector<MultiSelectViewProps> = (sta
 	const nextActive = focused && state.optionIndex === question.options.length + 1;
 	return {
 		rows,
+		...(focused && state.hoveredOptionIndex !== undefined ? { hoveredIndex: state.hoveredOptionIndex } : {}),
 		other: {
 			active: otherActive,
 			inputMode: state.inputMode,
@@ -61,6 +62,7 @@ export const selectOptionListProps: PerTabSelector<OptionListViewProps> = (state
 	const confirmed = selectConfirmedIndicator(ctx.questions, state.currentTab, state.answers, items);
 	return {
 		selectedIndex: state.optionIndex,
+		...(focused && state.hoveredOptionIndex !== undefined ? { hoveredIndex: state.hoveredOptionIndex } : {}),
 		focused,
 		inputBuffer: ctx.inputBuffer,
 		inputCursorOffset: ctx.inputCursorOffset,
@@ -80,7 +82,7 @@ export const selectSubmitPickerProps: GlobalSelector<SubmitPickerProps> = (state
 
 export const selectPreviewPaneProps: PerTabSelector<PreviewPaneProps> = (state, ctx) => ({
 	notesVisible: state.notesVisible,
-	selectedIndex: state.optionIndex,
+	selectedIndex: state.hoveredOptionIndex ?? state.optionIndex,
 	focused: ctx.activeView === "options",
 	inputMode: state.inputMode,
 });

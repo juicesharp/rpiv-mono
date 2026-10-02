@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Fullscreen pointer input on Pi 1.0+: hover highlights options and updates previews without moving keyboard focus; left-click confirms a single-select option, toggles a multi-select checkbox, focuses custom text without submitting it, or activates Next/Submit and the Submit-tab picker. Hit targets follow wrapped rows, preview columns, resize, and overflow clipping. Keyboard-only hosts keep their existing controls; mouse reporting and click/drag recognition stay owned by Pi (#138).
+
 ## [2.12.0] - 2026-09-30
 
 ### Fixed
