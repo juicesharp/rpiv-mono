@@ -52,12 +52,13 @@ Optional. Settings live in `~/.config/rpiv-ask-user-question/config.json`; the f
 | Setting | What it does | Default |
 | --- | --- | --- |
 | `collapseKey` | Key that collapses and expands the dialog. Accepts Pi keybinding ids such as `alt+o`; `"off"` disables the shortcut. | `"ctrl+]"` |
+| `maxQuestions` `maxOptions` `maxHeaderLength` `maxLabelLength` | Capacity limits: questions per invocation, options per question, question-header and option-label lengths. Integers, validated per key with independent fallback to the default. | `4` `4` `16` `60` |
 | `guidance.description` | Full replacement for the tool description the model sees. A non-empty string replaces the built-in text entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line description of the tool in the system prompt — tune how eagerly the model asks. | built-in snippet |
 | `guidance.promptGuidelines` | Usage guidelines given to the model, as a list of strings. | 4 built-in guidelines |
 
 ```json
-{ "collapseKey": "alt+o" }
+{ "collapseKey": "alt+o", "maxQuestions": 8 }
 ```
 
 Malformed JSON falls back to the defaults with a warning; an individual unusable value is silently dropped back to its default. Never an error.
@@ -66,7 +67,7 @@ Malformed JSON falls back to the defaults with a warning; an individual unusable
 
 - [Tool schema](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/tool-schema.md) — parameters, limits, reserved labels, validation errors, the result envelope, and the `rpiv:ask-user:prompt` event.
 - [Keyboard and layout](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/keyboard.md) — every key, the rows the dialog appends, notes, collapse mode, and how previews and overflow adapt to terminal size.
-- [Configuration](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/configuration.md) — file lookup and `XDG_CONFIG_HOME`, the `collapseKey` grammar, the `guidance.*` prompt overrides, and how invalid values are handled.
+- [Configuration](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/configuration.md) — file lookup and `XDG_CONFIG_HOME`, the `collapseKey` grammar, the `max*` capacity limits, the `guidance.*` prompt overrides, and how invalid values are handled.
 - [Hosts and runtime behavior](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/hosts.md) — terminal vs RPC vs non-interactive, what degrades in each, and the load-failure envelopes.
 - [Localization](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-ask-user-question/docs/localization.md) — the nine shipped languages, how the locale is chosen, and how to add one.
 

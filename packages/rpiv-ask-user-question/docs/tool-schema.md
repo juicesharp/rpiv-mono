@@ -39,6 +39,11 @@ ask_user_question({
 The two `maxLength` limits are checked by the parameter schema before `execute` runs;
 the runtime validator does not re-check them.
 
+All four numeric caps are configurable via `maxQuestions`, `maxOptions`, `maxHeaderLength`,
+and `maxLabelLength` in the config file — see
+[configuration.md](./configuration.md#maxquestions-maxoptions-maxheaderlength-maxlabellength).
+The table above shows the shipped defaults.
+
 ### Reserved option labels
 
 Authoring any of `"Other"`, `"Type something."`, or `"Next"` as an option label is
@@ -55,7 +60,7 @@ code. The `content[0].text` string is written for the model, not for a log.
 | `error` | Cause |
 | --- | --- |
 | `no_questions` | `questions` was empty |
-| `too_many_questions` | more than 4 questions in one call |
+| `too_many_questions` | more than the configured `maxQuestions` in one call (default 4) |
 | `duplicate_question` | two questions with identical text |
 | `empty_options` | a question carried fewer than 2 options |
 | `reserved_label` | an option used a reserved label |

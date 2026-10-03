@@ -1,5 +1,6 @@
 import type { GuidanceFields } from "@juicesharp/rpiv-config";
 import { loadJsonConfigWithLegacyFallback, validateGuidanceFields } from "@juicesharp/rpiv-config";
+import { DEFAULT_LIMITS, type QuestionnaireLimits } from "./tool/types.js";
 
 /** Key spec for the overlay collapse/expand shortcut, e.g. `"ctrl+]"` or `"alt+o"`. */
 export type CollapseKeySpec = string;
@@ -9,6 +10,14 @@ export const COLLAPSE_KEY_OFF: CollapseKeySpec = "off";
 
 export interface AskUserQuestionConfig {
 	guidance?: GuidanceFields;
+	/** Per-invocation question cap. Integer, 1-64. Default: `MAX_QUESTIONS` (4). */
+	maxQuestions?: number;
+	/** Per-question option cap. Integer, 2-64. Default: `MAX_OPTIONS` (4). */
+	maxOptions?: number;
+	/** Question header chip length cap. Integer, 1-256. Default: `MAX_HEADER_LENGTH` (16). */
+	maxHeaderLength?: number;
+	/** Option label length cap. Integer, 1-1024. Default: `MAX_LABEL_LENGTH` (60). */
+	maxLabelLength?: number;
 	/**
 	 * Key spec for the collapse/expand shortcut, in the same format as pi-coding-agent
 	 * keybinding ids (`modifier+key`, e.g. `ctrl+]`, `alt+o`, `ctrl+shift+h`). Defaults
@@ -95,6 +104,39 @@ export function formatKeySpecForDisplay(spec: CollapseKeySpec): string {
 
 export function loadConfig(): AskUserQuestionConfig {
 	return loadJsonConfigWithLegacyFallback<AskUserQuestionConfig>("rpiv-ask-user-question");
+}
+
+/**
+ * Hard ceiling per key so a typo like `1e9` cannot wedge the TUI. `maxOptions`
+ * floors at `MIN_OPTIONS` (2) because fewer options cannot express a choice.
+ */
+const LIMIT_BOUNDS = {
+	maxQuestions: { min: 1, max: 64 },
+	maxOptions: { min: 2, max: 64 },
+	maxHeaderLength: { min: 1, max: 256 },
+	maxLabelLength: { min: 1, max: 1024 },
+} as const;
+
+function resolveLimit(value: unknown, key: keyof typeof LIMIT_BOUNDS, fallback: number): number {
+	if (typeof value !== "number" || !Number.isInteger(value)) return fallback;
+	const { min, max } = LIMIT_BOUNDS[key];
+	return value >= min && value <= max ? value : fallback;
+}
+
+/**
+ * Resolve the questionnaire limits from config. Same fallback contract as
+ * `resolveCollapseKey`: missing, mistyped, or out-of-range keys each drop back
+ * to their own default, so a single bad key never poisons the others.
+ */
+export function resolveLimits(
+	config: Pick<AskUserQuestionConfig, "maxQuestions" | "maxOptions" | "maxHeaderLength" | "maxLabelLength">,
+): QuestionnaireLimits {
+	return {
+		maxQuestions: resolveLimit(config.maxQuestions, "maxQuestions", DEFAULT_LIMITS.maxQuestions),
+		maxOptions: resolveLimit(config.maxOptions, "maxOptions", DEFAULT_LIMITS.maxOptions),
+		maxHeaderLength: resolveLimit(config.maxHeaderLength, "maxHeaderLength", DEFAULT_LIMITS.maxHeaderLength),
+		maxLabelLength: resolveLimit(config.maxLabelLength, "maxLabelLength", DEFAULT_LIMITS.maxLabelLength),
+	};
 }
 
 export { validateGuidanceFields };

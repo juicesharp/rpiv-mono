@@ -8,7 +8,50 @@ import {
 	formatKeySpecForDisplay,
 	loadConfig,
 	resolveCollapseKey,
+	resolveLimits,
 } from "./config.js";
+
+describe("resolveLimits", () => {
+	it("returns the shipped defaults for an empty config", () => {
+		expect(resolveLimits({})).toEqual({
+			maxQuestions: 4,
+			maxOptions: 4,
+			maxHeaderLength: 16,
+			maxLabelLength: 60,
+		});
+	});
+
+	it("resolves valid overrides per key", () => {
+		expect(resolveLimits({ maxQuestions: 8, maxOptions: 6, maxHeaderLength: 24, maxLabelLength: 120 })).toEqual({
+			maxQuestions: 8,
+			maxOptions: 6,
+			maxHeaderLength: 24,
+			maxLabelLength: 120,
+		});
+	});
+
+	it("falls back per key for mistyped values", () => {
+		const mistyped = {
+			maxQuestions: 7.5,
+			maxOptions: "six",
+			maxHeaderLength: Number.NaN,
+		} as unknown as Parameters<typeof resolveLimits>[0];
+		expect(resolveLimits(mistyped)).toEqual({
+			maxQuestions: 4,
+			maxOptions: 4,
+			maxHeaderLength: 16,
+			maxLabelLength: 60,
+		});
+	});
+
+	it("falls back per key for out-of-range values", () => {
+		expect(resolveLimits({ maxQuestions: 0 }).maxQuestions).toBe(4);
+		expect(resolveLimits({ maxQuestions: 65 }).maxQuestions).toBe(4);
+		expect(resolveLimits({ maxOptions: 1 }).maxOptions).toBe(4);
+		expect(resolveLimits({ maxHeaderLength: 257 }).maxHeaderLength).toBe(16);
+		expect(resolveLimits({ maxLabelLength: 0 }).maxLabelLength).toBe(60);
+	});
+});
 
 describe("formatKeySpecForDisplay", () => {
 	it("capitalizes each +-part of a resolved spec", () => {

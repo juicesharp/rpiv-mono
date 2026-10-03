@@ -18,6 +18,7 @@ A complete example:
 ```json
 {
   "collapseKey": "alt+o",
+  "maxQuestions": 8,
   "guidance": {
     "description": "Ask the user structured questions whenever requirements are ambiguous.",
     "promptSnippet": "Ask me before guessing on anything ambiguous",
@@ -59,6 +60,10 @@ type are likewise dropped back to their default without a warning.
 | Setting | What it does | Default |
 | --- | --- | --- |
 | `collapseKey` | Key that collapses and expands the dialog overlay. | `"ctrl+]"` |
+| `maxQuestions` | Questions allowed per invocation. Integer, 1–64. | `4` |
+| `maxOptions` | Options allowed per question. Integer, 2–64. | `4` |
+| `maxHeaderLength` | Question header length cap. Integer, 1–256. | `16` |
+| `maxLabelLength` | Option label length cap. Integer, 1–1024. | `60` |
 | `guidance.description` | Full text of the tool description the model sees. Replaces the built-in default entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line snippet describing the tool in the system prompt. | built-in snippet |
 | `guidance.promptGuidelines` | List of usage guidelines given to the model. | 4 built-in guidelines |
@@ -89,6 +94,21 @@ The footer hint inside the dialog names whatever key you configure (`Alt+O to co
 for `"alt+o"`), as do the collapsed one-line footer and the one-shot notification shown
 when the dialog is first hidden. With `"off"` the collapse hint is dropped from the
 footer entirely, since no shortcut can fire.
+
+### `maxQuestions`, `maxOptions`, `maxHeaderLength`, `maxLabelLength`
+
+The shipped caps — at most 4 questions per invocation, 4 options per question, 16-character
+question headers, 60-character option labels — are each configurable. Values must be integers
+in range: `maxQuestions` 1–64, `maxOptions` 2–64 (fewer than two options cannot express a
+choice), `maxHeaderLength` 1–256, `maxLabelLength` 1–1024.
+
+Like `collapseKey`, each key is validated independently: a missing, mistyped, or out-of-range
+key falls back to its own default without poisoning the others.
+
+The limits resolve once, when the extension registers the tool. The parameter schema, the
+runtime validator, and the default prompt text are all built from the same resolved values,
+so the model can never see a schema looser than the validator enforces. Changes take effect
+on the next Pi restart.
 
 ### `guidance.description`, `guidance.promptSnippet` and `guidance.promptGuidelines`
 
