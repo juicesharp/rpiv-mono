@@ -126,7 +126,15 @@ export async function executeAdvisor(
 	);
 	const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(convertToLlm(sessionMessages)));
 	const inventoryMessage = getInventoryMessage(pi.getAllTools());
-	const messages: Message[] = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
+	const advisorMessages = branchMessages.map((message) => {
+		if ((message.role as string) !== "system") return message;
+		const { toolsAdded, toolsRemoved, ...rest } = message as Message & {
+			toolsAdded?: unknown;
+			toolsRemoved?: unknown;
+		};
+		return rest;
+	});
+	const messages: Message[] = inventoryMessage ? [inventoryMessage, ...advisorMessages] : advisorMessages;
 
 	onUpdate?.({
 		content: [{ type: "text", text: msgConsulting(advisorLabel, effort) }],
@@ -146,9 +154,7 @@ export async function executeAdvisor(
 			: { apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort };
 
 		// Single dispatch point — both attempts reuse the SAME `messages` and
-		// `requestOptions`, so the retry cannot diverge from attempt 1. `tools: []`
-		// reaffirms the "never calls tools" contract even when `messages` contains
-		// prior toolCall/toolResult blocks (btw.ts:235).
+		// `requestOptions`, so the retry cannot diverge from attempt 1.
 		const callAdvisor = (): Promise<AssistantMessage> =>
 			completeSimple(advisor, { systemPrompt: ADVISOR_SYSTEM_PROMPT, messages, tools: [] }, requestOptions);
 
