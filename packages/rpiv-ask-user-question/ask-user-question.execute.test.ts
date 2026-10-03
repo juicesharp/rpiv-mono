@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
 import { BEL, registerAskUserQuestionTool } from "./ask-user-question.js";
@@ -14,6 +16,13 @@ function register() {
 function ctxWithCustom(result: QuestionnaireResult | null) {
 	const custom = vi.fn(async () => result) as unknown as CustomFn;
 	return createMockCtx({ hasUI: true, ui: { custom } as never });
+}
+
+const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-ask-user-question", "config.json");
+
+function writeConfig(data: Record<string, unknown>): void {
+	mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+	writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2), "utf-8");
 }
 
 const BASE_PARAMS = {
@@ -61,6 +70,28 @@ describe("ask_user_question.execute — early returns", () => {
 		);
 		expect(r?.details).toMatchObject({ answers: [], cancelled: true, error: "no_questions" });
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("At least one question") });
+	});
+
+	it("accepts more than the default cap when config lifts maxQuestions", async () => {
+		writeConfig({ maxQuestions: 8 });
+		const tool = register();
+		const ctx = ctxWithCustom({ answers: [], cancelled: true });
+		const six = Array.from({ length: MAX_QUESTIONS + 2 }, (_, i) => ({
+			question: `Q${i}?`,
+			options: [
+				{ label: "A", description: "d" },
+				{ label: "B", description: "d" },
+			],
+		}));
+		const r = await tool.execute?.(
+			"tc",
+			{ questions: six } as never,
+			undefined as never,
+			undefined as never,
+			ctx as never,
+		);
+		expect(r?.details).toMatchObject({ cancelled: true });
+		expect(r?.details).not.toHaveProperty("error");
 	});
 
 	it("returns error: too_many_questions when questions exceed MAX_QUESTIONS", async () => {

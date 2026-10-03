@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Configurable questionnaire limits.** `maxQuestions`, `maxOptions`, `maxHeaderLength`, and `maxLabelLength` keys in `~/.config/rpiv-ask-user-question/config.json` override the shipped caps (4 / 4 / 16 / 60). Each integer key is range-validated and falls back to its own default independently, mirroring the `collapseKey` contract. The resolved limits drive the parameter schema, the runtime validator, and the default prompt text from one source of truth, so the model can never see a schema looser than the validator enforces. Defaults are unchanged — existing installs keep their exact behavior.
+
 ## [2.12.0] - 2026-09-30
 
 ### Fixed

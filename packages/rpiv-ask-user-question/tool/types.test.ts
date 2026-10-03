@@ -1,6 +1,8 @@
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import {
+	buildQuestionParamsSchema,
+	DEFAULT_LIMITS,
 	isQuestionnaireResult,
 	MAX_HEADER_LENGTH,
 	MAX_LABEL_LENGTH,
@@ -26,6 +28,53 @@ function makeQuestion(override: Partial<QuestionData> = {}): QuestionData {
 		multiSelect: override.multiSelect,
 	};
 }
+
+describe("buildQuestionParamsSchema — custom limits", () => {
+	const five = Array.from({ length: 5 }, () => makeQuestion());
+	const nine = Array.from({ length: 9 }, () => makeQuestion());
+
+	it("lifts the question cap above the shipped default", () => {
+		const schema = buildQuestionParamsSchema({ ...DEFAULT_LIMITS, maxQuestions: 8 });
+		expect(Value.Check(QuestionParamsSchema, { questions: five })).toBe(false);
+		expect(Value.Check(schema, { questions: five })).toBe(true);
+	});
+
+	it("still enforces the custom cap", () => {
+		const schema = buildQuestionParamsSchema({ ...DEFAULT_LIMITS, maxQuestions: 8 });
+		expect(Value.Check(schema, { questions: nine })).toBe(false);
+	});
+
+	it("lifts option, header, and label caps", () => {
+		const schema = buildQuestionParamsSchema({
+			maxQuestions: 4,
+			maxOptions: 6,
+			maxHeaderLength: 20,
+			maxLabelLength: 80,
+		});
+		const wide = makeQuestion({
+			header: "x".repeat(20),
+			options: [
+				{ label: "l".repeat(80), description: "d" },
+				{ label: "B", description: "d" },
+				{ label: "C", description: "d" },
+				{ label: "D", description: "d" },
+				{ label: "E", description: "d" },
+				{ label: "F", description: "d" },
+			],
+		});
+		expect(Value.Check(schema, { questions: [wide] })).toBe(true);
+	});
+
+	it("keeps the module-level default schema at the shipped constants", () => {
+		expect(Value.Check(QuestionParamsSchema, { questions: five })).toBe(false);
+		expect(JSON.stringify(QuestionParamsSchema)).toContain("1-4 questions");
+	});
+
+	it("bakes custom limits into model-facing descriptions", () => {
+		const schema = buildQuestionParamsSchema({ ...DEFAULT_LIMITS, maxQuestions: 8 });
+		expect(JSON.stringify(schema)).toContain("1-8 questions");
+	});
+});
 
 describe("QuestionsSchema — array constraints", () => {
 	it("accepts a single question", () => {

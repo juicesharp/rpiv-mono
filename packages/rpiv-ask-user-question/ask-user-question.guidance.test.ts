@@ -22,6 +22,29 @@ beforeEach(() => {
 	// test/setup.ts rmSyncs CONFIG_PATH in shared beforeEach
 });
 
+describe("registerAskUserQuestionTool — configurable limits — prompt text", () => {
+	it("reflects configured limits in the default prompt text", () => {
+		writeConfig({ maxQuestions: 8, maxOptions: 6 });
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get(TOOL_NAME)!;
+		expect(tool.promptSnippet).toBe(
+			"Ask the user up to 8 structured questions (2-6 options each) when requirements are ambiguous",
+		);
+		const guidelines = tool.promptGuidelines as string[];
+		expect(guidelines[0]).toContain("you can ask up to 8 questions per invocation");
+		expect(guidelines[1]).toContain("MUST have 2-6 options");
+	});
+
+	it("falls back to shipped limits when the limit keys are invalid", () => {
+		writeConfig({ maxQuestions: "eight" });
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get(TOOL_NAME)!;
+		expect(tool.promptSnippet).toBe(DEFAULT_PROMPT_SNIPPET);
+	});
+});
+
 describe("DEFAULT_PROMPT_GUIDELINES — custom-answer contract", () => {
 	it("describes the Type something row as appended to every question without stale fallback terms", () => {
 		const joined = DEFAULT_PROMPT_GUIDELINES.join("\n");

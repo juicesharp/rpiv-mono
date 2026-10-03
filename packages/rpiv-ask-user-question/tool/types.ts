@@ -8,6 +8,26 @@ export const MAX_HEADER_LENGTH = 16;
 export const MAX_LABEL_LENGTH = 60;
 
 /**
+ * Tunable questionnaire limits. Defaults mirror the MAX_* constants above;
+ * users override each key via the config file (see `resolveLimits` in
+ * config.ts). `MIN_OPTIONS` stays fixed: fewer than two options cannot
+ * express a choice, so it is not configurable.
+ */
+export interface QuestionnaireLimits {
+	maxQuestions: number;
+	maxOptions: number;
+	maxHeaderLength: number;
+	maxLabelLength: number;
+}
+
+export const DEFAULT_LIMITS: QuestionnaireLimits = {
+	maxQuestions: MAX_QUESTIONS,
+	maxOptions: MAX_OPTIONS,
+	maxHeaderLength: MAX_HEADER_LENGTH,
+	maxLabelLength: MAX_LABEL_LENGTH,
+};
+
+/**
  * User-facing labels for the three runtime sentinel rows, keyed by their
  * `WrappingSelectItem.kind` discriminator. Sourced from
  * `ROW_INTENT_META` via `LABELS_BY_KIND` (`row-intent.ts`) — single source of
@@ -37,56 +57,71 @@ export type SentinelLabel = (typeof SENTINEL_LABELS)[SentinelKind];
 export const RESERVED_LABELS = ["Other", ROW_INTENT_META.other.label, ROW_INTENT_META.next.label] as const;
 export type ReservedLabel = (typeof RESERVED_LABELS)[number];
 
-export const OptionSchema = Type.Object({
-	label: Type.String({
-		maxLength: MAX_LABEL_LENGTH,
-		description: `MAX ${MAX_LABEL_LENGTH} CHARACTERS — hard limit, requests over the limit are rejected. The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.`,
-	}),
-	description: Type.String({
-		description:
-			"Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.",
-	}),
-	preview: Type.Optional(
-		Type.String({
-			description:
-				"Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format.",
+function buildOptionSchema(limits: QuestionnaireLimits) {
+	return Type.Object({
+		label: Type.String({
+			maxLength: limits.maxLabelLength,
+			description: `MAX ${limits.maxLabelLength} CHARACTERS — hard limit, requests over the limit are rejected. The display text for this option that the user will see and select. Should be concise (1-5 words) and clearly describe the choice.`,
 		}),
-	),
-});
-
-export const QuestionSchema = Type.Object({
-	question: Type.String({
-		description:
-			'The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"',
-	}),
-	header: Type.String({
-		maxLength: MAX_HEADER_LENGTH,
-		description: `MAX ${MAX_HEADER_LENGTH} CHARACTERS — hard limit, requests over the limit are rejected. Very short chip/tag shown next to the question. Examples: "Auth method", "Library", "Approach".`,
-	}),
-	options: Type.Array(OptionSchema, {
-		minItems: MIN_OPTIONS,
-		maxItems: MAX_OPTIONS,
-		description:
-			"The available choices for this question. Must have 2-4 options. Each option should be a distinct, mutually exclusive choice (unless multiSelect is enabled). The 'Type something.' row is appended automatically — do NOT author it.",
-	}),
-	multiSelect: Type.Optional(
-		Type.Boolean({
-			default: false,
+		description: Type.String({
 			description:
-				"Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.",
+				"Explanation of what this option means or what will happen if chosen. Useful for providing context about trade-offs or implications.",
 		}),
-	),
-});
+		preview: Type.Optional(
+			Type.String({
+				description:
+					"Optional preview content rendered when this option is focused. Use for mockups, code snippets, or visual comparisons that help users compare options. See the tool description for the expected content format.",
+			}),
+		),
+	});
+}
 
-export const QuestionsSchema = Type.Array(QuestionSchema, {
-	minItems: 1,
-	maxItems: MAX_QUESTIONS,
-	description: "Questions to ask the user (1-4 questions)",
-});
+export const OptionSchema = buildOptionSchema(DEFAULT_LIMITS);
 
-export const QuestionParamsSchema = Type.Object({
-	questions: QuestionsSchema,
-});
+function buildQuestionSchema(limits: QuestionnaireLimits) {
+	return Type.Object({
+		question: Type.String({
+			description:
+				'The complete question to ask the user. Should be clear, specific, and end with a question mark. Example: "Which library should we use for date formatting?" If multiSelect is true, phrase it accordingly, e.g. "Which features do you want to enable?"',
+		}),
+		header: Type.String({
+			maxLength: limits.maxHeaderLength,
+			description: `MAX ${limits.maxHeaderLength} CHARACTERS — hard limit, requests over the limit are rejected. Very short chip/tag shown next to the question. Examples: "Auth method", "Library", "Approach".`,
+		}),
+		options: Type.Array(buildOptionSchema(limits), {
+			minItems: MIN_OPTIONS,
+			maxItems: limits.maxOptions,
+			description: `The available choices for this question. Must have ${MIN_OPTIONS}-${limits.maxOptions} options. Each option should be a distinct, mutually exclusive choice (unless multiSelect is enabled). The 'Type something.' row is appended automatically — do NOT author it.`,
+		}),
+		multiSelect: Type.Optional(
+			Type.Boolean({
+				default: false,
+				description:
+					"Set to true to allow the user to select multiple options instead of just one. Use when choices are not mutually exclusive.",
+			}),
+		),
+	});
+}
+
+export const QuestionSchema = buildQuestionSchema(DEFAULT_LIMITS);
+
+function buildQuestionsSchema(limits: QuestionnaireLimits) {
+	return Type.Array(buildQuestionSchema(limits), {
+		minItems: 1,
+		maxItems: limits.maxQuestions,
+		description: `Questions to ask the user (1-${limits.maxQuestions} questions)`,
+	});
+}
+
+function buildQuestionParamsSchema(limits: QuestionnaireLimits) {
+	return Type.Object({
+		questions: buildQuestionsSchema(limits),
+	});
+}
+
+export const QuestionsSchema = buildQuestionsSchema(DEFAULT_LIMITS);
+export const QuestionParamsSchema = buildQuestionParamsSchema(DEFAULT_LIMITS);
+export { buildOptionSchema, buildQuestionParamsSchema, buildQuestionSchema };
 
 export type OptionData = Static<typeof OptionSchema>;
 export type QuestionData = Static<typeof QuestionSchema>;
