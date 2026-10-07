@@ -58,10 +58,25 @@ type are likewise dropped back to their default without a warning.
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| `collapseKey` | Key that collapses and expands the dialog overlay. | `"ctrl+]"` |
+| `renderMode` | `"overlay"` covers the transcript; `"inline"` replaces Pi's editor area. | `"overlay"` |
+| `collapseKey` | Key that collapses and expands the dialog. | `"ctrl+]"` |
 | `guidance.description` | Full text of the tool description the model sees. Replaces the built-in default entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line snippet describing the tool in the system prompt. | built-in snippet |
 | `guidance.promptGuidelines` | List of usage guidelines given to the model. | 4 built-in guidelines |
+
+### `renderMode`
+
+Set `"inline"` to render the questionnaire in Pi's editor area instead of above the
+transcript. The transcript remains in the normal layout and scrollback; a tall dialog
+can still push recent lines out of the visible viewport. Collapse shrinks the inline
+dialog to one visible hint row, and the same key expands it again. It does not hide a
+Pi overlay or register a raw terminal listener.
+
+The default is `"overlay"`. Only the exact string `"inline"` changes presentation;
+missing, invalid, and differently cased values retain the overlay. This setting and
+`collapseKey` are read for each questionnaire, so edits apply to the next tool call
+without restarting Pi. RPC hosts continue to use native dialogs regardless of this
+setting.
 
 ### `collapseKey`
 

@@ -127,7 +127,8 @@ export class QuestionnaireSession {
 	}
 
 	/**
-	 * Collapsed render: a single dim row at the bottom of the overlay. pi-tui sizes
+	 * Collapsed render: a single dim row. In inline mode it stays in the editor area.
+	 * For an overlay, pi-tui sizes
 	 * the overlay to `min(lines.length, maxHeight)`, so returning one line shrinks
 	 * the bottom-anchored overlay from full-height to one row and the transcript
 	 * behind it becomes readable (#47). The overlay stays focused and in the

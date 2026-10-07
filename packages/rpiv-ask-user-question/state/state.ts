@@ -25,16 +25,16 @@ export interface QuestionnaireState {
 	/** Canonical mirror of the in-flight notes editor; runtime mirrors after `forward_notes_keystroke`. */
 	notesDraft: string;
 	/**
-	 * Collapsed mode: the questionnaire gets out of the way so the agent transcript behind
-	 * the bottom-anchored overlay becomes readable. Toggled by the configured collapse key
+	 * Collapsed mode: the questionnaire gets out of the way so the agent transcript
+	 * becomes readable. Toggled by the configured collapse key
 	 * from any state; while true, every keystroke except cancel is swallowed (see
 	 * `routeKey`). Two renderings, chosen by host capability:
 	 *
 	 * - Hosts with an `OverlayHandle` AND a raw `onTerminalInput` listener (real pi-tui):
 	 *   the `set_overlay_hidden` effect fully hides the overlay; the raw listener registered
 	 *   in `execute()` reopens it, because pi-tui routes no input to a hidden overlay.
-	 * - Hosts without the raw listener (or without a handle): the overlay stays visible and
-	 *   shrinks to a single hint row. The row keeps focus and input routing, so the same key
+	 * - Inline presentation, or hosts without the raw listener/handle: the dialog stays
+	 *   visible and shrinks to a single hint row. The row keeps focus and input routing, so the same key
 	 *   expands it and Esc cancels, and the expand key never falls through to an underlying
 	 *   overlay (e.g. `/btw`). The session gates `set_overlay_hidden` on the listener's
 	 *   existence (`canReopenWhileHidden`) so a handle-bearing host without raw input can

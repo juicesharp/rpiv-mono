@@ -1,13 +1,15 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { getKeybindings } from "@earendil-works/pi-tui";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerAskUserQuestionTool } from "./ask-user-question.js";
 import type { QuestionnaireSessionComponent } from "./state/questionnaire-session.js";
 import type { QuestionnaireResult } from "./tool/types.js";
 
-const configDir = join(process.env.HOME ?? "", ".config", "rpiv-ask-user-question");
-const configPath = join(configDir, "config.json");
+let root: string;
+let configPath: string;
 const params = {
 	questions: [
 		{
@@ -24,12 +26,19 @@ const theme = {
 };
 
 function configure(renderMode: string): void {
-	mkdirSync(configDir, { recursive: true });
+	mkdirSync(dirname(configPath), { recursive: true });
 	writeFileSync(configPath, JSON.stringify({ renderMode }));
 }
 
+beforeEach(() => {
+	root = mkdtempSync(join(tmpdir(), "rpiv-question-render-"));
+	vi.stubEnv("XDG_CONFIG_HOME", root);
+	configPath = join(root, "rpiv-ask-user-question", "config.json");
+});
+
 afterEach(() => {
-	if (existsSync(configPath)) rmSync(configPath);
+	vi.unstubAllEnvs();
+	rmSync(root, { recursive: true, force: true });
 });
 
 describe("questionnaire presentation", () => {
@@ -54,7 +63,7 @@ describe("questionnaire presentation", () => {
 				const component = factory(
 					{ requestRender() {}, terminal: { columns: 100, rows: 24 } },
 					theme,
-					undefined,
+					getKeybindings(),
 					(answer) => {
 						result = answer;
 					},

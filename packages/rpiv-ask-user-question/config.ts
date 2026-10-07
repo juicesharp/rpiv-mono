@@ -9,6 +9,8 @@ export const COLLAPSE_KEY_OFF: CollapseKeySpec = "off";
 
 export interface AskUserQuestionConfig {
 	guidance?: GuidanceFields;
+	/** "overlay" covers the transcript; "inline" replaces Pi's editor area. Defaults to "overlay". */
+	renderMode?: "overlay" | "inline";
 	/**
 	 * Key spec for the collapse/expand shortcut, in the same format as pi-coding-agent
 	 * keybinding ids (`modifier+key`, e.g. `ctrl+]`, `alt+o`, `ctrl+shift+h`). Defaults

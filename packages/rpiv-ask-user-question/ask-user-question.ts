@@ -352,7 +352,9 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			// with non-US layouts (e.g. Latin American, where `]` is shifted) can override
 			// via the `collapseKey` config field. `resolveCollapseKey` also accepts the
 			// sentinel value `"off"` to disable the shortcut entirely.
-			const collapseKey = resolveCollapseKey(loadConfig());
+			const config = loadConfig();
+			const collapseKey = resolveCollapseKey(config);
+			const overlay = config.renderMode !== "inline";
 
 			// Capture the overlay handle so the session can call `setHidden()` when the
 			// user toggles collapse, and register a raw terminal input listener for the
@@ -360,7 +362,10 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			// not route input to a hidden overlay's `component.handleInput`).
 			const sessionRef: SessionRef = { current: null };
 			const overlayHandleRef: OverlayHandleRef = { current: undefined };
-			const removeOverlayInputListener = registerCollapseKeyListener(ctx, collapseKey, sessionRef, overlayHandleRef);
+			const removeOverlayInputListener = overlay
+				? registerCollapseKeyListener(ctx, collapseKey, sessionRef, overlayHandleRef)
+				: undefined;
+			// Inline presentation keeps collapse visible and needs no raw overlay listener.
 			// Hiding the overlay is only reversible through the raw listener above, so
 			// the session may emit `setHidden` only when it was actually registered;
 			// otherwise collapse falls back to the visible one-line row.
@@ -379,19 +384,21 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 						sessionRef,
 						Session: QuestionnaireSession,
 					}),
-					{
-						overlay: true,
-						overlayOptions: {
-							anchor: "bottom-center",
-							width: "100%",
-							maxHeight: "100%",
-							margin: { left: 0, right: 0, bottom: 0 },
-						},
-						onHandle: (handle) => {
-							overlayHandleRef.current = handle;
-							sessionRef.current?.setOverlayHandle(handle);
-						},
-					},
+					overlay
+						? {
+								overlay: true,
+								overlayOptions: {
+									anchor: "bottom-center",
+									width: "100%",
+									maxHeight: "100%",
+									margin: { left: 0, right: 0, bottom: 0 },
+								},
+								onHandle: (handle) => {
+									overlayHandleRef.current = handle;
+									sessionRef.current?.setOverlayHandle(handle);
+								},
+							}
+						: { overlay: false },
 				);
 
 				if (result === undefined) {

@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Set `renderMode` to `"inline"` to keep the transcript in Pi's normal layout while the questionnaire replaces the editor area. The default overlay presentation is unchanged.
+
 ## [2.12.0] - 2026-09-30
 
 ### Fixed
