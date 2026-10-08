@@ -26,8 +26,8 @@ Each call assembles the request in this order:
    replay of history. Compaction summaries and branch summaries are forwarded as
    the model actually sees them, so a compacted session sends the summary rather
    than the pre-compaction detail.
-3. **Tail massaging** — the in-flight `advisor()` tool call is stripped from the
-   tail, and a user-role message is guaranteed at the end (falling back to
+3. **Context fitting** — if the resolved branch exceeds the selected advisor model's input budget, large tool results are capped and older messages are omitted with a marker. Tool results covered by `pi-context-prune` summaries are dropped while those summaries remain. Compaction, branch, and prune summaries remain verbatim, and tool-call/result pairing is repaired after fitting.
+4. **Tail massaging** — the in-flight `advisor()` tool call is stripped from the tail, and a user-role message is guaranteed at the end (falling back to
    `Please advise on the executor's situation above.`) so providers that reject
    non-user tails accept the payload.
 
@@ -50,6 +50,13 @@ While the call is in flight the executor streams
     advisorModel?: string,   // "<provider>:<modelId>" — colon-joined
     effort?: ThinkingLevel,  // the reasoning level actually sent
     usage?: Usage,           // token usage from the side-call
+    context?: {              // fitted input telemetry
+      enabled: boolean;
+      dropped: number;
+      estimatedTokens: number;
+      maxInputTokens: number;
+      pruneCoveredToolResults: number;
+    },
     stopReason?: StopReason, // pi-ai stop reason
     errorMessage?: string,   // populated on the no-model/auth/abort/error/empty paths
   }

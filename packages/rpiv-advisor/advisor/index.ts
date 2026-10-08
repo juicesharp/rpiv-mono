@@ -15,6 +15,7 @@
  *   policy     — disabledForModels blocklist + blocked predicates
  *   inventory  — globalThis tool-inventory cache + serializer
  *   context    — branch-message massaging
+ *   budget     — token estimation, prune-aware fitting, and tool-pair repair
  *   prompt     — system-prompt loader
  *   execute    — the advisor side-call
  *   register   — advisor tool registration
