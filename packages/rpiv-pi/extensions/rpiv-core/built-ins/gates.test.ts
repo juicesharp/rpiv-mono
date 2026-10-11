@@ -11,6 +11,7 @@ import { fs as fsHandle, type Output, type RunView } from "@juicesharp/rpiv-work
 import { describe, expect, it } from "vitest";
 import {
 	confirmDue,
+	evidenceCitesFileLine,
 	PLAN_DIMENSIONS,
 	panelProgress,
 	progressFromRoundCounts,
@@ -18,6 +19,7 @@ import {
 	type VerdictRecord,
 	verdictBlocks,
 } from "./gates.js";
+import { FILE_LINE_CITATION_RE } from "./shared.js";
 
 /** An anchor-drift nit — matches `isAnchorNitDetail`'s drift phrasing. */
 const NIT = "the anchor citation drifted 3 lines";
@@ -330,5 +332,89 @@ describe("panelProgress — fail-safe pins", () => {
 				named: { "code-verdicts": [...round1, ...round2] },
 			} as unknown as RunView),
 		).toBe("improved");
+	});
+});
+
+describe("evidenceCitesFileLine", () => {
+	const mechanics = { id: "r1", claim_type: "mechanics" };
+
+	it("carries no evidence duty when the plan authored no mechanics risk", () => {
+		expect(evidenceCitesFileLine({ id: "r1", pass: true })).toBe(true);
+		expect(evidenceCitesFileLine({ id: "r1", pass: true }, { id: "r1" })).toBe(true);
+	});
+
+	it("demotes a mechanics pass whose evidence is absent or not a string", () => {
+		expect(evidenceCitesFileLine({ id: "r1", pass: true }, mechanics)).toBe(false);
+	});
+
+	it("accepts long-extension dotfile citations — the first blind spot", () => {
+		expect(
+			evidenceCitesFileLine(
+				{ id: "r1", pass: true, evidence: ".env.local.example:24 — the vars are present" },
+				mechanics,
+			),
+		).toBe(true);
+		expect(
+			evidenceCitesFileLine(
+				{ id: "r1", pass: true, evidence: "scripts/.env.local.example:24-28 — the vars are present" },
+				mechanics,
+			),
+		).toBe(true);
+	});
+
+	it("accepts slash-qualified extensionless citations — the second blind spot", () => {
+		expect(
+			evidenceCitesFileLine(
+				{ id: "r1", pass: true, evidence: "scripts/Makefile:18 — the target is present" },
+				mechanics,
+			),
+		).toBe(true);
+		expect(
+			evidenceCitesFileLine({ id: "r1", pass: true, evidence: "./Makefile:18 — the target is present" }, mechanics),
+		).toBe(true);
+	});
+
+	it("still rejects a bare extensionless citation — the deliberate gap", () => {
+		expect(
+			evidenceCitesFileLine({ id: "r1", pass: true, evidence: "Makefile:18 — the target is present" }, mechanics),
+		).toBe(false);
+	});
+
+	it("still rejects prose word:number tokens as evidence", () => {
+		expect(
+			evidenceCitesFileLine(
+				{ id: "r1", pass: true, evidence: "checked the 3:1 ratio and the 0:30 timestamp" },
+				mechanics,
+			),
+		).toBe(false);
+	});
+});
+
+describe("FILE_LINE_CITATION_RE", () => {
+	// `.match()`, never `.test()` — the regex carries the /g flag (stateful lastIndex)
+	const matches = (s: string): boolean => s.match(FILE_LINE_CITATION_RE) !== null;
+
+	it("matches every citation shape the gate must accept", () => {
+		for (const s of [
+			"bootstrap.sh:24",
+			"bootstrap.sh:24-28",
+			"x.md:10",
+			".rpiv/artifacts/plans/x.md:10",
+			".github/workflows/ci.yml:12",
+			".eslintrc.js:3",
+			"foo.c:24", // 1-char extension — accepted both before and after the fix
+			".env.local.example:24",
+			"scripts/.env.local.example:24-28",
+			"scripts/Makefile:18",
+			"./Makefile:18",
+		]) {
+			expect(matches(s), s).toBe(true);
+		}
+	});
+
+	it("never matches prose word:number tokens", () => {
+		for (const s of ["3:1", "0:30", "ISO 8601:1988", "8601:1988", "17:13:27", "HTTP:80", "Makefile:18"]) {
+			expect(matches(s), s).toBe(false);
+		}
 	});
 });

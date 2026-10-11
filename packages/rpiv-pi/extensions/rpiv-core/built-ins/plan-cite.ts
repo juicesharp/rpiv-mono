@@ -49,8 +49,9 @@ const EXTENSIONLESS_FILENAME_RE =
  *  with a `:12-30` range appended — carries a line range the bare form rejects).
  *  Extensionless recognition is allowlist-only (never "any `/`-bearing token"):
  *  prose like `and/or` must not read as a declared write. The extension is
- *  bounded to 1–5 chars starting with a letter (mirroring FILE_LINE_CITATION_RE)
- *  so a dotted IDENTIFIER (`deps.finalize` — an observed false coverage
+ *  bounded to 1–5 chars starting with a letter (deliberately tighter than
+ *  FILE_LINE_CITATION_RE, which now accepts extensions of any length) so a
+ *  dotted IDENTIFIER (`deps.finalize` — an observed false coverage
  *  finding) never reads as a file. */
 const isPathLike = (s: string): boolean => {
 	if (/\s/.test(s)) return false;

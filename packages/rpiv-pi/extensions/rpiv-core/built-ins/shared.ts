@@ -63,9 +63,17 @@ const VERDICT_PASS_SCORE = 100;
 const VERDICT_FAIL_SCORE = 0;
 
 /**
- * A `path:line` (or `path:line-line`) citation in an artifact's prose. Requires a
- * dotted extension so timestamps (`17:13:27`), ratios, and bare `Slice 2:` labels
- * never match — only file references with a real extension are verified.
+ * A `path:line` (or `path:line-line`) citation in an artifact's prose. Two
+ * shapes satisfy it: a dotted path whose extension may be any length
+ * (`x.md:10`, `foo.c:24`, `.env.local.example:24`) or a slash-qualified
+ * extensionless name (`scripts/Makefile:18`, `./Makefile:18`). A BARE
+ * extensionless name (`Makefile:18` with no `./` or directory prefix)
+ * deliberately does not match — accepting bare words would admit an
+ * `HTTP:80`-style word:number false-positive class, so evidence must
+ * slash-qualify such names. Both shapes keep the anti-false-positive
+ * anchoring: timestamps (`17:13:27`), ratios (`3:1`), and bare `Slice 2:`
+ * labels never match — only tokens that look like a dotted file or a
+ * slash-bearing path are citations.
  *
  * A citation may START with a single dot (`.github/workflows/ci.yml:12`,
  * `.eslintrc.js:3`) — without it, dot-dirs and dotfiles were captured with the
@@ -75,7 +83,9 @@ const VERDICT_FAIL_SCORE = 0;
  * prose ellipsis (`...packages/x.ts:5`) still yields `packages/x.ts`, never
  * `...packages/x.ts`.
  */
-const FILE_LINE_CITATION_RE = /((?:(?<![\w.])\.)?(?<!\w)[\w][\w./-]*\.[a-zA-Z][a-zA-Z0-9]{0,4}):(\d+)(?:-(\d+))?/g;
+// biome-ignore format: evidence-extraction tooling reads the regex literal
+// off this assignment line; a line break breaks that extraction
+const FILE_LINE_CITATION_RE = /((?:(?<![\w.])\.)?(?<!\w)[\w][\w./-]*\.[a-zA-Z][a-zA-Z0-9]*|(?<!\w)(?:\.?\/|[\w][\w.-]*\/)+[\w][\w.-]*):(\d+)(?:-(\d+))?/g;
 
 /** A structure-dimension finding — the shared shape the deterministic verdict
  * checks emit (`detail` is the actionable message, `where` locates the defect).
