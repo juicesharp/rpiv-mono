@@ -39,7 +39,7 @@ todo({
   id?: number,
 
   // update (sets this task's status) or list (filters by status)
-  status?: "pending" | "in_progress" | "completed" | "deleted",
+  status?: "pending" | "in_progress" | "failed" | "awaiting_user" | "completed" | "deleted",
 
   // list-only
   includeDeleted?: boolean,           // default false — hides tombstones
@@ -55,12 +55,21 @@ array.
 
 | From | Allowed targets |
 | --- | --- |
-| `pending` | `in_progress`, `completed`, `deleted` |
-| `in_progress` | `pending`, `completed`, `deleted` |
+| `pending` | `in_progress`, `failed`, `awaiting_user`, `completed`, `deleted` |
+| `in_progress` | `pending`, `failed`, `awaiting_user`, `completed`, `deleted` |
+| `failed` | `in_progress`, `awaiting_user`, `completed`, `deleted` |
+| `awaiting_user` | `in_progress`, `failed`, `completed`, `deleted` |
 | `completed` | `deleted` |
 | `deleted` | _(terminal)_ |
 
-A transition to the current status is always accepted and reported as a no-op.
+`pending` means not started. Use `failed` when execution or verification failed,
+and `awaiting_user` when progress requires user action or acceptance. Both require
+a non-blank `description` explaining the failure or the required user action.
+They remain unfinished, visible tasks and are never treated as completed rows.
+Retry explicitly with `in_progress`; do not reset a failed attempt to `pending`.
+
+A transition to the current status is accepted when its required explanation is
+present and is reported as a no-op when no fields change.
 `delete` keeps the task as a tombstone so historic `blockedBy` references still
 resolve; tombstones are hidden from `list` unless you pass `includeDeleted: true`.
 
@@ -90,7 +99,7 @@ tasks' `blockedBy` arrays.
       subject: string,
       description?: string,
       activeForm?: string,
-      status: "pending" | "in_progress" | "completed" | "deleted",
+      status: "pending" | "in_progress" | "failed" | "awaiting_user" | "completed" | "deleted",
       blockedBy?: number[],
       owner?: string,
       metadata?: Record<string, unknown>,
@@ -138,6 +147,8 @@ that it was a no-op instead of a fresh `Updated #N`.
 | `addBlockedBy: #N not found` / `is deleted` | Unknown or tombstoned dependency. |
 | `addBlockedBy would create a cycle in the blockedBy graph` | The edge would close a cycle. |
 | `#N is already deleted` | `delete` on a tombstone. |
+| `failed requires description: explain the failure or required user action` | Missing failure explanation. |
+| `awaiting_user requires description: explain the failure or required user action` | Missing user action or acceptance explanation. |
 
 Errors are returned in-band: `content` carries `Error: …` and `details.error`
 carries the bare message. Task state is unchanged.
@@ -146,7 +157,7 @@ carries the bare message. Task state is unchanged.
 
 The tool ships a `promptSnippet` and eight `promptGuidelines` bullets telling the
 model when to open a list, to keep exactly one task `in_progress`, to mark work
-completed immediately rather than in batches, never to complete a task with
-failing tests, and the literal `update {id, status}` call shape for changing a
+completed immediately rather than in batches, record failed checks as `failed`,
+record user-owned acceptance as `awaiting_user`, and the literal `update {id, status}` call shape for changing a
 task's status. Both are overridable — see
 [configuration.md](./configuration.md#guidance).

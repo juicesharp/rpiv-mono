@@ -34,10 +34,13 @@ and taking the last `todo` tool result's snapshot, which replaces the whole list
 ```
 
 - **Heading** — `● Todos (done/total)` in the accent color while any task is
-  `pending` or `in_progress`; `○ Todos (done/total)` dimmed once everything is
-  completed.
-- **Glyphs** — `○` pending, `◐` in_progress, `✓` completed, `✗` deleted.
-  Completed and deleted subjects render dim and struck through.
+  unfinished; `○ Todos (done/total)` dimmed once everything is completed.
+  Failed and awaiting-user counts remain visible in the heading, including when
+  collapsed; a failure gives the heading an error color.
+- **Glyphs** — `○` pending, `◐` in_progress, `✗` failed, `◷` awaiting_user,
+  `✓` completed, `✗` deleted. Failed rows are error-colored; awaiting-user rows
+  are warning-colored. Both show a status label and their description.
+  Only completed and deleted subjects render dim and struck through.
 - **activeForm** — appended dim in parentheses, only while the task is
   `in_progress`.
 - **Dependencies** — appended as `⛓ #1,#2` when the task has a `blockedBy` set.
@@ -57,9 +60,10 @@ against it. When there are more tasks than fit:
 1. one row is reserved for the summary line;
 2. completed tasks are dropped first, newest first — the oldest completed rows
    are the last completed rows to go;
-3. if the unfinished tasks alone still overflow, the tail of that list is
-   truncated;
-4. the last row becomes `+N more (X completed, Y pending)`.
+3. if the unfinished tasks alone still overflow, prioritize in-progress, failed,
+   awaiting-user, then pending tasks, preserving order within each status;
+4. the last row reports the actual hidden status counts, for example
+   `+N more (X completed, Y failed, Z pending)`.
 
 Use Pi's tool-output expansion shortcut (`ctrl+o` by default) to expand the
 widget and show every task. Collapsing Pi's tool output reapplies the configured
@@ -105,7 +109,9 @@ row budget and auto-hiding:
 ```
 
 The header omits any count that is zero. Sections appear only when they have
-tasks. Tombstoned tasks are never listed.
+tasks. Failed and Awaiting User sections appear first, including each task's
+description so its failure or user action is visible. These tasks are not counted
+as pending or completed. Tombstoned tasks are never listed.
 
 - With no tasks: `No todos yet. Ask the agent to add some!`
 - In a non-interactive session: `/todos requires interactive mode`

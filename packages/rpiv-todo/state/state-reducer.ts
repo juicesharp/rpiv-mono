@@ -133,6 +133,13 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 				newStatus = params.status;
 			}
 
+			if (
+				(newStatus === "failed" || newStatus === "awaiting_user") &&
+				!(params.description ?? current.description)?.trim()
+			) {
+				return errorResult(state, `${newStatus} requires description: explain the failure or required user action`);
+			}
+
 			let newBlockedBy = current.blockedBy ? [...current.blockedBy] : [];
 			if (params.removeBlockedBy?.length) {
 				const toRemove = new Set(params.removeBlockedBy);

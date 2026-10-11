@@ -146,9 +146,15 @@ export class TodoOverlay {
 		const hasActive = selectHasActive(overlayState);
 		const showIds = selectShowTaskIds(overlayState);
 
-		const headingColor = hasActive ? "accent" : "dim";
+		const headingColor = counts.failed > 0 ? "error" : hasActive ? "accent" : "dim";
 		const headingIcon = hasActive ? "●" : "○";
-		const headingText = `${t("overlay.heading", OVERLAY_HEADING)} (${counts.completed}/${counts.total})`;
+		const statusSummary = [
+			counts.failed ? `${counts.failed} ${formatStatusLabel("failed")}` : "",
+			counts.awaitingUser ? `${counts.awaitingUser} ${formatStatusLabel("awaiting_user")}` : "",
+		]
+			.filter(Boolean)
+			.join(" · ");
+		const headingText = `${t("overlay.heading", OVERLAY_HEADING)} (${counts.completed}/${counts.total})${statusSummary ? ` · ${statusSummary}` : ""}`;
 		const heading = truncate(`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}`);
 
 		// Collapsed view: just the heading + a dim "└─" expand hint, then the
@@ -202,7 +208,13 @@ export class TodoOverlay {
 		const totalHidden = layout.hiddenCompleted + layout.truncatedTail;
 		const overflowParts: string[] = [];
 		if (layout.hiddenCompleted > 0) overflowParts.push(`${layout.hiddenCompleted} ${formatStatusLabel("completed")}`);
-		if (layout.truncatedTail > 0) overflowParts.push(`${layout.truncatedTail} ${formatStatusLabel("pending")}`);
+		if (layout.truncatedTail > 0) {
+			const visibleIds = new Set(layout.visible.map((task) => task.id));
+			for (const status of ["in_progress", "failed", "awaiting_user", "pending"] as const) {
+				const count = overlayTasks.filter((task) => task.status === status && !visibleIds.has(task.id)).length;
+				if (count > 0) overflowParts.push(`${count} ${formatStatusLabel(status)}`);
+			}
+		}
 		const more = t("overlay.more", OVERLAY_MORE);
 		const summary =
 			overflowParts.length > 0 ? `+${totalHidden} ${more} (${overflowParts.join(", ")})` : `+${totalHidden} ${more}`;
