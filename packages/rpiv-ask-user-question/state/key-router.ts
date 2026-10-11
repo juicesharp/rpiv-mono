@@ -13,6 +13,7 @@ const KEYBIND_EDITOR_UP = "tui.editor.cursorUp";
 const KEYBIND_EDITOR_DOWN = "tui.editor.cursorDown";
 const KEYBIND_CLEAR = "tui.editor.deleteToLineStart";
 const KEYBIND_EXTERNAL_EDITOR = "app.editor.external";
+const KEYBIND_APP_CLEAR = "app.clear";
 
 const NOTES_ACTIVATE_KEY = "n";
 const SPACE_KEY = " ";
@@ -29,6 +30,7 @@ export type QuestionnaireAction =
 	| { kind: "cancel" }
 	| { kind: "notes_enter" }
 	| { kind: "notes_exit" }
+	| { kind: "notes_clear" }
 	| { kind: "submit" }
 	| { kind: "submit_nav"; nextIndex: 0 | 1 }
 	| { kind: "notes_forward"; data: string }
@@ -159,6 +161,9 @@ function routeCollapsed(kb: QuestionnaireKeybindings, data: string): Questionnai
 }
 
 function routeNotesMode(kb: QuestionnaireKeybindings, data: string): QuestionnaireAction {
+	// `app.clear` (default Ctrl+C) clears the notes draft, same as the main editor —
+	// the notes editor is a text-editing surface, so clear wins over cancel here.
+	if (kb.matches(data, KEYBIND_APP_CLEAR)) return { kind: "notes_clear" };
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "notes_exit" };
 	if (kb.matches(data, KEYBIND_NEW_LINE)) return { kind: "notes_forward", data };
 	if (isConfirm(kb, data)) return { kind: "notes_exit" };
@@ -182,6 +187,12 @@ function routeInputMode(
 	// Treat Pi's Ctrl+U line-kill binding as an explicit whole-draft clear,
 	// independent of the current cursor position.
 	if (kb.matches(data, KEYBIND_CLEAR)) return { kind: "input_clear" };
+	// `app.clear` (default Ctrl+C) mirrors the main editor's clear-first semantics:
+	// while the custom-answer input has focus it wipes the draft instead of
+	// cancelling the questionnaire. Checked BEFORE cancel — both bindings default
+	// to `ctrl+c`, and in this editable context the clear action is the one that
+	// matches Pi's editor behavior the user expects.
+	if (kb.matches(data, KEYBIND_APP_CLEAR)) return { kind: "input_clear" };
 	if (kb.matches(data, KEYBIND_EXTERNAL_EDITOR)) return { kind: "input_edit", value: runtime.inputBuffer };
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 	if (kb.matches(data, KEYBIND_EDITOR_UP) && runtime.canMoveInputUp) return { kind: "ignore" };

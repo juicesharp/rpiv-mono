@@ -299,6 +299,10 @@ const notesForwardHandler: Handler<"notes_forward"> = (s, a, _c) => ({
 	state: s,
 	effects: [{ kind: "forward_notes_keystroke", data: a.data }],
 });
+const notesClearHandler: Handler<"notes_clear"> = (s, _a, _c) => ({
+	state: { ...s, notesDraft: "" },
+	effects: [{ kind: "set_notes_value", value: "" }],
+});
 const toggleCollapsedHandler: Handler<"toggle_collapsed"> = (s, _a, _c) => ({
 	state: { ...s, collapsed: !s.collapsed },
 	effects: [{ kind: "set_overlay_hidden", hidden: !s.collapsed }],
@@ -324,6 +328,7 @@ const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
 	notes_enter: notesEnterHandler,
 	notes_exit: notesExitHandler,
 	notes_forward: notesForwardHandler,
+	notes_clear: notesClearHandler,
 	submit: submitHandler,
 	submit_nav: submitNavHandler,
 	toggle_collapsed: toggleCollapsedHandler,
