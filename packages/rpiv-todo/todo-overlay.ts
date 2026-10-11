@@ -53,33 +53,46 @@ export class TodoOverlay {
 		const visible = this.selectOverlayTasks(snapshot);
 
 		if (visible.length === 0) {
-			if (this.widgetRegistered) {
-				this.uiCtx.setWidget(WIDGET_KEY, undefined);
-				this.widgetRegistered = false;
-				this.tui = undefined;
+			// Empty list: keep (or claim) the registration with a zero-row render
+			// instead of removing the widget. Pi renders aboveEditor widgets in
+			// Map insertion order, so unregistering on empty lets later-registered
+			// widgets (e.g. footer extensions) take this slot; the next
+			// registration then lands behind them, which pushed the overlay below
+			// the footer. renderWidget() returns [] when empty, so an empty list
+			// costs no rows.
+			if (!this.widgetRegistered) {
+				this.registerWidget();
+			} else {
+				this.tui?.requestRender();
 			}
 			return;
 		}
 
 		if (!this.widgetRegistered) {
-			this.uiCtx.setWidget(
-				WIDGET_KEY,
-				(tui, factoryTheme) => {
-					this.tui = tui;
-					return {
-						render: (width: number) => this.renderWidget(this.uiCtx?.theme ?? factoryTheme, width),
-						invalidate: () => {
-							// No rendered strings are cached. Pi invalidates on theme changes;
-							// the next render reads uiCtx.theme.
-						},
-					};
-				},
-				{ placement: "aboveEditor" },
-			);
-			this.widgetRegistered = true;
+			this.registerWidget();
 		} else {
 			this.tui?.requestRender();
 		}
+	}
+
+	private registerWidget(): void {
+		const uiCtx = this.uiCtx;
+		if (!uiCtx) return;
+		uiCtx.setWidget(
+			WIDGET_KEY,
+			(tui, factoryTheme) => {
+				this.tui = tui;
+				return {
+					render: (width: number) => this.renderWidget(this.uiCtx?.theme ?? factoryTheme, width),
+					invalidate: () => {
+						// No rendered strings are cached. Pi invalidates on theme changes;
+						// the next render reads uiCtx.theme.
+					},
+				};
+			},
+			{ placement: "aboveEditor" },
+		);
+		this.widgetRegistered = true;
 	}
 
 	resetCompletedDisplayState(): void {
@@ -187,7 +200,7 @@ export class TodoOverlay {
 					task.status === "completed" &&
 					!this.completedTaskIdsPendingHide.has(task.id) &&
 					!this.hiddenCompletedTaskIds.has(task.id),
-			)
+		)
 			.map((task) => task.id);
 		for (const taskId of newlyDisplayedCompletedTaskIds) {
 			this.completedTaskIdsPendingHide.add(taskId);
