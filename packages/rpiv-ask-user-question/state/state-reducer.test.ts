@@ -92,6 +92,52 @@ describe("reduce — tab_switch", () => {
 		const r = reduce(state, { kind: "tab_switch", nextTab: 1 }, ctx);
 		expect(r.effects).toContainEqual({ kind: "set_input_buffer", value: "second" });
 	});
+
+	const twoTabs = (items: ReadonlyArray<(typeof itemsWithOther)[number]>) =>
+		makeCtx({ questions: [makeQuestion(), makeQuestion()], itemsByTab: [itemsRegular, items] });
+	const answered = (answer: Omit<QuestionAnswer, "questionIndex" | "question">) =>
+		makeState({ answers: new Map([[1, { questionIndex: 1, question: "Pick one", ...answer }]]) });
+
+	it("focuses the previously chosen option when revisiting an answered tab", () => {
+		const r = reduce(
+			answered({ kind: "option", answer: "B" }),
+			{ kind: "tab_switch", nextTab: 1 },
+			twoTabs(itemsRegular),
+		);
+		expect(r.state.optionIndex).toBe(1);
+		expect(r.state.inputMode).toBe(false);
+	});
+
+	it("focuses the custom row in input mode when revisiting a custom-answered tab", () => {
+		const r = reduce(
+			answered({ kind: "custom", answer: "typed" }),
+			{ kind: "tab_switch", nextTab: 1 },
+			twoTabs(itemsWithOther),
+		);
+		expect(r.state.optionIndex).toBe(2);
+		expect(r.state.inputMode).toBe(true);
+		expect(r.effects).toContainEqual({ kind: "set_input_buffer", value: "typed" });
+	});
+
+	it("focuses the Next row when revisiting a multi-select answered tab", () => {
+		const items = [...itemsWithOther, { kind: "next" as const, label: "Next" }];
+		const r = reduce(
+			answered({ kind: "multi", answer: null, selected: ["A"] }),
+			{ kind: "tab_switch", nextTab: 1 },
+			twoTabs(items),
+		);
+		expect(r.state.optionIndex).toBe(3);
+		expect(r.state.inputMode).toBe(false);
+	});
+
+	it("falls back to row 0 when the saved option label is not in the list", () => {
+		const r = reduce(
+			answered({ kind: "option", answer: "gone" }),
+			{ kind: "tab_switch", nextTab: 1 },
+			twoTabs(itemsRegular),
+		);
+		expect(r.state.optionIndex).toBe(0);
+	});
 });
 
 describe("reduce — confirm", () => {
