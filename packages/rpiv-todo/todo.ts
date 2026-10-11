@@ -17,7 +17,7 @@ import { loadConfig, validateGuidanceFields } from "./config.js";
 import { formatStatusLabel, t } from "./state/i18n-bridge.js";
 import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.js";
 import { applyTaskMutation } from "./state/state-reducer.js";
-import { commitState, getRenderState, getState, sid } from "./state/store.js";
+import { commitState, getState, sid } from "./state/store.js";
 import { buildToolResult } from "./tool/response-envelope.js";
 import {
 	COMMAND_NAME,
@@ -81,16 +81,10 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 			return buildToolResult(params.action, params as TaskMutationParams, result.state, result.op);
 		},
 
-		// renderCall reflects the FOREGROUND slot, not the calling session's. Pi's
-		// `ToolRenderContext` carries no session identity (no sessionManager/sessionId),
-		// so this ctx-less hook cannot re-key by caller. For the foreground session's
-		// own transcript that is exactly right. A detached/child call rendered in the
-		// lane-transcript viewer whose task lives only in the child's slot misses the
-		// foreground lookup and falls back to `#<id>` (see renderTodoCall). That is the
-		// safe outcome: per-session ids restart at 1, so searching sibling slots could
-		// surface the WRONG subject — the `#<id>` fallback is intentional, not a gap.
+		// ToolRenderContext has no session identity. Keep labels call-local so
+		// colliding task IDs cannot resolve to an unrelated foreground subject.
 		renderCall(args, theme, _context) {
-			return renderTodoCall(args as never, theme, getRenderState());
+			return renderTodoCall(args as never, theme);
 		},
 
 		renderResult(result, _opts, theme, _context) {
