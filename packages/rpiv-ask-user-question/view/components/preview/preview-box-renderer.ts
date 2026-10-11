@@ -31,13 +31,18 @@ export function stripFenceMarkers(lines: readonly string[]): string[] {
  * Layout per content row: `│` + ` ` + content padded to `contentInner` + ` ` + `│`,
  * where `contentInner = width - BORDER_HORIZONTAL_OVERHEAD - 2 * BORDER_INNER_PADDING_HORIZONTAL`.
  * Top/bottom dash runs span corner-to-corner (`width - BORDER_HORIZONTAL_OVERHEAD`). When
- * `hidden > 0`, the bottom-row dash run is replaced with ` ✂ ── N lines hidden ── ` (corners stay).
+ * `hidden > 0`, the bottom-row dash run is replaced with a scroll indicator
+ * (` ✂ ── N lines hidden ── ` was the original no-scroll form). `scroll.up` / `scroll.down`
+ * report whether more content exists above / below the current scroll window, and the
+ * indicator names the key that moves there (corners stay). Oversized indicators are
+ * truncated to the dash span with a trailing `…` rather than breaking the frame.
  */
 export function renderBorderedBox(
 	lines: readonly string[],
 	width: number,
 	colorFn: (s: string) => string,
 	hidden = 0,
+	scroll?: { up: boolean; down: boolean },
 ): string[] {
 	const dashSpan = Math.max(1, width - BORDER_HORIZONTAL_OVERHEAD);
 	const contentInner = Math.max(1, dashSpan - 2 * BORDER_INNER_PADDING_HORIZONTAL);
@@ -49,15 +54,30 @@ export function renderBorderedBox(
 		out.push(`${colorFn("│")}${pad}${padded}${pad}${colorFn("│")}`);
 	}
 	if (hidden > 0) {
-		const indicator = ` ✂ ── ${hidden} lines hidden ── `;
+		const up = scroll?.up === true;
+		const down = scroll?.down === true;
+		const indicator =
+			up && down
+				? ` ▲ ${hidden} lines hidden · PgUp/PgDn ▼ `
+				: down
+					? ` ✂ ${hidden} lines hidden · PgDn ▼ `
+					: ` ▲ PgUp · ${hidden} lines hidden `;
 		const space = dashSpan - indicator.length;
 		const leftFill = "─".repeat(Math.max(0, Math.floor(space / 2)));
-		const rightFill = "─".repeat(Math.max(0, dashSpan - leftFill.length - indicator.length));
-		out.push(colorFn(`└${leftFill}${indicator}${rightFill}┘`));
+		const rightFill = "─".repeat(Math.max(0, space - leftFill.length));
+		// Oversized indicator (very narrow frame): truncate with an ellipsis instead of
+		// breaking the box — every row below must stay within `width` columns.
+		const inner =
+			space >= 0 ? `${leftFill}${indicator}${rightFill}` : `${indicator.slice(0, Math.max(0, dashSpan - 1))}…`;
+		out.push(colorFn(`└${inner}┘`));
 	} else {
-		out.push(colorFn(`└${"─".repeat(dashSpan)}┘`));
+		out.push(colorFn(`└${repeatDash(dashSpan)}┘`));
 	}
 	return out;
+}
+
+function repeatDash(n: number): string {
+	return "─".repeat(Math.max(0, n));
 }
 
 /**

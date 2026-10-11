@@ -17,6 +17,20 @@ const KEYBIND_EXTERNAL_EDITOR = "app.editor.external";
 const NOTES_ACTIVATE_KEY = "n";
 const SPACE_KEY = " ";
 
+/**
+ * Rows scrolled per PageUp/PageDown press. Deliberately close to the stacked-layout
+ * content budget (~11) so one press roughly equals one screenful in either layout;
+ * the renderer clamps the offset to the actual overflow either way.
+ */
+export const PREVIEW_SCROLL_STEP = 10;
+
+/**
+ * Guard against unbounded growth when the target preview has no overflow the reducer
+ * can observe (pure state machine — no render metrics). The view clamps to the real
+ * content length; this cap only keeps the state value sane.
+ */
+export const PREVIEW_SCROLL_MAX = 1000;
+
 export type QuestionnaireAction =
 	| { kind: "nav"; nextIndex: number; inputValue: string }
 	| { kind: "input_clear" }
@@ -34,6 +48,12 @@ export type QuestionnaireAction =
 	| { kind: "notes_forward"; data: string }
 	/** Flip `state.collapsed`. Always available, regardless of inner mode (see top intercept in `routeKey`). */
 	| { kind: "toggle_collapsed" }
+	/**
+	 * Scroll the focused option's preview by `delta` rows (PageUp/PageDown). Routed only
+	 * on question tabs where the focused row is a preview-bearing option; the reducer
+	 * clamps at 0 and the view layer clamps to the real overflow.
+	 */
+	| { kind: "preview_scroll"; delta: number }
 	| { kind: "ignore" };
 
 export interface QuestionnaireKeybindings {
@@ -346,6 +366,33 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 	}
 	if (kb.matches(data, KEYBIND_DOWN)) {
 		return nextNavOnDown(state, runtime);
+	}
+
+	// PageUp/PageDown scroll the focused option's preview when it overflows its height
+	// budget. Preview content exists only on single-select questions (the schema rejects
+	// previews for multiSelect), and the submit tab / notes / inputMode paths already
+	// returned above, so reaching this point means a question tab with the option list
+	// focused. The action fires unconditionally — a focused option without a preview, or
+	// a preview that fits, simply leaves `previewScroll` clamped at 0 by the reducer.
+	if (!q.multiSelect) {
+		if (matchesKey(data, Key.pageUp)) {
+			// State only ever decreases toward 0 (clamped by the reducer), so PageUp can
+			// never overscroll — a plain step is enough.
+			return { kind: "preview_scroll", delta: -PREVIEW_SCROLL_STEP };
+		}
+		if (matchesKey(data, Key.pageDown)) {
+			// Snap to the rendered bottom: when the last frame reported the focused preview’s
+			// total overflow, step at most that far past the current offset. Reaching the end
+			// swallows further PageDown presses (delta <= 0), so no phantom rows accumulate
+			// and the next PageUp responds immediately.
+			const max = runtime.previewMaxScroll;
+			const delta =
+				max === undefined
+					? PREVIEW_SCROLL_STEP
+					: Math.min(PREVIEW_SCROLL_STEP, Math.max(0, max - state.previewScroll));
+			if (delta <= 0) return { kind: "ignore" };
+			return { kind: "preview_scroll", delta };
+		}
 	}
 
 	if (q.multiSelect) return routeMultiSelectTab(kb, data, state, runtime);

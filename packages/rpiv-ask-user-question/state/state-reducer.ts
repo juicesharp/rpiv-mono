@@ -1,6 +1,7 @@
 import type { QuestionAnswer, QuestionData, QuestionnaireResult } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import type { QuestionnaireAction } from "./key-router.js";
+import { PREVIEW_SCROLL_MAX } from "./key-router.js";
 import { ROW_INTENT_META } from "./row-intent.js";
 import type { QuestionnaireState } from "./state.js";
 
@@ -127,6 +128,7 @@ function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyC
 		submitChoiceIndex: 0,
 		multiSelectChecked: syncMultiSelectFromAnswers(state.answers, ctx.questions, nextTab),
 		notesDraft: notesValue,
+		previewScroll: 0,
 	};
 	return {
 		state: transitioned,
@@ -170,7 +172,15 @@ const navHandler: Handler<"nav"> = (state, action, ctx) => {
 	const customDraftsByTab = state.inputMode
 		? setCustomDraft(state, state.currentTab, action.inputValue)
 		: state.customDraftsByTab;
-	const next: QuestionnaireState = { ...state, optionIndex: action.nextIndex, inputMode, customDraftsByTab };
+	// Moving to another row shows that row's preview from the top (or hides the preview
+	// entirely on non-option rows) — the previous option's scroll position must not leak.
+	const next: QuestionnaireState = {
+		...state,
+		optionIndex: action.nextIndex,
+		inputMode,
+		customDraftsByTab,
+		previewScroll: 0,
+	};
 	if (!inputMode) return { state: next, effects: [] };
 	return {
 		state: next,
@@ -258,7 +268,9 @@ const multiConfirmHandler: Handler<"multi_confirm"> = (state, action, ctx) => {
 const notesEnterHandler: Handler<"notes_enter"> = (state, _action, _ctx) => {
 	const value = notesValueFor(state, state.currentTab);
 	return {
-		state: { ...state, notesVisible: true, notesDraft: value },
+		// Entering the notes editor hides the preview — reset the scroll so reopening the
+		// options later (same row) shows the preview from the top again.
+		state: { ...state, notesVisible: true, notesDraft: value, previewScroll: 0 },
 		effects: [
 			{ kind: "set_notes_value", value },
 			{ kind: "set_notes_focused", focused: true },
@@ -303,6 +315,12 @@ const toggleCollapsedHandler: Handler<"toggle_collapsed"> = (s, _a, _c) => ({
 	state: { ...s, collapsed: !s.collapsed },
 	effects: [{ kind: "set_overlay_hidden", hidden: !s.collapsed }],
 });
+
+const previewScrollHandler: Handler<"preview_scroll"> = (state, action, _ctx) => {
+	const next = Math.max(0, Math.min(PREVIEW_SCROLL_MAX, state.previewScroll + action.delta));
+	if (next === state.previewScroll) return { state, effects: [] };
+	return { state: { ...state, previewScroll: next }, effects: [] };
+};
 const ignoreHandler: Handler<"ignore"> = (s, _a, _c) => ({ state: s, effects: [] });
 
 /**
@@ -327,6 +345,7 @@ const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
 	submit: submitHandler,
 	submit_nav: submitNavHandler,
 	toggle_collapsed: toggleCollapsedHandler,
+	preview_scroll: previewScrollHandler,
 	ignore: ignoreHandler,
 };
 
