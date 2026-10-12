@@ -60,6 +60,7 @@ function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams): void 
 function emitAskUserBlockedEvent(pi: ExtensionAPI, active: boolean): void {
 	const payload: AskUserBlockedEventPayload = { active };
 	pi.events.emit(ASK_USER_BLOCKED_EVENT, payload);
+	pi.events.emit("herdr:blocked", { active, label: active ? "question" : undefined });
 }
 
 /** Non-interactive host backstop (the reconciler normally strips the tool first). */

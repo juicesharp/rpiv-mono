@@ -99,11 +99,15 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 		expect(custom).not.toHaveBeenCalled();
 	});
 
-	it("emits rpiv:ask-user:blocked around the RPC dialog walker and clears it afterward", async () => {
+	it("emits blocked lifecycle events around the RPC dialog walker and clears them afterward", async () => {
 		const { tool, captured } = registerWithCapture();
 		const select = vi.fn(async (_t: string, options: string[]) => options[0]);
 		await run(tool, SINGLE, ctxRpc({ select }));
 		expect(captured.eventsEmitted.get("rpiv:ask-user:blocked")).toEqual([{ active: true }, { active: false }]);
+		expect(captured.eventsEmitted.get("herdr:blocked")).toEqual([
+			{ active: true, label: "question" },
+			{ active: false, label: undefined },
+		]);
 	});
 
 	it("writes exactly one BEL after blocked=true and before the first RPC dialog", async () => {
@@ -122,8 +126,11 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 			expect(stdout.stdoutWrite).toHaveBeenCalledTimes(1);
 			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
 			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
-			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: true, label: "question" });
+			expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false });
+			expect(mockEmit).toHaveBeenNthCalledWith(5, "herdr:blocked", { active: false, label: undefined });
 			expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
+			expect(mockEmit.mock.invocationCallOrder[2]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
 			expect(stdout.stdoutWrite.mock.invocationCallOrder[0]).toBeLessThan(select.mock.invocationCallOrder[0]);
 		} finally {
 			stdout.restore();
