@@ -16,7 +16,7 @@
  *   - CSI 22;0t / CSI 23;0t — xterm window-title stack push/pop. Used
  *     by `title-spinner.ts` to snapshot Warp's existing tab title before
  *     the animation starts and restore it verbatim on stop, so the
- *     `π - <repo>` label Pi sets at startup survives the spinner round
+ *     `π - [<session> - ]<repo>` label Pi sets survives the spinner round
  *     trip.
  *
  * Each call on Unix opens, writes, and closes the fd — no fd cache
