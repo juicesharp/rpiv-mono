@@ -25,7 +25,7 @@ Nothing to set up — the tool is live as soon as Pi restarts. Hand the model a 
 
 > Add caching to the API client.
 
-Rather than picking a strategy on your behalf, the model calls `ask_user_question` and a dialog takes over the bottom of your terminal. Move with `↑`/`↓`, choose with `Enter`, press `n` to attach a note to a question or a global note from the Submit tab, or land on `Type something.` to answer in your own words. In a multi-select question, typed custom text is selected automatically and submitted together with checked options. While typing, `Shift+Enter` adds a line, `Ctrl+G` opens Pi's configured external editor, and `Ctrl+U` clears the draft.
+Rather than picking a strategy on your behalf, the model calls `ask_user_question` and a dialog takes over the bottom of your terminal. Move with `↑`/`↓`, choose with `Enter`, press `n` to attach a note to a question or a global note from the Submit tab, or land on `Type something.` to answer in your own words. In a multi-select question, typed custom text is selected automatically and submitted together with checked options. While typing, `Shift+Enter` adds a line, `Ctrl+G` opens Pi's configured external editor, and `Ctrl+U` clears the draft; browsing another option and returning keeps what you wrote. `Esc` abandons the questionnaire entirely.
 
 When the questionnaire begins waiting in an interactive TTY, it emits one standard terminal BEL (`\x07`). Your terminal configuration determines whether that appears as an audible alert, a visual alert, or nothing; redirected and non-TTY output is untouched.
 

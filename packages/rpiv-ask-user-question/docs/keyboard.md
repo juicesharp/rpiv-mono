@@ -26,7 +26,9 @@ Slack-style configuration — `enter` folded into `tui.input.newLine`, submit mo
 everywhere `Enter` does.
 
 In a multi-select question, `Enter` on a regular row toggles its checkbox exactly like
-`Space`. It does not submit. Focus `Next` and press `Enter` to commit the question.
+`Space`. It does not submit. Focus `Next` and press `Enter` to commit the question. That
+is deliberate: it makes `Enter` a zero-cost way to flip boxes without leaving the home row.
+`Space` does nothing on `Next` (it is a command, not a choice).
 
 `Type something.` is an inline input, so Space inserts a space. Its checkbox changes to
 `[✔]` when the input contains text. Press `Enter` in the input or use `Next` to submit

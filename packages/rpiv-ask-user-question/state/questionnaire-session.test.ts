@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
+import { buildQuestionnaireResponse } from "../tool/response-envelope.js";
 import type { QuestionnaireResult, QuestionParams } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import { QuestionnaireSession } from "./questionnaire-session.js";
@@ -296,6 +297,51 @@ describe("QuestionnaireSession — custom-answer drafts", () => {
 
 		session.dispatch(TAB);
 		expect(session.component.render(120).join("\n")).toContain("second");
+	});
+});
+
+describe("QuestionnaireSession — multi-select custom text joins checked options (#188)", () => {
+	const SPACE = " ";
+	const multiParams: QuestionParams = {
+		questions: [{ ...params.questions[0]!, multiSelect: true }],
+	};
+	const multiItems: WrappingSelectItem[][] = [
+		[...itemsFor(multiParams)[0]!, { kind: "next" as const, label: "Next" }],
+	];
+	const both = {
+		answers: [{ questionIndex: 0, question: "Which?", kind: "multi", answer: "my text", selected: ["A"] }],
+		cancelled: false,
+	};
+
+	function checkAThenType(): ReturnType<typeof makeSession> {
+		const made = makeSession({ params: multiParams, itemsByTab: multiItems });
+		made.session.dispatch(SPACE); // check A
+		focusCustomAnswer(made.session);
+		made.session.dispatch("my text");
+		return made;
+	}
+
+	it("Enter in the custom input submits the checked options AND the text", () => {
+		const { session, done } = checkAThenType();
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith(both);
+		expect(buildQuestionnaireResponse(done.mock.calls[0]![0], multiParams).content[0]!.text).toContain(
+			'"Which?"="A, my text"',
+		);
+	});
+
+	it("Next submits the checked options AND the text", () => {
+		const { session, done } = checkAThenType();
+		session.dispatch(DOWN); // leave the input for Next
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith(both);
+	});
+
+	it("the custom row is checked while it holds text and unchecked once cleared", () => {
+		const { session } = checkAThenType();
+		expect(session.component.render(120).join("\n")).toMatch(/\[✔\] my text/);
+		session.dispatch(CTRL_U);
+		expect(session.component.render(120).join("\n")).toMatch(/3\. \[ \]/);
 	});
 });
 

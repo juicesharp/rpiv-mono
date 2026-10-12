@@ -52,7 +52,11 @@ Tool-result envelope MUST be built only through this helper — no inline `{ con
 ```ts
 export function formatAnswerScalar(a: QuestionAnswer, _variant: FormatAnswerVariant): string {
     switch (a.kind) {
-        case "multi":  return a.selected && a.selected.length > 0 ? a.selected.join(", ") : NO_INPUT_PLACEHOLDER;
+        case "multi": {
+            const values = [...(a.selected ?? [])];
+            if (a.answer && a.answer.length > 0) values.push(a.answer); // custom text rides last (#188)
+            return values.length > 0 ? values.join(", ") : NO_INPUT_PLACEHOLDER;
+        }
         case "custom": return a.answer && a.answer.length > 0 ? a.answer : NO_INPUT_PLACEHOLDER;
         case "option": return a.answer ?? NO_INPUT_PLACEHOLDER;
     }
