@@ -65,7 +65,9 @@ export const ADVISOR_SYSTEM_PROMPT = readFileSync(fileURLToPath(
 ```typescript
 // execute.ts — buildSessionContext preserves Pi's RESOLVED LLM context (compaction + branch summaries).
 const { messages: sessionMessages } = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
-const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(convertToLlm(sessionMessages)));
+// stripToolDeclarations: Pi >= 1.0 transcripts carry the executor's tool loadout as toolsAdded/toolsRemoved on system messages, and providers
+// resolve request tools from them — `tools: []` alone leaves them callable (empty `toolUse` replies, #295). Prompt text is kept.
+const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(stripToolDeclarations(convertToLlm(sessionMessages))));
 const inventoryMessage = getInventoryMessage(pi.getAllTools()); // signature-keyed cache on a globalThis Symbol — rebuilds only when the tool-name set changes
 const messages = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
 const runtime = getRuntimeCompleteSimple(ctx.modelRegistry); // resolved BEFORE the try and the missing-key guard — OAuth hosts resolve ok:true with

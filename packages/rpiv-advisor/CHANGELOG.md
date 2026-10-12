@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- The advisor no longer inherits the executor's tools. On Pi 1.x the copied context declares the executor's tools in its system messages, and providers sent them even with `tools: []`, so the advisor model could call a tool and fail with `Advisor returned no text content` (`stopReason: toolUse`). The declarations are now stripped; the system prompt text is kept (#295, #296).
+
 ## [2.13.6] - 2026-10-12
 
 ## [2.13.5] - 2026-10-12

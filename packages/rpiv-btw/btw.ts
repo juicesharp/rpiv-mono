@@ -83,9 +83,24 @@ interface BtwState {
  * applied — exactly the context the main model receives and the usage anchor
  * meters. Filtering the branch's raw messages instead re-sent every summarized
  * message (#274).
+ *
+ * The main agent's callable tool declarations are dropped: Pi >= 1.0 records the
+ * tool loadout as `toolsAdded`/`toolsRemoved` on transcript `system` messages,
+ * and providers resolve the request's tools from them, so `tools: []` alone
+ * would leave /btw able to stop on `toolUse` with no answer (#295). The prompt
+ * text stays.
  */
 export function branchToContextMessages(branch: SessionEntry[]): Message[] {
-	return convertToLlm(buildSessionContext(branch).messages);
+	return stripToolDeclarations(convertToLlm(buildSessionContext(branch).messages));
+}
+
+function stripToolDeclarations(messages: Message[]): Message[] {
+	if (!messages.some((m) => m.role === "system" && (m.toolsAdded || m.toolsRemoved))) return messages;
+	return messages.map((m) => {
+		if (m.role !== "system" || (!m.toolsAdded && !m.toolsRemoved)) return m;
+		const { toolsAdded: _added, toolsRemoved: _removed, ...rest } = m;
+		return rest;
+	});
 }
 
 /** The /btw snapshot: the main agent's context messages, plus its context entries

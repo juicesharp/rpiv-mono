@@ -95,7 +95,8 @@ whitespace-collapsed and truncated to 200 characters.
 - **No disk writes.** History and snapshots live on `globalThis[Symbol.for("rpiv-btw")]`.
   The package's only filesystem access is one read of its own bundled prompt file
   at module init.
-- **No tool use.** The call runs with `tools: []`, so a side question cannot edit
+- **No tool use.** The call runs with `tools: []`, and the main agent's tool
+  declarations are removed from the cloned context, so a side question cannot edit
   a file or run a command even if it wanted to.
 - **No effect on the main session.** `Esc` aborts the `/btw` controller only; the
   main agent's signal is never touched.

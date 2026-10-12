@@ -15,7 +15,7 @@ import {
 	type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { ensureUserTailForAdvisor, stripInflightAdvisorCall } from "./context.js";
+import { ensureUserTailForAdvisor, stripInflightAdvisorCall, stripToolDeclarations } from "./context.js";
 import { getInventoryMessage } from "./inventory.js";
 import {
 	ERR_ABORTED_DETAIL,
@@ -124,17 +124,11 @@ export async function executeAdvisor(
 		ctx.sessionManager.getEntries(),
 		ctx.sessionManager.getLeafId(),
 	);
-	const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(convertToLlm(sessionMessages)));
+	const branchMessages = ensureUserTailForAdvisor(
+		stripInflightAdvisorCall(stripToolDeclarations(convertToLlm(sessionMessages))),
+	);
 	const inventoryMessage = getInventoryMessage(pi.getAllTools());
-	const advisorMessages = branchMessages.map((message) => {
-		if ((message.role as string) !== "system") return message;
-		const { toolsAdded, toolsRemoved, ...rest } = message as Message & {
-			toolsAdded?: unknown;
-			toolsRemoved?: unknown;
-		};
-		return rest;
-	});
-	const messages: Message[] = inventoryMessage ? [inventoryMessage, ...advisorMessages] : advisorMessages;
+	const messages: Message[] = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
 
 	onUpdate?.({
 		content: [{ type: "text", text: msgConsulting(advisorLabel, effort) }],
@@ -154,7 +148,9 @@ export async function executeAdvisor(
 			: { apiKey: auth.apiKey, headers: auth.headers, signal, reasoning: effort };
 
 		// Single dispatch point — both attempts reuse the SAME `messages` and
-		// `requestOptions`, so the retry cannot diverge from attempt 1.
+		// `requestOptions`, so the retry cannot diverge from attempt 1. `tools: []`
+		// plus stripToolDeclarations keeps the "never calls tools" contract: on
+		// Pi >= 1.0 the transcript's system messages declare tools of their own.
 		const callAdvisor = (): Promise<AssistantMessage> =>
 			completeSimple(advisor, { systemPrompt: ADVISOR_SYSTEM_PROMPT, messages, tools: [] }, requestOptions);
 

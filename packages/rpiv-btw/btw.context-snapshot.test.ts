@@ -11,7 +11,16 @@
  * exactly that context plus the question.
  */
 
-import type { AssistantMessage, Message, Model, Usage, UserMessage } from "@earendil-works/pi-ai";
+import {
+	type AssistantMessage,
+	getCurrentSystemPrompt,
+	getCurrentTools,
+	type Message,
+	type Model,
+	normalizeContext,
+	type Usage,
+	type UserMessage,
+} from "@earendil-works/pi-ai";
 import {
 	buildSessionContext,
 	convertToLlm,
@@ -141,6 +150,22 @@ describe("/btw sends the main agent's context, not the raw branch (#274)", () =>
 			expect(JSON.stringify(built.messages)).not.toContain("bulky-output");
 		},
 	);
+
+	// Pi >= 1.0 records the main agent's prompt + tool loadout as transcript system messages.
+	it("drops the main agent's tool declarations but keeps its prompt text (#295)", () => {
+		const sm = SessionManager.inMemory("/tmp");
+		const tool = { name: "bash", description: "run a command", parameters: { type: "object", properties: {} } };
+		sm.appendMessage({ role: "system", content: "MAIN PROMPT", toolsAdded: [tool], timestamp: 0 } as Message);
+		sm.appendMessage(user("question 1"));
+		appendAssistant(sm, "answer 1");
+		expect(getCurrentTools(mainContext(sm)).map((t) => t.name)).toEqual(["bash"]); // premise
+
+		const built = buildBtwMessages(ctxFor(sm), question);
+		const request = normalizeContext({ systemPrompt: built.systemPrompt, messages: built.messages, tools: [] });
+
+		expect(getCurrentTools(request.messages)).toEqual([]);
+		expect(getCurrentSystemPrompt(request.messages)).toContain("MAIN PROMPT");
+	});
 
 	it("without compaction the context is the whole conversation, sent unchanged", () => {
 		const sm = SessionManager.inMemory("/tmp");
