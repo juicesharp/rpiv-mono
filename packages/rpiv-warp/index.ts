@@ -207,10 +207,19 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("agent_start", async (_event, ctx) => {
 		// A missed `agent_end` (crash/reload) could leave a stale
 		// Blocked reason pinned, which would suppress every future raise AND leave
-		// Warp's badge lit. Clear the reasons and, if any were stale, tell Warp the
-		// block is over before announcing the new turn.
-		if (activeBlockReasons.size > 0) {
-			activeBlockReasons.clear();
+		// Warp's badge lit. Reset BOTH structures here: the reason set and
+		// `pendingBlockingCalls` are created and removed together everywhere else, so
+		// clearing only the reasons would let the next `agent_end` drain the orphaned
+		// call and emit a `tool_complete` with nothing raised before it. Clearing the
+		// map unconditionally keeps the two provably in step — anything still pending
+		// at turn start is stale by definition, since `agent_end` drains it and
+		// `session_shutdown` clears it on every real turn. If a reason WAS pinned, tell
+		// Warp the block is over before announcing the new turn; Warp's badge is driven
+		// by reasons, so the map alone never warrants an emit.
+		const hadStaleReason = activeBlockReasons.size > 0;
+		activeBlockReasons.clear();
+		pendingBlockingCalls.clear();
+		if (hadStaleReason) {
 			emit(buildToolCompletePayload(ctx, "ask_user_question", undefined));
 		}
 		turnActive = true;

@@ -968,6 +968,43 @@ describe("ui_prompt handlers raise Blocked", () => {
 		}
 	});
 
+	it("double-fire with tool_execution_end BEFORE ui_prompt_end defers the clear to the prompt end", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "tool_call", { toolName: "ask_user_question", input: {}, toolCallId: "tc1" });
+			await fire(captured, "ui_prompt_start", { kind: "custom" });
+			await fire(captured, "tool_execution_end", {
+				toolCallId: "tc1",
+				toolName: "ask_user_question",
+				result: {},
+				isError: false,
+			});
+
+			// The prompt reason is still open, so ending the tool must not clear early.
+			const beforePromptEnd = osc(write).length;
+			expect(payloadsOf(osc(write), "tool_complete")).toHaveLength(0);
+
+			await fire(captured, "ui_prompt_end", { kind: "custom" });
+
+			const all = osc(write);
+			const raises = indicesOf(all, "question_asked");
+			const clears = indicesOf(all, "tool_complete");
+			expect(raises).toHaveLength(1);
+			expect(clears).toHaveLength(1);
+			expect(raises[0]).toBeLessThan(clears[0]);
+			// The single clear is emitted by the ui_prompt_end, not by the tool end.
+			expect(clears[0]).toBe(beforePromptEnd);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("reverse order defers the clear until the LAST reason is removed", async () => {
 		setWorkingWarpEnv();
 		const { write } = primeFs();
@@ -1055,6 +1092,36 @@ describe("ui_prompt handlers raise Blocked", () => {
 			const secondRaise = indicesOf(all, "question_asked")[1];
 			expect(staleClear).toBe(beforeSecondStart);
 			expect(secondRaise).toBeGreaterThan(staleClear);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("a fresh agent_start discards the pending call left by a missed agent_end", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "tool_call", { toolName: "ask_user_question", input: {}, toolCallId: "tc1" });
+			expect(payloadsOf(osc(write), "question_asked")).toHaveLength(1);
+
+			// Crash/reload mid-block: no agent_end, so BOTH the reason and the pending
+			// call linger into the next turn.
+			await fire(captured, "agent_start", {});
+			expect(payloadsOf(osc(write), "tool_complete")).toHaveLength(1); // the stale-reason clear
+
+			// The next agent_end must NOT drain the orphaned call again — that would
+			// emit a second tool_complete with nothing raised before it.
+			await fire(captured, "agent_end", {});
+
+			const all = osc(write);
+			expect(payloadsOf(all, "question_asked")).toHaveLength(1);
+			expect(payloadsOf(all, "tool_complete")).toHaveLength(1);
+			expect(payloadsOf(all, "stop")).toHaveLength(1);
 		} finally {
 			vi.useRealTimers();
 		}
