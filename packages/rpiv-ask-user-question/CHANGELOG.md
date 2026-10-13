@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Faster extension startup: eager relative imports now name the published `.ts` files directly instead of making Jiti resolve nonexistent `.js` targets. The questionnaire UI remains lazy-loaded; registration and runtime behavior are unchanged. See [startup measurements and reproduction](docs/startup-performance.md).
+
 ### Added
 
 - `rpiv:ask-user:answer` — an inbound event that answers or cancels an open questionnaire without synthesizing keystrokes, for programs driving Pi from outside (pane supervisors, phone or web bridges, test harnesses). It names the questionnaire by `toolCallId`, now carried on the prompt and blocked events, so parallel questionnaires are never confused. It is accepted from the moment the prompt is emitted, the first answer wins (terminal or event), validation is strict and all-or-nothing, and every attempt gets one verdict with a machine-readable `code` on `rpiv:ask-user:answer-result`. Terminal dialog only. Thanks @yingzhi0808, and @catlain for #180. (#207)

@@ -1,4 +1,4 @@
-import type { QuestionnaireResult } from "./tool/types.js";
+import type { QuestionnaireResult } from "./tool/types.ts";
 
 /**
  * Inline row budget. A component in Pi's editor slot only receives a width, and the

@@ -11,7 +11,7 @@
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true,
-		"allowImportingTsExtensions": false,
+		"allowImportingTsExtensions": true,
 		"noEmit": true,
 		"types": [
 			"node"

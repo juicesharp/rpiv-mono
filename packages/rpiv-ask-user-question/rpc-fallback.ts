@@ -18,8 +18,8 @@
  * option numbers, custom text, or both separated by a semicolon.
  */
 
-import { displayLabel, t } from "./state/i18n-bridge.js";
-import type { QuestionAnswer, QuestionData, QuestionnaireResult, QuestionParams } from "./tool/types.js";
+import { displayLabel, t } from "./state/i18n-bridge.ts";
+import type { QuestionAnswer, QuestionData, QuestionnaireResult, QuestionParams } from "./tool/types.ts";
 
 /**
  * Canonical-English fallbacks; resolved through `t()` at dialog time so the

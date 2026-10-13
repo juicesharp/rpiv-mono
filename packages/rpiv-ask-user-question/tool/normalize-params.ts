@@ -1,4 +1,4 @@
-import type { QuestionParams } from "./types.js";
+import type { QuestionParams } from "./types.ts";
 
 /**
  * Normalize line terminators in one model-supplied text field (#192).

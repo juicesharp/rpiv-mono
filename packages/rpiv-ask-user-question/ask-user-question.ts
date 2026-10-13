@@ -1,19 +1,19 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, isKeyRepeat, matchesKey, type OverlayHandle, type TUI } from "@earendil-works/pi-tui";
-import { type OpenQuestionnaire, registerAnswerChannel } from "./answer-channel.js";
+import { type OpenQuestionnaire, registerAnswerChannel } from "./answer-channel.ts";
 import {
 	COLLAPSE_KEY_OFF,
 	formatKeySpecForDisplay,
 	loadConfig,
 	resolveCollapseKey,
 	validateGuidanceFields,
-} from "./config.js";
+} from "./config.ts";
 import {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
 	type AskUserBlockedEventPayload,
 	type AskUserPromptEventPayload,
-} from "./events.js";
+} from "./events.ts";
 // Static import is fine — rpc-fallback pulls only types + the i18n bridge,
 // none of the ~560ms TUI render graph that QuestionnaireSession lazy-loads.
 import {
@@ -23,12 +23,12 @@ import {
 	rowBudgetForHost,
 	STACKED_OVERLAY_PRESENTATION,
 	YIELD_TO_OVERLAY,
-} from "./presentation.js";
-import { type DialogUI, hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
-import { displayLabel, t } from "./state/i18n-bridge.js";
-import { sentinelsToAppend } from "./state/row-intent.js";
-import { normalizeQuestionParams, prepareQuestionArguments } from "./tool/normalize-params.js";
-import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.js";
+} from "./presentation.ts";
+import { type DialogUI, hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.ts";
+import { displayLabel, t } from "./state/i18n-bridge.ts";
+import { sentinelsToAppend } from "./state/row-intent.ts";
+import { normalizeQuestionParams, prepareQuestionArguments } from "./tool/normalize-params.ts";
+import { buildQuestionnaireResponse, buildToolResult } from "./tool/response-envelope.ts";
 import {
 	MAX_OPTIONS,
 	MAX_QUESTIONS,
@@ -38,9 +38,9 @@ import {
 	type QuestionnaireResult,
 	type QuestionParams,
 	QuestionParamsSchema,
-} from "./tool/types.js";
-import { validateQuestionnaire } from "./tool/validate-questionnaire.js";
-import type { WrappingSelectItem } from "./view/components/wrapping-select.js";
+} from "./tool/types.ts";
+import { validateQuestionnaire } from "./tool/validate-questionnaire.ts";
+import type { WrappingSelectItem } from "./view/components/wrapping-select.ts";
 
 function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams, toolCallId: string): void {
 	const payload: AskUserPromptEventPayload = {
