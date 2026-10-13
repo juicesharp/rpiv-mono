@@ -21,7 +21,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { buildSessionContext } from "@earendil-works/pi-coding-agent";
-import { CONTEXT_VIEW_CHANNEL, requestContextView } from "./advisor/context-view.js";
+import { CONTEXT_VIEW_CHANNEL, CONTEXT_VIEW_PROVIDER, requestContextView } from "./advisor/context-view.js";
 import { registerAdvisorTool, setAdvisorModel } from "./advisor/index.js";
 
 function resp(text: string) {
@@ -52,12 +52,21 @@ function mockBus() {
 	};
 }
 
-/** Install a provider that claims `answer` on every context-view request. */
+/** Install a provider that claims `answer` on every context-view request. A
+ *  real provider always identifies itself, so the identity fields are filled in
+ *  for `available` answers unless the test sets them itself — a test then only
+ *  writes the field it is actually about. */
 function providingBus(answer: (req: any) => unknown) {
 	const { events, handlers } = mockBus();
 	handlers.set(CONTEXT_VIEW_CHANNEL, [
 		(data: unknown) => {
-			(data as any).claim(Promise.resolve(answer(data)));
+			const req = data as any;
+			const raw = answer(req);
+			const filled =
+				raw && typeof raw === "object" && (raw as { status?: unknown }).status === "available"
+					? { provider: CONTEXT_VIEW_PROVIDER, sessionId: req.sessionId, ...(raw as object) }
+					: raw;
+			req.claim(Promise.resolve(filled));
 		},
 	]);
 	return events;
@@ -107,29 +116,117 @@ describe("requestContextView", () => {
 		await expect(requestContextView(pi, createMockCtx())).resolves.toEqual({ kind: "absent" });
 	});
 
-	it("treats an inactive answer as no view, silently", async () => {
+	it("treats an inactive stand-down as no view, silently", async () => {
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const pi = {
-			events: providingBus(() => ({ status: "inactive", reason: "session-mismatch" })),
+			events: providingBus(() => ({ status: "inactive", reason: "refused" })),
 		} as unknown as ExtensionAPI;
 		await expect(requestContextView(pi, createMockCtx())).resolves.toEqual({ kind: "absent" });
 		expect(warn).not.toHaveBeenCalled();
 		warn.mockRestore();
 	});
 
+	// Only reasons that really are "no view here" leave the caller on its own
+	// history. A mismatched session or an invalidated snapshot means the adapter
+	// answered with something that is not a view of this branch, and falling back
+	// would review the uncompressed history this module exists to replace.
+	it.each([
+		["refused", "absent"],
+		["stood-down", "absent"],
+		["empty", "absent"],
+		["session-mismatch", "broken"],
+		["branch-moved", "broken"],
+		["a reason from a future version", "broken"],
+	])("classifies an inactive %s answer as %s", async (reason, kind) => {
+		const pi = { events: providingBus(() => ({ status: "inactive", reason })) } as unknown as ExtensionAPI;
+		const outcome = await requestContextView(pi, createMockCtx());
+		expect(outcome.kind).toBe(kind);
+	});
+
+	it("refuses an answer that did not come from the extension that owns the channel", async () => {
+		const messages = [{ role: "user", content: [] }];
+		const pi = {
+			events: providingBus(() => ({ status: "available", provider: "some-other-extension", messages })),
+		} as unknown as ExtensionAPI;
+		const outcome = await requestContextView(pi, createMockCtx());
+		expect(outcome.kind).toBe("broken");
+		expect((outcome as { detail: string }).detail).toContain("some-other-extension");
+	});
+
+	it("refuses an answer projected for a different session", async () => {
+		const messages = [{ role: "user", content: [] }];
+		const pi = {
+			events: providingBus(() => ({ status: "available", sessionId: "some-other-session", messages })),
+		} as unknown as ExtensionAPI;
+		const outcome = await requestContextView(pi, createMockCtx({ sessionId: "s-7" }));
+		expect(outcome.kind).toBe("broken");
+		expect((outcome as { detail: string }).detail).toContain("different session");
+	});
+
+	it("never serializes the answer's payload into the error text", async () => {
+		// The answer can carry the whole conversation. `detail` reaches the tool
+		// result, and from there the model's context, so it has to stay bounded.
+		const huge = `LEAK-MARKER-${"x".repeat(5000)}`;
+		const pi = {
+			events: providingBus(() => ({ status: "available", messages: huge })),
+		} as unknown as ExtensionAPI;
+		const outcome = await requestContextView(pi, createMockCtx());
+		expect(outcome.kind).toBe("broken");
+		const detail = (outcome as { detail: string }).detail;
+		expect(detail).not.toContain("LEAK-MARKER");
+		expect(detail.length).toBeLessThan(200);
+	});
+
+	it("keeps a non-Error rejection bounded too", async () => {
+		const { events, handlers } = mockBus();
+		handlers.set(CONTEXT_VIEW_CHANNEL, [
+			(data: unknown) => (data as any).claim(Promise.reject({ messages: "LEAK-MARKER" })),
+		]);
+		const outcome = await requestContextView({ events } as unknown as ExtensionAPI, createMockCtx());
+		expect(outcome.kind).toBe("broken");
+		const detail = (outcome as { detail: string }).detail;
+		expect(detail).not.toContain("LEAK-MARKER");
+	});
+
+	it("keeps the first claim when a second provider also answers", async () => {
+		const { events, handlers } = mockBus();
+		const first = [{ role: "user", content: [{ type: "text", text: "first" }] }];
+		handlers.set(CONTEXT_VIEW_CHANNEL, [
+			(data: unknown) => {
+				const req = data as any;
+				req.claim(
+					Promise.resolve({
+						status: "available",
+						provider: CONTEXT_VIEW_PROVIDER,
+						sessionId: req.sessionId,
+						messages: first,
+					}),
+				);
+				// The discarded promise must not reject unobserved, and must not
+				// replace the answer already being awaited.
+				req.claim(Promise.reject(new Error("second provider failed")));
+			},
+		]);
+		await expect(requestContextView({ events } as unknown as ExtensionAPI, createMockCtx())).resolves.toEqual({
+			kind: "available",
+			messages: first,
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	});
+
 	// A wired adapter that answered and then broke the hand-off is reported, not
 	// swallowed: falling back here would review Pi's raw history, which is the
 	// uncompressed context this adapter path exists to replace.
 	it.each([
-		["malformed status", { status: "available" }],
-		["messages not an array", { status: "available", messages: "nope" }],
-		["non-object", "nope"],
-		["null", null],
-	])("reports a broken hand-off on a %s answer", async (_label, answer) => {
+		["malformed status", { status: "available" }, "not messages"],
+		["messages not an array", { status: "available", messages: "nope" }, "not messages"],
+		["non-object", "nope", "not a result object"],
+		["null", null, "not a result object"],
+	])("reports a broken hand-off on a %s answer", async (_label, answer, expected) => {
 		const pi = { events: providingBus(() => answer) } as unknown as ExtensionAPI;
 		const outcome = await requestContextView(pi, createMockCtx());
 		expect(outcome.kind).toBe("broken");
-		expect((outcome as { detail: string }).detail).toContain("unusable answer");
+		expect((outcome as { detail: string }).detail).toContain(expected);
 	});
 
 	it("reports a broken hand-off when the provider's claim rejects", async () => {
@@ -208,7 +305,7 @@ describe("executeAdvisor — compression adapter integration", () => {
 		expect(text).toContain("could not read the compression adapter's context view");
 		expect(text).not.toContain("raw question");
 		const details = (result as { details: { errorMessage?: string } }).details;
-		expect(details.errorMessage).toContain("unusable answer");
+		expect(details.errorMessage).toContain("not messages");
 		// The whole point: no fallback to the uncompressed branch, and no dispatch.
 		expect(buildSessionContext).not.toHaveBeenCalled();
 		expect(completeSimple).not.toHaveBeenCalled();
