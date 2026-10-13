@@ -12,6 +12,7 @@
   "overlay.collapsed": "contraído",
 
   "command.no_todos": "Sin tareas aún. ¡Pídele al agente que añada algunas!",
+  "command.cleared": "Se borraron {count} tareas",
   "command.requires_interactive": "/todos requiere modo interactivo",
   "command.section.pending": "── Pendientes ──",
   "command.section.in_progress": "── En curso ──",

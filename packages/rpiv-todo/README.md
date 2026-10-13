@@ -41,7 +41,7 @@ input box, updating as work moves:
 
 Press `ctrl+shift+t` to collapse the panel to its heading plus a one-line hint,
 and again to expand it. Run `/todos` at any time to print the full list grouped
-by status.
+by status, or `/todos clear` to remove every task and reset task IDs.
 
 ## What you get
 

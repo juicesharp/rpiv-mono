@@ -1,6 +1,9 @@
 import type { TaskDetails } from "../tool/types.js";
 import { EMPTY_STATE, type TaskState } from "./state.js";
 
+/** Session marker written when `/todos clear` resets state outside a tool call. */
+export const TODO_CLEAR_ENTRY_TYPE = "rpiv-todo-clear";
+
 /**
  * Discriminator for `details` envelopes that match the persisted `TaskDetails`
  * shape. Defensive — branch entries from older or corrupt sessions are
@@ -32,6 +35,8 @@ function stateOf(details: TaskDetails): TaskState {
  * they are appended at commit time for every change, so a `toolResult`
  * snapshot can only repeat or predate them. Branches with no state entry
  * (sessions written before entries existed) replay from `toolResult` snapshots.
+ * `/todos clear` markers reset the active snapshot source. Legacy branches
+ * without state entries can still replay later toolResult snapshots after a clear.
  * When neither exists, returns `EMPTY_STATE`.
  *
  * Pure of module state — `index.ts` writes the returned snapshot into the
@@ -50,6 +55,11 @@ export function replayFromBranch(ctx: { sessionManager: { getBranch(): Iterable<
 		};
 		if (e.type === "custom") {
 			if (e.customType === "rpiv-todo-state" && isTaskDetails(e.data)) fromEntries = stateOf(e.data);
+			if (e.customType === TODO_CLEAR_ENTRY_TYPE) {
+				const cleared = { tasks: [...EMPTY_STATE.tasks], nextId: EMPTY_STATE.nextId };
+				if (fromEntries) fromEntries = cleared;
+				fromToolResults = cleared;
+			}
 			continue;
 		}
 		if (e.type !== "message") continue;

@@ -41,6 +41,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [2.10.0] - 2026-09-12
 
+### Added
+
+- `/todos clear` removes the entire current-session todo list, resets task IDs, updates the overlay immediately, and persists across reloads and branch navigation.
+
 ## [2.9.0] - 2026-09-01
 
 ## [2.8.0] - 2026-08-29

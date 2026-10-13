@@ -71,6 +71,16 @@ describe("replayFromBranch", () => {
 		expect(state.nextId).toBe(3);
 	});
 
+	it("treats a slash-command clear marker as an empty state", () => {
+		const ctx = createMockCtx({
+			branch: [
+				...buildBranch([{ action: "create", params: {}, tasks: [taskFixture(1, "old")], nextId: 2 }]),
+				{ type: "custom", customType: "rpiv-todo-clear" } as never,
+			],
+		});
+		expect(replayFromBranch(ctx)).toEqual({ tasks: [], nextId: 1 });
+	});
+
 	it("clones tasks so mutating the fixture does not mutate replayed state", () => {
 		const fixture: Task = taskFixture(1, "original");
 		const ctx = createMockCtx({
@@ -150,6 +160,36 @@ describe("replayFromBranch — state entries", () => {
 		const state = replayFromBranch(ctx);
 		expect(state.tasks.map((t) => t.subject)).toEqual(["A", "B"]);
 		expect(state.nextId).toBe(3);
+	});
+
+	it("clear resets authoritative state entries even when an older tool result follows", () => {
+		const snapshot = snap([taskFixture(1, "old")], 2);
+		const ctx = createMockCtx({
+			branch: [stateEntry(snapshot), makeCustomEntry("rpiv-todo-clear", undefined), todoResult(snapshot)],
+		});
+		expect(replayFromBranch(ctx)).toEqual({ tasks: [], nextId: 1 });
+	});
+
+	it("a new state entry after clear restores the new list", () => {
+		const ctx = createMockCtx({
+			branch: [
+				stateEntry(snap([taskFixture(1, "old")], 2)),
+				makeCustomEntry("rpiv-todo-clear", undefined),
+				stateEntry(snap([taskFixture(1, "new")], 2)),
+			],
+		});
+		expect(replayFromBranch(ctx).tasks.map((task) => task.subject)).toEqual(["new"]);
+	});
+
+	it("legacy tool results after clear still restore a new list without state entries", () => {
+		const ctx = createMockCtx({
+			branch: [
+				todoResult(snap([taskFixture(1, "old")], 2)),
+				makeCustomEntry("rpiv-todo-clear", undefined),
+				todoResult(snap([taskFixture(1, "new")], 2)),
+			],
+		});
+		expect(replayFromBranch(ctx).tasks.map((task) => task.subject)).toEqual(["new"]);
 	});
 
 	it("a later state entry wins over an earlier toolResult (nested completion after a direct call)", () => {
