@@ -51,6 +51,9 @@ beforeEach(() => {
 	(fs.openSync as unknown as Mock).mockReset();
 	(fs.writeSync as unknown as Mock).mockReset();
 	(fs.closeSync as unknown as Mock).mockReset();
+	// Module state (turnActive, activeBlockReasons, pendingBlockingCalls, timers)
+	// resets between tests so Blocked-reason bookkeeping never leaks across cases.
+	__resetState();
 	resetSpinner();
 });
 
@@ -66,7 +69,7 @@ describe("registration", () => {
 		register(pi);
 		expect(captured.events.size).toBe(0);
 	});
-	it("registers all seven event handlers in working Warp", () => {
+	it("registers all nine event handlers in working Warp", () => {
 		setWorkingWarpEnv();
 		const { pi, captured } = createMockPi();
 		register(pi);
@@ -77,10 +80,13 @@ describe("registration", () => {
 			"agent_end",
 			"tool_call",
 			"tool_execution_end",
+			"ui_prompt_start",
+			"ui_prompt_end",
 			"session_shutdown",
 		]) {
 			expect(captured.events.has(ev)).toBe(true);
 		}
+		expect(captured.events.size).toBe(9);
 	});
 });
 
@@ -195,7 +201,10 @@ describe("tool_call handler", () => {
 		const { pi, captured } = createMockPi();
 		register(pi);
 		const handler = captured.events.get("tool_call")?.[0];
-		await handler?.({ toolName: "ask_user_question", input: {} } as never, createMockCtx() as never);
+		await handler?.(
+			{ toolName: "ask_user_question", input: {}, toolCallId: "tc1" } as never,
+			createMockCtx() as never,
+		);
 		expect(write).toHaveBeenCalledOnce();
 		const json = String(write.mock.calls[0][1])
 			.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
@@ -219,12 +228,18 @@ describe("tool_execution_end handler", () => {
 		const { write } = primeFs();
 		const { pi, captured } = createMockPi();
 		register(pi);
+		// Real pi events always carry a toolCallId, and the raise/clear bookkeeping
+		// is keyed on it — so the fixture must open the call it ends.
+		await captured.events.get("tool_call")?.[0]?.(
+			{ toolName: "ask_user_question", input: {}, toolCallId: "x" } as never,
+			createMockCtx() as never,
+		);
 		const handler = captured.events.get("tool_execution_end")?.[0];
 		await handler?.(
 			{ toolCallId: "x", toolName: "ask_user_question", result: {}, isError: false } as never,
 			createMockCtx() as never,
 		);
-		const osc777Write = write.mock.calls.find((c) => String(c[1]).startsWith("\x1b]777;notify;"));
+		const osc777Write = write.mock.calls.find((c) => String(c[1]).includes("tool_complete"));
 		expect(osc777Write).toBeDefined();
 		const json = String(osc777Write?.[1])
 			.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
@@ -324,7 +339,7 @@ describe("spinner lifecycle wiring", () => {
 			expect(beforeBlock).toBe(2);
 
 			await captured.events.get("tool_call")?.[0]?.(
-				{ toolName: "ask_user_question", input: {} } as never,
+				{ toolName: "ask_user_question", input: {}, toolCallId: "x" } as never,
 				createMockCtx() as never,
 			);
 			const blocked = classify(write);
@@ -391,7 +406,10 @@ describe("spinner lifecycle wiring", () => {
 			vi.advanceTimersByTime(FRAME_INTERVAL_MS);
 			expect(classify(write).titleSets).toEqual([`${SPINNER_FRAMES[0]} - session-title${SUFFIX}`]);
 
-			await captured.events.get("tool_call")?.[0]?.({ toolName: "ask_user_question", input: {} } as never, named());
+			await captured.events.get("tool_call")?.[0]?.(
+				{ toolName: "ask_user_question", input: {}, toolCallId: "x" } as never,
+				named(),
+			);
 			await captured.events.get("tool_execution_end")?.[0]?.(
 				{ toolCallId: "x", toolName: "ask_user_question", result: {}, isError: false } as never,
 				named(),
@@ -791,5 +809,411 @@ describe("blocking-tool abort (ESC) unblocks at agent_end", () => {
 
 		const toolCompleteWrites = write.mock.calls.filter((c) => String(c[1]).includes("tool_complete"));
 		expect(toolCompleteWrites.length).toBe(1); // only the real completion, not a duplicate from agent_end
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Extension UI prompts (permission prompts, ask-user overlays) also flip Warp's
+// Blocked badge. See the marked block in index.ts and CHANGELOG [Unreleased].
+// ---------------------------------------------------------------------------
+
+describe("ui_prompt handlers raise Blocked", () => {
+	interface PromptPayload {
+		event: string;
+		tool_name?: string;
+		session_id?: string;
+		tool_input?: unknown;
+	}
+
+	function osc(write: Mock): PromptPayload[] {
+		return write.mock.calls
+			.filter((c) => String(c[1]).startsWith("\x1b]777;notify;"))
+			.map((c) => {
+				const json = String(c[1])
+					.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
+					.replace(/\x07$/, "");
+				return JSON.parse(json) as PromptPayload;
+			});
+	}
+
+	function payloadsOf(all: PromptPayload[], event: string): PromptPayload[] {
+		return all.filter((p) => p.event === event);
+	}
+
+	function indicesOf(all: PromptPayload[], event: string): number[] {
+		const indices: number[] = [];
+		for (let i = 0; i < all.length; i += 1) {
+			if (all[i].event === event) indices.push(i);
+		}
+		return indices;
+	}
+
+	function titleSetCount(write: Mock): number {
+		return write.mock.calls.filter((c) => String(c[1]).startsWith("\x1b]0;")).length;
+	}
+
+	async function fire(
+		captured: ReturnType<typeof createMockPi>["captured"],
+		event: string,
+		payload: unknown,
+		ctx = createMockCtx(),
+	): Promise<void> {
+		for (const handler of captured.events.get(event) ?? []) {
+			await handler(payload as never, ctx as never);
+		}
+	}
+
+	it("raises Blocked on ui_prompt_start during a live turn, and goes quiet", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS * 2);
+			const titlesBefore = titleSetCount(write);
+
+			await fire(captured, "ui_prompt_start", { type: "ui_prompt_start", reason: "ui_prompt", kind: "custom" });
+
+			expect(payloadsOf(osc(write), "question_asked")).toHaveLength(1);
+
+			// Spinner stopped: no further title writes, however long we wait.
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS * 5);
+			expect(titleSetCount(write)).toBe(titlesBefore);
+
+			// Heartbeat paused: no re-announced prompt_submit after any number of ticks.
+			vi.advanceTimersByTime(30_000);
+			expect(payloadsOf(osc(write), "prompt_submit")).toHaveLength(1); // agent_start only
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("clears on ui_prompt_end and resumes the spinner + heartbeat", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "ui_prompt_start", { kind: "custom" });
+			await fire(captured, "ui_prompt_end", { kind: "custom" });
+
+			const clears = payloadsOf(osc(write), "tool_complete");
+			expect(clears).toHaveLength(1);
+			expect(clears[0].tool_name).toBe("ask_user_question");
+
+			const titlesAfterClear = titleSetCount(write);
+			vi.advanceTimersByTime(FRAME_INTERVAL_MS);
+			expect(titleSetCount(write)).toBe(titlesAfterClear + 1);
+
+			const submitsAfterClear = payloadsOf(osc(write), "prompt_submit").length;
+			vi.advanceTimersByTime(15_000);
+			expect(payloadsOf(osc(write), "prompt_submit").length).toBeGreaterThan(submitsAfterClear);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("is a no-op outside a turn (config modal before/after an agent loop)", async () => {
+		setWorkingWarpEnv();
+		const { open, write } = primeFs();
+		const { pi, captured } = createMockPi();
+		register(pi);
+
+		await fire(captured, "ui_prompt_start", { kind: "custom" });
+
+		vi.useFakeTimers();
+		try {
+			vi.advanceTimersByTime(30_000);
+		} finally {
+			vi.useRealTimers();
+		}
+
+		expect(open).not.toHaveBeenCalled();
+		expect(write).not.toHaveBeenCalled();
+	});
+
+	it("double-fire (ask_user_question fires tool_call AND ui_prompt_start) raises once and clears once", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "tool_call", { toolName: "ask_user_question", input: {}, toolCallId: "tc1" });
+			await fire(captured, "ui_prompt_start", { kind: "custom" });
+			await fire(captured, "ui_prompt_end", { kind: "custom" });
+			await fire(captured, "tool_execution_end", {
+				toolCallId: "tc1",
+				toolName: "ask_user_question",
+				result: {},
+				isError: false,
+			});
+
+			const all = osc(write);
+			const raises = indicesOf(all, "question_asked");
+			const clears = indicesOf(all, "tool_complete");
+			expect(raises).toHaveLength(1);
+			expect(clears).toHaveLength(1);
+			expect(raises[0]).toBeLessThan(clears[0]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("reverse order defers the clear until the LAST reason is removed", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "ui_prompt_start", { kind: "custom" });
+			await fire(captured, "tool_call", { toolName: "ask_user_question", input: {}, toolCallId: "tc1" });
+			await fire(captured, "tool_execution_end", {
+				toolCallId: "tc1",
+				toolName: "ask_user_question",
+				result: {},
+				isError: false,
+			});
+			// The prompt reason is still open, so the tool end must not clear early.
+			expect(payloadsOf(osc(write), "tool_complete")).toHaveLength(0);
+
+			await fire(captured, "ui_prompt_end", { kind: "custom" });
+			const all = osc(write);
+			expect(indicesOf(all, "question_asked")).toHaveLength(1);
+			expect(indicesOf(all, "tool_complete")).toHaveLength(1);
+			expect(indicesOf(all, "question_asked")[0]).toBeLessThan(indicesOf(all, "tool_complete")[0]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps Blocked while a second same-name call is open (toolCallId keying)", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "tool_call", { toolName: "ask_user_question", input: {}, toolCallId: "tc1" });
+			await fire(captured, "tool_call", { toolName: "ask_user_question", input: {}, toolCallId: "tc2" });
+			await fire(captured, "tool_execution_end", {
+				toolCallId: "tc1",
+				toolName: "ask_user_question",
+				result: {},
+				isError: false,
+			});
+			expect(payloadsOf(osc(write), "tool_complete")).toHaveLength(0);
+
+			await fire(captured, "tool_execution_end", {
+				toolCallId: "tc2",
+				toolName: "ask_user_question",
+				result: {},
+				isError: false,
+			});
+			const all = osc(write);
+			expect(indicesOf(all, "question_asked")).toHaveLength(1);
+			expect(indicesOf(all, "tool_complete")).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("recovers from a stale reason at agent_start (missed agent_end)", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "ui_prompt_start", { kind: "custom" }); // raise #1
+			const beforeSecondStart = osc(write).length;
+
+			// No agent_end for the first turn (crash/reload): only agent_start can
+			// both un-stick Warp's badge and re-arm the raise gate.
+			await fire(captured, "agent_start", {});
+			await fire(captured, "tool_call", { toolName: "ask_user_question", input: {}, toolCallId: "tc3" });
+
+			const all = osc(write);
+			expect(indicesOf(all, "question_asked")).toHaveLength(2);
+			expect(indicesOf(all, "tool_complete")).toHaveLength(1);
+			const staleClear = indicesOf(all, "tool_complete")[0];
+			const secondRaise = indicesOf(all, "question_asked")[1];
+			expect(staleClear).toBe(beforeSecondStart);
+			expect(secondRaise).toBeGreaterThan(staleClear);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("ESC during a permission prompt: agent_end drains the prompt-only reason", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "ui_prompt_start", { kind: "custom" }); // no tool_call: gated tool is not "blocking"
+			await fire(captured, "agent_end", {});
+
+			const all = osc(write);
+			expect(payloadsOf(all, "question_asked")).toHaveLength(1);
+			expect(payloadsOf(all, "tool_complete")).toHaveLength(1);
+			expect(payloadsOf(all, "stop")).toHaveLength(1);
+			expect(indicesOf(all, "question_asked")[0]).toBeLessThan(indicesOf(all, "tool_complete")[0]);
+			expect(indicesOf(all, "tool_complete")[0]).toBeLessThan(indicesOf(all, "stop")[0]);
+
+			vi.advanceTimersByTime(30_000);
+			expect(payloadsOf(osc(write), "prompt_submit")).toHaveLength(1); // no post-turn re-announce
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("ESC with ui_prompt_end before agent_end: exactly one raise and one clear, raise first", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "ui_prompt_start", { kind: "custom" });
+			await fire(captured, "ui_prompt_end", { kind: "custom" });
+			await fire(captured, "agent_end", {});
+
+			// Invariant (order-tolerant): ui_prompt_start/end delivery is deferred a
+			// microtask by pi, so this asserts the outcome, not one interleaving.
+			const all = osc(write);
+			const raises = indicesOf(all, "question_asked");
+			const clears = indicesOf(all, "tool_complete");
+			expect(raises).toHaveLength(1);
+			expect(clears).toHaveLength(1);
+			expect(raises[0]).toBeLessThan(clears[0]);
+			expect(payloadsOf(all, "stop")).toHaveLength(1);
+
+			vi.advanceTimersByTime(30_000);
+			expect(payloadsOf(osc(write), "prompt_submit")).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("late ui_prompt_end after the agent_end drain is a no-op", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "ui_prompt_start", { kind: "custom" });
+			await fire(captured, "agent_end", {});
+
+			const beforeLate = write.mock.calls.length;
+			await fire(captured, "ui_prompt_end", { kind: "custom" });
+			expect(write.mock.calls.length).toBe(beforeLate);
+
+			vi.advanceTimersByTime(30_000);
+			expect(payloadsOf(osc(write), "tool_complete")).toHaveLength(1);
+			expect(payloadsOf(osc(write), "prompt_submit")).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("a spurious ui_prompt_end without a start is a no-op", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			const before = osc(write).length;
+
+			await fire(captured, "ui_prompt_end", { kind: "custom" });
+
+			expect(osc(write).length).toBe(before);
+			expect(payloadsOf(osc(write), "tool_complete")).toHaveLength(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("session_shutdown with an open prompt stops everything; a late end emits nothing", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+
+			await fire(captured, "agent_start", {});
+			await fire(captured, "ui_prompt_start", { kind: "custom" });
+			const titlesBeforeShutdown = titleSetCount(write);
+
+			await fire(captured, "session_shutdown", { type: "session_shutdown", reason: "quit" });
+			vi.advanceTimersByTime(30_000);
+			expect(titleSetCount(write)).toBe(titlesBeforeShutdown);
+			expect(payloadsOf(osc(write), "prompt_submit")).toHaveLength(1);
+
+			const beforeLate = write.mock.calls.length;
+			await fire(captured, "ui_prompt_end", { kind: "custom" });
+			expect(write.mock.calls.length).toBe(beforeLate);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("WorkflowQuestionTransport badges stay independent of the launcher prompt path", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		vi.useFakeTimers();
+		try {
+			const { pi, captured } = createMockPi();
+			register(pi);
+			const transport = createWorkflowQuestionTransport("/tmp/projects/widget");
+
+			transport.asked("run-x");
+			await fire(captured, "agent_start", {});
+			await fire(captured, "ui_prompt_start", { kind: "custom" });
+			await fire(captured, "ui_prompt_end", { kind: "custom" });
+			transport.resolved("run-x");
+
+			const all = osc(write);
+			// Transport badges live under the workflow runId...
+			expect(all.filter((p) => p.session_id === "run-x").map((p) => p.event)).toEqual([
+				"session_start",
+				"question_asked",
+				"tool_complete",
+			]);
+			// ...while the prompt path uses the launcher session envelope, and neither
+			// early-clears the other.
+			const launcher = all.filter((p) => p.session_id === "test-session");
+			expect(payloadsOf(launcher, "question_asked")).toHaveLength(1);
+			expect(payloadsOf(launcher, "tool_complete")).toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

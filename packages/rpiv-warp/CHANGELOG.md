@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Extension UI prompts (e.g. a `@gotgenes/pi-permission-system` "allow this bash command?" prompt) now raise Warp's **Blocked** badge and fire the OS toast, and the heartbeat pauses instead of re-announcing `prompt_submit` every 15 s while the agent is actually waiting on the user. `ui_prompt_start` / `ui_prompt_end` join the same reason set that drives the blocking-tool badge, so `ask_user_question` — which fires both `tool_call` and `ui_prompt_start` — still raises exactly once and clears exactly once, in either event order. A stale reason surviving a missed `agent_end` is reset (and the badge cleared) at the next `agent_start`.
+
 ## [2.13.8] - 2026-10-12
 
 ## [2.13.7] - 2026-10-12
