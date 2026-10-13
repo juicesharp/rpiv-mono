@@ -9,7 +9,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `rpiv:ask-user:answer` — an inbound event that resolves the newest questionnaire awaiting input without synthesizing keystrokes, for programs driving Pi from outside (pane supervisors, test harnesses). When several are open, the event targets the newest and each call removes only its own entry, so the previous one can be answered after that one closes. Answers are all-or-nothing; every attempt is acknowledged on `rpiv:ask-user:answer-result`. Terminal dialog only.
+- `rpiv:ask-user:answer` — an inbound event that answers or cancels an open questionnaire without synthesizing keystrokes, for programs driving Pi from outside (pane supervisors, phone or web bridges, test harnesses). It names the questionnaire by `toolCallId`, now carried on the prompt and blocked events, so parallel questionnaires are never confused. It is accepted from the moment the prompt is emitted, the first answer wins (terminal or event), validation is strict and all-or-nothing, and every attempt gets one verdict with a machine-readable `code` on `rpiv:ask-user:answer-result`. Terminal dialog only. Thanks @yingzhi0808, and @catlain for #180. (#207)
 
 ## [2.13.8] - 2026-10-12
 

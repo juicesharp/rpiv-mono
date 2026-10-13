@@ -30,6 +30,7 @@
 		"test": "vitest run"
 	},
 	"files": [
+		"answer-channel.ts",
 		"ask-user-question.ts",
 		"rpc-fallback.ts",
 		"config.ts",
@@ -56,6 +57,7 @@
 		"state/selectors/projections.ts",
 		"state/state-reducer.ts",
 		"state/state.ts",
+		"tool/external-answer.ts",
 		"tool/format-answer.ts",
 		"tool/normalize-params.ts",
 		"tool/response-envelope.ts",

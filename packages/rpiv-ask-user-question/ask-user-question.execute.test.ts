@@ -99,8 +99,8 @@ describe("ask_user_question.execute — terminal attention", () => {
 
 			expect(stdout.stdoutWrite).toHaveBeenCalledTimes(1);
 			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
-			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
-			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
+			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
 			expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
 			expect(stdout.stdoutWrite.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
 		} finally {
@@ -169,8 +169,8 @@ describe("ask_user_question.execute — terminal attention", () => {
 
 			expect(result?.details).toMatchObject({ cancelled: false });
 			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
-			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
-			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
+			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
 		} finally {
 			stdout.restore();
 		}
@@ -385,6 +385,7 @@ describe("ask_user_question.execute — event emission", () => {
 		await tool.execute?.("tc", validParams() as never, undefined as never, undefined as never, ctx as never);
 
 		expect(mockEmit).toHaveBeenCalledWith("rpiv:ask-user:prompt", {
+			toolCallId: "tc",
 			questions: [
 				{
 					question: "Which library?",
@@ -398,8 +399,8 @@ describe("ask_user_question.execute — event emission", () => {
 			],
 		});
 
-		expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
-		expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false });
+		expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
+		expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
 
 		// Both start events are emitted before the dialog; the clear follows it.
 		expect(mockEmit.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
@@ -437,10 +438,10 @@ describe("ask_user_question.execute — event emission", () => {
 		).rejects.toThrow("UI failed");
 
 		expect(mockEmit.mock.calls.filter(([name]) => name === "rpiv:ask-user:blocked")).toEqual([
-			["rpiv:ask-user:blocked", { active: true }],
-			["rpiv:ask-user:blocked", { active: false }],
-			["rpiv:ask-user:blocked", { active: true }],
-			["rpiv:ask-user:blocked", { active: false }],
+			["rpiv:ask-user:blocked", { active: true, toolCallId: "tc" }],
+			["rpiv:ask-user:blocked", { active: false, toolCallId: "tc" }],
+			["rpiv:ask-user:blocked", { active: true, toolCallId: "tc" }],
+			["rpiv:ask-user:blocked", { active: false, toolCallId: "tc" }],
 		]);
 	});
 
@@ -499,6 +500,7 @@ describe("ask_user_question.execute — event emission", () => {
 		expect(captured.eventsEmitted.has("rpiv:ask-user:prompt")).toBe(true);
 		const payload = captured.eventsEmitted.get("rpiv:ask-user:prompt")![0] as Record<string, unknown>;
 		expect(payload).toEqual({
+			toolCallId: "tc",
 			questions: [
 				{
 					question: "Which framework?",

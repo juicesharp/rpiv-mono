@@ -59,6 +59,7 @@ describe("ask_user_question — bare CR in model-supplied text (#192)", () => {
 		await tool.execute?.("tc", CR_PARAMS as never, undefined as never, undefined as never, ctx as never);
 
 		expect(captured.eventsEmitted.get("rpiv:ask-user:prompt")![0]).toEqual({
+			toolCallId: "tc",
 			questions: [
 				{
 					question: "Which option is best?",

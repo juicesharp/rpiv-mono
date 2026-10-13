@@ -120,6 +120,7 @@ before the dialog is shown:
 import { ASK_USER_PROMPT_EVENT, type AskUserPromptEventPayload } from "@juicesharp/rpiv-ask-user-question/events";
 
 pi.events.on(ASK_USER_PROMPT_EVENT, (payload: AskUserPromptEventPayload) => {
+  // payload.toolCallId — names this questionnaire on the events below
   // payload.questions[].{ question, header, multiSelect, options[] }
   // payload.questions[].options[].{ label, description, hasPreview }
 });
@@ -128,44 +129,68 @@ pi.events.on(ASK_USER_PROMPT_EVENT, (payload: AskUserPromptEventPayload) => {
 Preview *content* is deliberately not shipped in the payload — only `hasPreview: boolean` —
 so listeners forwarding the event across a process or network boundary stay cheap.
 
-`rpiv:ask-user:blocked` brackets the wait for input: `{ active: true }` before the dialog
-opens, `{ active: false }` in a `finally` when it closes for any reason, so a listener can
-tell blocked-on-human apart from working.
+`rpiv:ask-user:blocked` brackets the wait for input: `{ active: true, toolCallId }` before the
+dialog opens, `{ active: false, toolCallId }` in a `finally` when it closes for any reason, so
+a listener can tell blocked-on-human apart from working. Several questionnaires can be open
+at once (Pi runs tool calls in parallel), so match `active: false` to its prompt by
+`toolCallId` — that is also how a remote mirror learns a question was answered elsewhere.
 
 ### Inbound
 
-`rpiv:ask-user:answer` resolves the newest questionnaire awaiting input, without
-synthesizing keystrokes. When several are open (a second call stacks an overlay on an
-inline one), the event targets the newest; once that one closes, the previous is the
-target again. It exists for programs driving Pi from outside — a pane supervisor, a test
-harness — that would otherwise have to send arrow keys and count rows against a rendered
-overlay:
+`rpiv:ask-user:answer` answers or cancels one open questionnaire without synthesizing
+keystrokes — for programs driving Pi from outside: a pane supervisor, a phone or web
+bridge, a test harness. Name the questionnaire by the `toolCallId` from its prompt event:
 
 ```ts
-import { ASK_USER_ANSWER_EVENT, ASK_USER_ANSWER_RESULT_EVENT } from "@juicesharp/rpiv-ask-user-question/events";
+import {
+  ASK_USER_ANSWER_EVENT,
+  ASK_USER_ANSWER_RESULT_EVENT,
+  ASK_USER_PROMPT_EVENT,
+  type AskUserAnswerResultEventPayload,
+  type AskUserPromptEventPayload,
+} from "@juicesharp/rpiv-ask-user-question/events";
 
-pi.events.emit(ASK_USER_ANSWER_EVENT, {
-  requestId: "r1", // optional, echoed back on the result
-  answers: [
-    { questionIndex: 0, optionIndexes: [1] },              // single-select: exactly one index
-    { questionIndex: 1, optionIndexes: [0, 2], notes: "" }, // multi-select
-    { questionIndex: 2, text: "something else" },           // the `Type something.` row
-  ],
+pi.events.on(ASK_USER_PROMPT_EVENT, ({ toolCallId }: AskUserPromptEventPayload) => {
+  pi.events.emit(ASK_USER_ANSWER_EVENT, {
+    toolCallId,
+    requestId: "r1", // optional, echoed on the verdict
+    answers: [
+      { questionIndex: 0, optionIndexes: [1] },                 // single-select: one index…
+      { questionIndex: 1, text: "something else" },             // …or custom text
+      { questionIndex: 2, optionIndexes: [0, 2], text: "and" }, // multi-select: either or both
+    ],
+    globalNote: "optional, like the Submit tab's note",
+  });
+  // or decline, as Esc does: { toolCallId, cancel: true }
+});
+
+pi.events.on(ASK_USER_ANSWER_RESULT_EVENT, (v: AskUserAnswerResultEventPayload) => {
+  // { ok, code?, reason?, requestId?, toolCallId? }
 });
 ```
 
-Answers are all-or-nothing: every question must be present and every index in range, or
-nothing is submitted. A partially applied answer would reach the model indistinguishable
-from one the user gave, so a rejection leaves the dialog untouched and open — fix the
-payload and emit again.
+Indexes are 0-based into the prompt's `questions` and each question's `options`. Per-question
+`notes` are accepted too; notes are trimmed and dropped when blank, as in the dialog.
 
-Every attempt gets a verdict on `rpiv:ask-user:answer-result` — `{ ok, reason?, requestId? }`
-— accepted or not. The payload carries no callback because payloads must stay JSON-safe (see
-below). Emitting when no questionnaire is awaiting input is rejected, not queued.
+- **When:** from the moment the prompt event is emitted — answering straight from the
+  prompt listener works, and no dialog is shown — until the questionnaire closes.
+- **First answer wins**, typed in the terminal or sent here. A later one is refused.
+- **All or nothing.** Every question must be answered once, indexes in range and distinct,
+  custom text not blank. Otherwise nothing is applied and the dialog stays open — a partly
+  applied answer would reach the model indistinguishable from one the user gave. Unknown
+  fields are ignored.
+- **One verdict per attempt** on `rpiv:ask-user:answer-result`. Branch on `code`; `reason`
+  is for logs and its wording may change:
 
-Only the terminal dialog honours this event. RPC/ACP hosts run the sequential dialog walker
-described in [Hosts and runtime behavior](./hosts.md), which owns its own prompts; an
-inbound answer there is rejected with `no questionnaire is awaiting input`.
+| `code` | Meaning |
+|---|---|
+| `not_found` | No open questionnaire has that `toolCallId` — never opened, or already answered or closed. |
+| `invalid_payload` | A field is missing or has the wrong type. |
+| `invalid_answer` | Well-formed, but does not fit the questions: a question unanswered or answered twice, an index out of range or repeated, blank text, two options or option plus text on single-select. |
+| `unsupported_host` | An RPC/ACP host shows the questions in its own dialogs ([Hosts and runtime behavior](./hosts.md)); those cannot be answered from here. |
+
+The bus is per session: questions asked inside a `/lanes` workflow child run on that child's
+own bus, so an emitter on the parent session's bus cannot see or answer them.
 
 ### Stability
 

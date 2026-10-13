@@ -23,6 +23,11 @@ export const ASK_USER_PROMPT_EVENT = "rpiv:ask-user:prompt" as const;
 
 export interface AskUserPromptEventPayload {
 	questions: ReadonlyArray<AskUserPromptQuestion>;
+	/**
+	 * The tool call's id — always set. Names this questionnaire on
+	 * `ASK_USER_BLOCKED_EVENT` and `ASK_USER_ANSWER_EVENT`.
+	 */
+	toolCallId?: string;
 }
 
 /**
@@ -35,6 +40,11 @@ export const ASK_USER_BLOCKED_EVENT = "rpiv:ask-user:blocked" as const;
 export interface AskUserBlockedEventPayload {
 	/** True while input is awaited; false when the wait ends (answer, cancel, or error). */
 	active: boolean;
+	/**
+	 * The tool call's id — always set. Several questionnaires can be open at once,
+	 * so pair `active: false` with the prompt it closes by this id.
+	 */
+	toolCallId?: string;
 }
 
 export interface AskUserPromptQuestion {
@@ -60,51 +70,74 @@ export interface AskUserPromptOption {
 
 /**
  * INBOUND — the only event in this contract the package listens for rather than
- * emits. Answers the newest questionnaire awaiting input, bypassing the TUI
- * keystroke path entirely, so a program driving Pi from outside (a pane
- * supervisor, a test harness) does not have to synthesize arrow keys and count
- * rows against a rendered overlay. When several are open — a second call stacks
- * an overlay on an inline one — the event targets the newest. Closing that one
- * makes the previous the target again.
+ * emits. Answers (or cancels) one open questionnaire without the TUI keystroke
+ * path, so a program driving Pi from outside — a pane supervisor, a phone or web
+ * bridge, a test harness — need not synthesize keys against a rendered dialog.
  *
- * Ignored when no questionnaire is active. Answers are all-or-nothing: every
- * question must be present and every option index in range, or nothing is
- * submitted — a partially applied answer would reach the model indistinguishable
- * from one the user gave.
+ * `toolCallId` names the questionnaire: the id carried by its
+ * `ASK_USER_PROMPT_EVENT`. It is accepted from the moment that prompt is emitted
+ * (before the dialog is on screen) until the questionnaire closes; the first
+ * answer wins, whether typed in the terminal or sent here.
  *
- * Emitters get the verdict back on `ASK_USER_ANSWER_RESULT_EVENT`; this payload
- * carries no callback because the stability policy above requires payloads to
- * survive JSON serialization.
+ * Validation is strict and all-or-nothing: every question answered, every index
+ * in range, nothing duplicated — or nothing is applied and the dialog stays open.
+ * A partially applied answer would reach the model indistinguishable from one
+ * the user gave. Unknown fields are ignored (policy rule 2).
+ *
+ * Every attempt gets one verdict on `ASK_USER_ANSWER_RESULT_EVENT`; this payload
+ * carries no callback because payloads must survive JSON serialization.
  */
 export const ASK_USER_ANSWER_EVENT = "rpiv:ask-user:answer" as const;
 
 export interface AskUserAnswerEventPayload {
-	answers: ReadonlyArray<ExternalAnswerEntry>;
-	/** Echoed back on the result event so an emitter can pair verdict to request. */
+	/** The questionnaire to answer — `toolCallId` from its prompt event. */
+	toolCallId: string;
+	/** Echoed back on the verdict so an emitter can pair it with this request. */
 	requestId?: string;
+	/** One entry per question. Omitted (or empty) only with `cancel`. */
+	answers?: ReadonlyArray<AskUserAnswerEntry>;
+	/** Note for the whole questionnaire — what `n` on the Submit tab attaches in the TUI. */
+	globalNote?: string;
+	/** Decline the questionnaire, as Esc does: the model is told the user declined. */
+	cancel?: boolean;
 }
 
 /**
- * One question's answer. Supply exactly one of `optionIndexes` or `text`:
- * indices pick authored options (single-select takes exactly one), `text` is the
- * custom answer the `Type something.` row would have produced.
+ * One question's answer. Single-select takes exactly one of `optionIndexes`
+ * (one index) or `text`; multi-select takes either or both, like the TUI's
+ * checked options plus its `Type something.` row.
  */
-export interface ExternalAnswerEntry {
+export interface AskUserAnswerEntry {
+	/** 0-based index into the prompt's `questions`. */
 	questionIndex: number;
-	/** 0-based indices into the question's authored `options` array. */
+	/** 0-based, distinct indices into the question's `options`. */
 	optionIndexes?: readonly number[];
-	/** Custom free-text answer. Mutually exclusive with `optionIndexes`. */
+	/** Custom answer — what the `Type something.` row produces. Must not be blank. */
 	text?: string;
-	/** Optional note, equivalent to what the `n` key attaches in the TUI. */
+	/** Note on this question — what the `n` key attaches in the TUI. */
 	notes?: string;
 }
 
-/** Verdict for an `ASK_USER_ANSWER_EVENT`. Always emitted, accepted or not. */
+/** Verdict for an `ASK_USER_ANSWER_EVENT`. One per attempt, accepted or not. */
 export const ASK_USER_ANSWER_RESULT_EVENT = "rpiv:ask-user:answer-result" as const;
+
+/**
+ * Why an answer was refused — branch on this, not on `reason`:
+ * - `not_found`: no open questionnaire has that `toolCallId` (never opened, or already closed).
+ * - `invalid_payload`: a field is missing or has the wrong type.
+ * - `invalid_answer`: well-formed, but does not fit the questions (missing, duplicated, out of range).
+ * - `unsupported_host`: the questionnaire runs in an RPC host's own dialogs, which cannot be answered here.
+ */
+export type AskUserAnswerRejectCode = "not_found" | "invalid_payload" | "invalid_answer" | "unsupported_host";
 
 export interface AskUserAnswerResultEventPayload {
 	ok: boolean;
-	/** Why the answer was rejected. Absent when `ok` is true. */
+	/** Set when `ok` is false. */
+	code?: AskUserAnswerRejectCode;
+	/** Human-readable detail for logs. Wording may change — do not parse it. */
 	reason?: string;
+	/** Echoed from the request when it was a string. */
 	requestId?: string;
+	/** Echoed from the request when it was a string. */
+	toolCallId?: string;
 }

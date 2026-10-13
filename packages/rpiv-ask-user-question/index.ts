@@ -44,13 +44,14 @@ export {
 	ASK_USER_ANSWER_RESULT_EVENT,
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
+	type AskUserAnswerEntry,
 	type AskUserAnswerEventPayload,
+	type AskUserAnswerRejectCode,
 	type AskUserAnswerResultEventPayload,
 	type AskUserBlockedEventPayload,
 	type AskUserPromptEventPayload,
 	type AskUserPromptOption,
 	type AskUserPromptQuestion,
-	type ExternalAnswerEntry,
 } from "./events.js";
 
 export default function (pi: ExtensionAPI) {

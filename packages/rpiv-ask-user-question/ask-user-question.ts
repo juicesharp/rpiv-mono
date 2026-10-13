@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { isKeyRelease, isKeyRepeat, matchesKey, type OverlayHandle, type TUI } from "@earendil-works/pi-tui";
+import { type OpenQuestionnaire, registerAnswerChannel } from "./answer-channel.js";
 import {
 	COLLAPSE_KEY_OFF,
 	formatKeySpecForDisplay,
@@ -8,12 +9,8 @@ import {
 	validateGuidanceFields,
 } from "./config.js";
 import {
-	ASK_USER_ANSWER_EVENT,
-	ASK_USER_ANSWER_RESULT_EVENT,
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
-	type AskUserAnswerEventPayload,
-	type AskUserAnswerResultEventPayload,
 	type AskUserBlockedEventPayload,
 	type AskUserPromptEventPayload,
 } from "./events.js";
@@ -45,8 +42,9 @@ import {
 import { validateQuestionnaire } from "./tool/validate-questionnaire.js";
 import type { WrappingSelectItem } from "./view/components/wrapping-select.js";
 
-function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams): void {
+function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams, toolCallId: string): void {
 	const payload: AskUserPromptEventPayload = {
+		toolCallId,
 		questions: params.questions.map((q) => ({
 			question: q.question,
 			header: q.header,
@@ -61,8 +59,8 @@ function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams): void 
 	pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
 }
 
-function emitAskUserBlockedEvent(pi: ExtensionAPI, active: boolean): void {
-	const payload: AskUserBlockedEventPayload = { active };
+function emitAskUserBlockedEvent(pi: ExtensionAPI, active: boolean, toolCallId: string): void {
+	const payload: AskUserBlockedEventPayload = { active, toolCallId };
 	pi.events.emit(ASK_USER_BLOCKED_EVENT, payload);
 }
 
@@ -72,13 +70,13 @@ function rejectWithoutUi() {
 }
 
 /** Sequential native-dialog walker for RPC hosts; brackets it with the blocked-event pair + terminal bell. */
-async function runRpcPath(pi: ExtensionAPI, ui: DialogUI, typed: QuestionParams) {
-	emitAskUserBlockedEvent(pi, true);
+async function runRpcPath(pi: ExtensionAPI, ui: DialogUI, typed: QuestionParams, toolCallId: string) {
+	emitAskUserBlockedEvent(pi, true, toolCallId);
 	try {
 		emitTerminalAttention();
 		return buildQuestionnaireResponse(await runRpcQuestionnaire(ui, typed), typed);
 	} finally {
-		emitAskUserBlockedEvent(pi, false);
+		emitAskUserBlockedEvent(pi, false, toolCallId);
 	}
 }
 
@@ -119,10 +117,7 @@ export const PREWARM_DELAY_MS = 2000;
 
 type SessionModule = typeof import("./state/questionnaire-session.js");
 
-type LiveSession = import("./state/questionnaire-session.js").QuestionnaireSession;
-type SessionRef = { current: LiveSession | null };
-/** Oldest first. An inbound answer targets the last entry. */
-type ActiveSessions = LiveSession[];
+type SessionRef = { current: import("./state/questionnaire-session.js").QuestionnaireSession | null };
 type OverlayHandleRef = { current: OverlayHandle | undefined };
 
 type SessionLoad =
@@ -207,23 +202,11 @@ function makeSessionFactory(config: {
 	canReopenWhileHidden: boolean;
 	presentation: Presentation;
 	sessionRef: SessionRef;
-	activeSessions: ActiveSessions;
-	/** Sessions this `execute` pushed. `finally` removes these and no others. */
-	owned: LiveSession[];
+	open: OpenQuestionnaire;
 	Session: SessionModule["QuestionnaireSession"];
 }) {
-	const {
-		ctx,
-		typed,
-		itemsByTab,
-		collapseKey,
-		canReopenWhileHidden,
-		presentation,
-		sessionRef,
-		activeSessions,
-		owned,
-		Session,
-	} = config;
+	const { ctx, typed, itemsByTab, collapseKey, canReopenWhileHidden, presentation, sessionRef, open, Session } =
+		config;
 	return (
 		tui: TUI,
 		theme: Theme,
@@ -236,12 +219,20 @@ function makeSessionFactory(config: {
 			done(YIELD_TO_OVERLAY);
 			return INERT_COMPONENT;
 		}
+		// Answered from outside before this mount (a host may mount late, e.g. a lane
+		// console): close at once with that answer.
+		if (open.settled) {
+			done(open.settled);
+			return INERT_COMPONENT;
+		}
+		open.attach(done);
 		const session = new Session({
 			tui,
 			theme,
 			params: typed,
 			itemsByTab,
-			done,
+			// Through the first-answer-wins gate shared with inbound answers.
+			done: (result) => open.settle(result),
 			keybindings,
 			editInput: async (value) => {
 				try {
@@ -265,10 +256,6 @@ function makeSessionFactory(config: {
 			rowBudget: rowBudgetForHost(tui.terminal, presentation.rowBudget),
 		});
 		sessionRef.current = session;
-		// After the yield check above: a mount that gives the editor slot up
-		// never reaches here, so the discarded factory is not on the stack.
-		owned.push(session);
-		activeSessions.push(session);
 		return session.component;
 	};
 }
@@ -293,8 +280,7 @@ async function mountQuestionnaire(config: {
 	itemsByTab: WrappingSelectItem[][];
 	collapseKey: string;
 	presentation: Presentation;
-	activeSessions: ActiveSessions;
-	owned: LiveSession[];
+	open: OpenQuestionnaire;
 	Session: SessionModule["QuestionnaireSession"];
 }): Promise<QuestionnaireResult | undefined> {
 	const { ctx, collapseKey, presentation } = config;
@@ -342,6 +328,73 @@ async function resolveUndefinedResult(ctx: ExtensionContext, typed: QuestionPara
 		return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
 	}
 	return buildToolResult(ERROR_NO_CUSTOM_UI, { answers: [], cancelled: true, error: "no_custom_ui" });
+}
+
+/**
+ * The terminal dialog: inline in Pi's editor slot, or an overlay (see presentation.ts).
+ * Each mount races `open.answeredEarly`, so an inbound answer accepted before any dialog
+ * took it ends the call — a host that mounts later closes the dialog on sight (factory).
+ */
+async function runTuiPath(pi: ExtensionAPI, ctx: ExtensionContext, typed: QuestionParams, open: OpenQuestionnaire) {
+	const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
+	let presentation: Presentation | undefined;
+
+	// Bracketed from before the load: every prompt event is followed by exactly one
+	// `{ active: false }` for its tool call, however the call ends — a remote mirror
+	// dismisses on it.
+	emitAskUserBlockedEvent(pi, true, open.toolCallId);
+	try {
+		// Lazy — QuestionnaireSession pulls the ~560ms view/TUI render graph;
+		// load it only when the tool runs, not at extension registration.
+		const sessionLoad = await loadQuestionnaireSession();
+		// Answered during the load: the answer needs no dialog.
+		if (open.settled) return buildQuestionnaireResponse(open.settled, typed);
+		if (!sessionLoad.ok) {
+			return buildToolResult(sessionLoad.message, { answers: [], cancelled: true, error: sessionLoad.error });
+		}
+		const { QuestionnaireSession } = sessionLoad.module;
+		// Resolve the collapse/expand key spec from config. Default is `ctrl+]`; users
+		// with non-US layouts (e.g. Latin American, where `]` is shifted) can override
+		// via the `collapseKey` config field. `resolveCollapseKey` also accepts the
+		// sentinel value `"off"` to disable the shortcut entirely.
+		const collapseKey = resolveCollapseKey(loadConfig());
+		const mount = (p: Presentation) =>
+			Promise.race([
+				mountQuestionnaire({
+					ctx,
+					typed,
+					itemsByTab,
+					collapseKey,
+					presentation: p,
+					open,
+					Session: QuestionnaireSession,
+				}),
+				open.answeredEarly,
+			]);
+
+		// Pi's editor slot (#253); the overlay only while another questionnaire holds the slot,
+		// or stacked when another overlay is already on screen (see below).
+		presentation = resolvePresentation();
+		emitTerminalAttention();
+		let result = await mount(presentation);
+		if (result === YIELD_TO_OVERLAY) {
+			// Another overlay was on screen: stack on top of it instead (see mustYieldInlineSlot).
+			presentation.release?.();
+			presentation = STACKED_OVERLAY_PRESENTATION;
+			result = await mount(presentation);
+		}
+
+		if (result === undefined) {
+			// The RPC walker takes over; its prompts cannot be answered from outside.
+			open.host = "rpc";
+			return await resolveUndefinedResult(ctx, typed);
+		}
+
+		return buildQuestionnaireResponse(result, typed);
+	} finally {
+		presentation?.release?.();
+		emitAskUserBlockedEvent(pi, false, open.toolCallId);
+	}
 }
 
 /**
@@ -401,40 +454,7 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
-
-	// Oldest first. v2.13 keeps an inline questionnaire up while a second call
-	// stacks an overlay, so one slot would let the second overwrite the first
-	// and whichever `finally` ran first would drop both. The listener answers
-	// the newest. Each call removes only the sessions it pushed.
-	const activeSessions: ActiveSessions = [];
-
-	// `data` is whatever an emitter sent — validate before trusting any of it.
-	pi.events.on(ASK_USER_ANSWER_EVENT, (data: unknown) => {
-		const payload = (data ?? {}) as Partial<AskUserAnswerEventPayload>;
-		const requestId = typeof payload.requestId === "string" ? payload.requestId : undefined;
-		const reply = (ok: boolean, reason?: string) => {
-			const result: AskUserAnswerResultEventPayload = {
-				ok,
-				...(reason ? { reason } : {}),
-				...(requestId ? { requestId } : {}),
-			};
-			pi.events.emit(ASK_USER_ANSWER_RESULT_EVENT, result);
-		};
-
-		const session = activeSessions[activeSessions.length - 1];
-		if (!session) {
-			reply(false, "no questionnaire is awaiting input");
-			return;
-		}
-		if (!Array.isArray(payload.answers)) {
-			reply(false, "payload.answers must be an array");
-			return;
-		}
-
-		const outcome = session.answerExternal(payload.answers);
-		reply(outcome.ok, outcome.ok ? undefined : outcome.reason);
-	});
-
+	const answers = registerAnswerChannel(pi);
 	pi.registerTool({
 		name: ASK_USER_QUESTION_TOOL_NAME,
 		label: "Ask User Question",
@@ -445,7 +465,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 		// Undo double-encoded nested arguments before Pi validates them (#244).
 		prepareArguments: prepareQuestionArguments,
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(toolCallId, params, _signal, _onUpdate, ctx) {
 			// Line-terminator normalization runs once here, ahead of validation, so
 			// every downstream consumer — validator, TUI, RPC walker, envelope, prompt
 			// event — sees the same clean text (#192).
@@ -461,74 +481,23 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 				});
 			}
 
-			// Emit event for external listeners (e.g., notification plugins)
-			emitAskUserPromptEvent(pi, typed);
-
 			// RPC hosts (VSCode pendant, ACP clients like Zed/Paseo — issue #78):
 			// ui.custom() cannot render there, but the select/input dialog
 			// sub-protocol works. Hosts that advertise ctx.mode (pi ≥0.79) route to
 			// the sequential dialog walker up front, skipping the TUI render-graph
 			// import entirely; RPC builds that predate ctx.mode are caught by the
 			// custom()-resolved-undefined backstop below. See ./rpc-fallback.ts.
-			if ((ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui)) {
-				return runRpcPath(pi, ctx.ui, typed);
-			}
-
-			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
-
-			// Lazy — QuestionnaireSession pulls the ~560ms view/TUI render graph;
-			// load it only when the tool runs, not at extension registration.
-			const sessionLoad = await loadQuestionnaireSession();
-			if (!sessionLoad.ok) {
-				return buildToolResult(sessionLoad.message, { answers: [], cancelled: true, error: sessionLoad.error });
-			}
-			const { QuestionnaireSession } = sessionLoad.module;
-			// Resolve the collapse/expand key spec from config. Default is `ctrl+]`; users
-			// with non-US layouts (e.g. Latin American, where `]` is shifted) can override
-			// via the `collapseKey` config field. `resolveCollapseKey` also accepts the
-			// sentinel value `"off"` to disable the shortcut entirely.
-			const collapseKey = resolveCollapseKey(loadConfig());
-			// Pi's editor slot (#253); the overlay only while another questionnaire holds the slot,
-			// or stacked when another overlay is already on screen (see below).
-			let presentation = resolvePresentation();
-			// One list for both mounts: the yield path returns before pushing,
-			// so a remount as an overlay is the only entry this call owns.
-			const owned: LiveSession[] = [];
-			const mount = (p: Presentation) =>
-				mountQuestionnaire({
-					ctx,
-					typed,
-					itemsByTab,
-					collapseKey,
-					presentation: p,
-					activeSessions,
-					owned,
-					Session: QuestionnaireSession,
-				});
-
-			emitAskUserBlockedEvent(pi, true);
+			const viaRpc = (ctx as { mode?: string }).mode === "rpc" && hasDialogUI(ctx.ui);
+			// Open for inbound answers before the prompt goes out: an emitter may answer
+			// straight from its prompt listener.
+			const open = answers.open(toolCallId, typed.questions, viaRpc ? "rpc" : "tui");
 			try {
-				emitTerminalAttention();
-				let result = await mount(presentation);
-				if (result === YIELD_TO_OVERLAY) {
-					// Another overlay was on screen: stack on top of it instead (see mustYieldInlineSlot).
-					presentation.release?.();
-					presentation = STACKED_OVERLAY_PRESENTATION;
-					result = await mount(presentation);
-				}
-
-				if (result === undefined) {
-					return resolveUndefinedResult(ctx, typed);
-				}
-
-				return buildQuestionnaireResponse(result, typed);
+				// Emit event for external listeners (e.g., notification plugins)
+				emitAskUserPromptEvent(pi, typed, toolCallId);
+				if (viaRpc) return await runRpcPath(pi, ctx.ui, typed, toolCallId);
+				return await runTuiPath(pi, ctx, typed, open);
 			} finally {
-				presentation.release?.();
-				for (const session of owned) {
-					const index = activeSessions.lastIndexOf(session);
-					if (index !== -1) activeSessions.splice(index, 1);
-				}
-				emitAskUserBlockedEvent(pi, false);
+				answers.close(open);
 			}
 		},
 	});
