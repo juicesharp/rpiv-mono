@@ -60,10 +60,12 @@ export interface AskUserPromptOption {
 
 /**
  * INBOUND — the only event in this contract the package listens for rather than
- * emits. Answers the questionnaire currently awaiting input, bypassing the TUI
+ * emits. Answers the newest questionnaire awaiting input, bypassing the TUI
  * keystroke path entirely, so a program driving Pi from outside (a pane
  * supervisor, a test harness) does not have to synthesize arrow keys and count
- * rows against a rendered overlay.
+ * rows against a rendered overlay. When several are open — a second call stacks
+ * an overlay on an inline one — the event targets the newest. Closing that one
+ * makes the previous the target again.
  *
  * Ignored when no questionnaire is active. Answers are all-or-nothing: every
  * question must be present and every option index in range, or nothing is

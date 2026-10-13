@@ -119,7 +119,10 @@ export const PREWARM_DELAY_MS = 2000;
 
 type SessionModule = typeof import("./state/questionnaire-session.js");
 
-type SessionRef = { current: import("./state/questionnaire-session.js").QuestionnaireSession | null };
+type LiveSession = import("./state/questionnaire-session.js").QuestionnaireSession;
+type SessionRef = { current: LiveSession | null };
+/** Oldest first. An inbound answer targets the last entry. */
+type ActiveSessions = LiveSession[];
 type OverlayHandleRef = { current: OverlayHandle | undefined };
 
 type SessionLoad =
@@ -204,7 +207,9 @@ function makeSessionFactory(config: {
 	canReopenWhileHidden: boolean;
 	presentation: Presentation;
 	sessionRef: SessionRef;
-	activeSession: SessionRef;
+	activeSessions: ActiveSessions;
+	/** Sessions this `execute` pushed. `finally` removes these and no others. */
+	owned: LiveSession[];
 	Session: SessionModule["QuestionnaireSession"];
 }) {
 	const {
@@ -215,7 +220,8 @@ function makeSessionFactory(config: {
 		canReopenWhileHidden,
 		presentation,
 		sessionRef,
-		activeSession,
+		activeSessions,
+		owned,
 		Session,
 	} = config;
 	return (
@@ -259,7 +265,10 @@ function makeSessionFactory(config: {
 			rowBudget: rowBudgetForHost(tui.terminal, presentation.rowBudget),
 		});
 		sessionRef.current = session;
-		activeSession.current = session;
+		// After the yield check above: a mount that gives the editor slot up
+		// never reaches here, so the discarded factory is not on the stack.
+		owned.push(session);
+		activeSessions.push(session);
 		return session.component;
 	};
 }
@@ -284,7 +293,8 @@ async function mountQuestionnaire(config: {
 	itemsByTab: WrappingSelectItem[][];
 	collapseKey: string;
 	presentation: Presentation;
-	activeSession: SessionRef;
+	activeSessions: ActiveSessions;
+	owned: LiveSession[];
 	Session: SessionModule["QuestionnaireSession"];
 }): Promise<QuestionnaireResult | undefined> {
 	const { ctx, collapseKey, presentation } = config;
@@ -392,10 +402,11 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
 
-	// The TUI session lives in `execute`'s closure, one per call; this reference
-	// lifts the active one to extension scope so the inbound answer listener can
-	// reach it. Null whenever no questionnaire is awaiting input.
-	const activeSession: SessionRef = { current: null };
+	// Oldest first. v2.13 keeps an inline questionnaire up while a second call
+	// stacks an overlay, so one slot would let the second overwrite the first
+	// and whichever `finally` ran first would drop both. The listener answers
+	// the newest. Each call removes only the sessions it pushed.
+	const activeSessions: ActiveSessions = [];
 
 	// `data` is whatever an emitter sent — validate before trusting any of it.
 	pi.events.on(ASK_USER_ANSWER_EVENT, (data: unknown) => {
@@ -410,7 +421,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			pi.events.emit(ASK_USER_ANSWER_RESULT_EVENT, result);
 		};
 
-		const session = activeSession.current;
+		const session = activeSessions[activeSessions.length - 1];
 		if (!session) {
 			reply(false, "no questionnaire is awaiting input");
 			return;
@@ -480,6 +491,9 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			// Pi's editor slot (#253); the overlay only while another questionnaire holds the slot,
 			// or stacked when another overlay is already on screen (see below).
 			let presentation = resolvePresentation();
+			// One list for both mounts: the yield path returns before pushing,
+			// so a remount as an overlay is the only entry this call owns.
+			const owned: LiveSession[] = [];
 			const mount = (p: Presentation) =>
 				mountQuestionnaire({
 					ctx,
@@ -487,7 +501,8 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 					itemsByTab,
 					collapseKey,
 					presentation: p,
-					activeSession,
+					activeSessions,
+					owned,
 					Session: QuestionnaireSession,
 				});
 
@@ -509,7 +524,10 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 				return buildQuestionnaireResponse(result, typed);
 			} finally {
 				presentation.release?.();
-				activeSession.current = null;
+				for (const session of owned) {
+					const index = activeSessions.lastIndexOf(session);
+					if (index !== -1) activeSessions.splice(index, 1);
+				}
 				emitAskUserBlockedEvent(pi, false);
 			}
 		},

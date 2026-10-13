@@ -76,6 +76,42 @@ function runQuestionnaire() {
 	return { bus, settle };
 }
 
+const tui = { terminal: { columns: 120, rows: 40 }, requestRender: vi.fn() };
+const theme = makeTheme();
+const keybindings = { matches: () => false };
+
+/** One registration, several overlapping executes. Each call gets its own question text. */
+function openHarness() {
+	const bus = makeBus();
+	const { pi, captured } = createMockPi({ events: bus.events } as never);
+	registerAskUserQuestionTool(pi);
+	const tool = captured.tools.get("ask_user_question")!;
+	let mounted = 0;
+	const closes: Array<(result: { answers: []; cancelled: true }) => void> = [];
+
+	const start = (question: string) => {
+		const custom = vi.fn(
+			async (factory: (...args: unknown[]) => unknown) =>
+				await new Promise((resolve) => {
+					closes.push(resolve as (result: { answers: []; cancelled: true }) => void);
+					void factory(tui, theme, keybindings, resolve);
+					mounted += 1;
+				}),
+		);
+		const ctx = createMockCtx({
+			hasUI: true,
+			mode: "tui",
+			ui: { custom, onTerminalInput: vi.fn(() => () => {}) } as never,
+		});
+		const these = {
+			questions: [{ question, header: "Pick", options: params.questions[0]!.options }],
+		};
+		return tool.execute?.("tc", these as never, undefined as never, undefined as never, ctx as never);
+	};
+
+	return { bus, start, closes, mounted: () => mounted };
+}
+
 function resultsOn(bus: ReturnType<typeof makeBus>): AskUserAnswerResultEventPayload[] {
 	return bus.emitted
 		.filter((e) => e.channel === ASK_USER_ANSWER_RESULT_EVENT)
@@ -118,6 +154,37 @@ describe("ask_user_question — inbound answer event", () => {
 
 		bus.events.emit(ASK_USER_ANSWER_EVENT, { answers: [{ questionIndex: 0, optionIndexes: [0] }] });
 		await settle;
+	});
+
+	it("answers the newest questionnaire, then the one underneath", async () => {
+		const { bus, start, mounted } = openHarness();
+		const first = start("First?");
+		const second = start("Second?");
+		await vi.waitFor(() => expect(mounted()).toBe(2));
+
+		bus.events.emit(ASK_USER_ANSWER_EVENT, { answers: [{ questionIndex: 0, optionIndexes: [1] }] });
+		const newest = await second;
+		expect(newest?.content[0]).toMatchObject({ text: expect.stringContaining('"Second?"="B"') });
+
+		bus.events.emit(ASK_USER_ANSWER_EVENT, { answers: [{ questionIndex: 0, optionIndexes: [0] }] });
+		const older = await first;
+		expect(older?.content[0]).toMatchObject({ text: expect.stringContaining('"First?"="A"') });
+	});
+
+	it("keeps the newest questionnaire when the older one closes first", async () => {
+		const { bus, start, closes, mounted } = openHarness();
+		const first = start("First?");
+		const second = start("Second?");
+		await vi.waitFor(() => expect(mounted()).toBe(2));
+
+		closes[0]!({ answers: [], cancelled: true });
+		const older = await first;
+		expect(older?.details).toMatchObject({ cancelled: true });
+
+		bus.events.emit(ASK_USER_ANSWER_EVENT, { answers: [{ questionIndex: 0, optionIndexes: [1] }] });
+		const newest = await second;
+		expect(newest?.content[0]).toMatchObject({ text: expect.stringContaining('"Second?"="B"') });
+		expect(resultsOn(bus).at(-1)).toMatchObject({ ok: true });
 	});
 
 	it("rejects an answer when no questionnaire is awaiting input", () => {

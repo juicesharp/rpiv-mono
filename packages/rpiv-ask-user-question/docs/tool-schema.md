@@ -134,10 +134,12 @@ tell blocked-on-human apart from working.
 
 ### Inbound
 
-`rpiv:ask-user:answer` resolves the questionnaire currently awaiting input, without
-synthesizing keystrokes. It exists for programs driving Pi from outside — a pane
-supervisor, a test harness — that would otherwise have to send arrow keys and count rows
-against a rendered overlay:
+`rpiv:ask-user:answer` resolves the newest questionnaire awaiting input, without
+synthesizing keystrokes. When several are open (a second call stacks an overlay on an
+inline one), the event targets the newest; once that one closes, the previous is the
+target again. It exists for programs driving Pi from outside — a pane supervisor, a test
+harness — that would otherwise have to send arrow keys and count rows against a rendered
+overlay:
 
 ```ts
 import { ASK_USER_ANSWER_EVENT, ASK_USER_ANSWER_RESULT_EVENT } from "@juicesharp/rpiv-ask-user-question/events";
