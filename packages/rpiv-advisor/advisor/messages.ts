@@ -49,6 +49,11 @@ export const errNoApiKey = (label: string) => `Advisor (${label}) has no API key
 export const errNoApiKeyDetail = (provider: string) => `no API key for ${provider}`;
 export const errCallFailed = (err: string | undefined) => `Advisor call failed: ${err ?? ERR_UNKNOWN}`;
 export const errCallThrew = (msg: string) => `Advisor call threw: ${msg}`;
+// A wired compression adapter that breaks the hand-off is not a reason to review
+// Pi's raw history instead: that is the uncompressed context this adapter path
+// exists to replace, so the call fails loudly rather than reviewing the wrong thing.
+export const errContextViewBroken = (detail: string) =>
+	`Advisor could not read the compression adapter's context view (${detail}) — refusing to review the uncompressed history instead.`;
 export const errSelectionNotFound = (choice: string) => `Advisor selection not found: ${choice}`;
 export const errModelUnavailable = (key: string) => `Previously configured advisor model ${key} is no longer available`;
 export const msgAdvisorEnabled = (label: string, effort: ThinkingLevel | undefined) =>

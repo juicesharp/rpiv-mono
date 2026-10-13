@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- The advisor now reviews the context the executor's model actually saw when a compression adapter is installed. The branch was rebuilt from Pi's resolved LLM context, which is the *raw* session history when `billion-context-pi` compresses through its own context transform — so an adapter-compressed session reached the reviewer uncompressed and could overflow the reviewer's window. `advisor/context-view.ts` now asks the adapter over its `billion-context-pi:context-view:v1` event channel to re-project the branch, and falls back to `buildSessionContext()` when no adapter is installed or the adapter answers inactive (stood down, session mismatch, nothing to project). An adapter that answers and then breaks the hand-off is reported as an error rather than quietly falling back — a wrong review is worse than no review.
+
 ## [2.13.8] - 2026-10-12
 
 ## [2.13.7] - 2026-10-12
