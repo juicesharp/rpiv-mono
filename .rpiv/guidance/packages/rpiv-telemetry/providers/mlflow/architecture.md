@@ -42,7 +42,7 @@ async trackEvent(event): Promise<void> {
   if (!this.initialized) return;
   try { this.dispatch(event); this.failedKinds.delete(event.kind); }
   catch (err) { if (!this.failedKinds.has(event.kind)) { this.failedKinds.add(event.kind); console.warn(...); } }
-}
+}   // a later success for a kind clears its failedKinds entry and warns once on recovery
 ```
 `dispatch()` is one `switch (event.kind)`: spanned kinds → `on<X>(registry, event)`; child-less kinds collapse to `onAttributeEvent`; sub-agent kinds collapse to `onSubAgentEvent` (no registry). The switch is NOT exhaustive — `session_start` has no case (a silent no-op; the root span opens on `agent_start`), and there is no `default` or compile-time exhaustiveness check, so a new kind must be manually registered as a `case` or its events drop silently.
 
@@ -57,7 +57,7 @@ function onToolExecutionEnd(r, e) { const s = r.getToolSpan(e.sessionId, e.toolC
 
 // Atomic (subagent): already-completed events — back-fill startTimeNs from durationMs, open+end in one call. No registry.
 ```
-`parent:` is what builds the tree. `status` is set **only** on error. `message_end` carries usage but no key → attaches to `latestLlmSpanBySession` (fallback: turn root). `endAllForSession` flushes orphans at session end; `shutdown()` flushes then `registry.clear()`.
+`parent:` is what builds the tree. `status` is set **only** on error. `message_end` carries usage but no key → attaches to `latestLlmSpanBySession` (fallback: turn root; cleared conditionally via `clearLatestLlmSpanIfMatches` so concurrent turns don't cross). LLM spans additionally carry `http.status_code`, `provider.request_id`, and `llm.payload_mode`. Sub-agent spans emit typed per-kind attributes + native `terminalOutputs` (no `telemetry.event` JSON blob). `endAllForSession` flushes orphans at session end; `shutdown()` flushes, then `registry.clear()` + `failedKinds.clear()`.
 
 ## Vendored Shims (isolate Pi↔MLflow impedance mismatch)
 Each wraps a fragile external assumption behind a typed function in one file with a documented exit plan.

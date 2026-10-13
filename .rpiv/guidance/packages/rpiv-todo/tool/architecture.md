@@ -4,7 +4,7 @@
 The LLM-facing tool contract surface: declares tool identity strings, the TypeBox parameter schema (whose `description` fields double as prompt copy), and builds the dual-channel response envelope — human-readable `content` text plus the machine-readable `details` snapshot consumed by post-compaction replay.
 
 ## Dependencies
-- **`typebox`** (regular dependency, not peer): `Type`, `Static` for `TodoParamsSchema` — moved from peers so tool registration survives installers that do not materialise peer deps
+- **`typebox`** (`peerDependencies: "*"`, host-provided): `Type`, `Static` for `TodoParamsSchema`. Pi supplies and aliases `typebox` at load time, so a `dependencies` entry is never needed and triggers the host's duplicate-module warning (v2.12.0, #282)
 - **`@earendil-works/pi-ai`** (peer): `StringEnum` for `action` and `status` literal unions
 - **Internal**: `../state/state.js` (`TaskState`), `../state/state-reducer.js` (`Op`), `../state/task-graph.js` (`deriveBlocks`)
 
@@ -14,7 +14,7 @@ The LLM-facing tool contract surface: declares tool identity strings, the TypeBo
 
 ## Module Structure
 ```
-types.ts                — Identity constants (TOOL_NAME, TOOL_LABEL, COMMAND_NAME), error strings,
+types.ts                — Identity constants (TOOL_NAME, TOOL_LABEL, COMMAND_NAME, STATE_ENTRY_TYPE), error strings,
                            public domain types (Task, TaskStatus, TaskAction, TaskDetails, TaskMutationParams),
                            and TodoParamsSchema TypeBox shape
 response-envelope.ts    — Pure formatters (formatListLine, formatGetLines, formatContent) closed-switching over
@@ -64,10 +64,10 @@ export interface TaskDetails {
 Both packages share the `{ content: [{ type:"text", text }], details }` envelope contract and the TypeBox-params + types split. **Divergence**: todo is leaner (only schema + envelope) because state lives in `../state/`; AUQ's tool layer adds `format-answer.ts` and `validate-questionnaire.ts` because its surface is richer.
 
 ## Reconstruct Flow Connection
-`details` is consumed by `replayFromBranch` in `../state/replay.ts`: walks the session branch filtering `toolResult.toolName === "todo"` and applies last-writer-wins on the `tasks`/`nextId` fields. The result is fed to the per-session `replaceState(sessionId, next)` in `../state/store.ts` from `../index.ts` — the `session_start` handler plus the shared `replayAndRefresh` handler for `session_compact` / `session_tree` — so every session replays into its own store slot keyed by `sid(ctx)`; `../todo.ts` no longer participates in replay.
+`details` is persisted twice: in the `todo` toolResult, and — for every state change — as a `STATE_ENTRY_TYPE` (`"rpiv-todo-state"`) custom entry that `../todo.ts` appends via `pi.appendEntry`, so calls made through another tool (`ctx.executeTool`, e.g. codemode) also survive. `replayFromBranch` in `../state/replay.ts` walks the branch and applies last-writer-wins on `tasks`/`nextId`: state entries when the branch has any, else `todo` toolResults (legacy sessions). The result is fed to the per-session `replaceState(sessionId, next)` in `../state/store.ts` from `../index.ts` — the `session_start` handler plus the shared `replayAndRefresh` handler for `session_compact` / `session_tree` — so every session replays into its own store slot keyed by `sid(ctx)`; `../todo.ts` no longer participates in replay.
 
 ## Architectural Boundaries
-- **`TOOL_NAME` is preserved verbatim** — renaming breaks session-history replay (replay filters on `toolResult.toolName`)
+- **`TOOL_NAME` and `STATE_ENTRY_TYPE` are preserved verbatim** — renaming breaks session-history replay (replay filters on `toolResult.toolName` and the custom entry type)
 - **`details.tasks` is a SNAPSHOT**, not a diff — replay does last-writer-wins, no reducer re-execution
 - **Replay-survival is scoped per session** — each session reconstructs into its own store slot, so a detached or child session never reads or overwrites another session's tasks
 - **Errors are values** — `op.kind === "error"` puts the message in `details.error`; never throws across the tool boundary

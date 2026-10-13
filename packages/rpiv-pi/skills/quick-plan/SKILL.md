@@ -36,9 +36,10 @@ contract:
             required: [id, disposition]
             properties:
               id: { type: string }
-              disposition: { enum: [implemented, deferred] }
+              disposition: { enum: [implemented, deferred, rebound] }
               phase: { type: integer, minimum: 1 }
               reason: { type: string }
+              command: { type: string }
   consumes:
     meta:
       artifactKind: [research, acceptance]
@@ -164,14 +165,14 @@ Populate each `phases[].files:` from that phase's `#### N.` / `**File**:` paths 
 
 Populate `## Out of Scope` from the Step 1 goal-ask enumeration: one one-line deferral with a reason per goal ask no phase implements.
 
-Populate `acceptance:` ONLY when an `--acceptance` file was given (omit the array entirely otherwise): one entry per inventory item, in item order — `disposition: implemented` with the covering `phase:` number, or `disposition: deferred` with a one-line `reason:` (and a matching `## Out of Scope` line). Every item id from the inventory appears exactly once; never invent an id the inventory doesn't carry.
+Populate `acceptance:` ONLY when an `--acceptance` file was given (omit the array entirely otherwise): one entry per inventory item, in item order — `disposition: implemented` with the covering `phase:` number, `disposition: deferred` with a one-line `reason:` (and a matching `## Out of Scope` line), or `disposition: rebound` with `phase:`, `command:`, and `reason:`. Every item id from the inventory appears exactly once; never invent an id the inventory doesn't carry. `rebound` + `phase` + `command` + `reason` when the substance is delivered but the frozen command pins a mechanism the design changed (a file or helper name, a count): the replacement command measures the SAME observable as the item's `statement`/`expect`, reuses a check the phase's own AV runs, and drops no conjunct without saying why; substance not delivered ⇒ `deferred`, never `rebound`.
 
 Then print the path and a one-line summary: `quick-plan written: {N} phase(s), {M} files`.
 
 ## Important Notes
 
 - **Consistently phased, always.** `phases:` length == `## Phase N:` heading count == scalar `phase_count`. A half-phased plan throws at plan time. Single phase is the small-task default — only split when units are independently verifiable and share no file.
-- **No `risks:` frontmatter — this is the correctness lightening.** The `grade` skill's `correctness` risk-flag adjudication (the heaviest correctness sub-check, with its mechanics-evidence and verify-at-implement duties) fires **only** when the artifact carries `risks:`. With none declared, `risk_rulings` is omitted and adjudication auto-skips — the grade runs the cheap spot-check path. Do NOT invent a `"correctness-simplified"` dimension (grade does not recognize it and would deadlock the gate); the lightening is realized by the plan's shape, not by a new dimension.
+- **No `risks:` frontmatter — this is the panel lightening.** The grade panel dispatches its `risk-rulings` unit (the risk-flag adjudication, with its mechanics-evidence and verify-at-implement duties) **only** when the artifact carries `risks:`. With none declared, no risk unit runs, `risk_rulings` is omitted everywhere, and `correctness` runs its cheap semantic spot-check alone. Do NOT invent a `"correctness-simplified"` dimension (grade does not recognize it and would deadlock the gate); the lightening is realized by the plan's shape, not by a new dimension.
 - **One Write, `status: ready` directly.** No skeleton-then-fill, no progressive `Edit`, no 3-state status machine. The artifact is gated externally (the workflow's `grade` + `validate`, or your own review standalone).
 - **At most ONE `codebase-pattern-finder` dispatch.** Never parallel, never `run_in_background` — a background completion cannot re-drive this session and the stage fails with no artifact. Skip the dispatch when research already surfaced the pattern.
 - **Non-interactive.** No `ask_user_question` checkpoint. A checkpoint without blueprint's dimension sweep is pure latency on a fast-path preset whose output is immediately grade-gated. Resolve ambiguity from the research and the real code; if a genuine fork can't be settled, make the most defensible call and let the grade panel catch it.

@@ -12,7 +12,7 @@ adapts to the size of your terminal.
 | `Shift+Enter` | Insert a newline. | `Type something.` input, notes editor |
 | `Esc` | Cancel the whole questionnaire. | Everywhere except the notes editor, where it closes notes |
 | `Tab` / `Shift+Tab` | Next / previous tab, wrapping. `→` / `←` do the same. | Multi-question dialogs only |
-| `Space` | Toggle the focused checkbox. | Multi-select questions |
+| `Space` | Toggle the focused authored option. In `Type something.`, Space inserts text. | Multi-select questions |
 | `n` | Open the notes editor for the focused question — or, on the Submit tab, the global note for the whole questionnaire. | Every question tab; the Submit tab in multi-question dialogs |
 | `Ctrl+G` | Open Pi's configured external editor with the current custom-answer draft. | `Type something.` input |
 | `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
@@ -26,13 +26,13 @@ Slack-style configuration — `enter` folded into `tui.input.newLine`, submit mo
 everywhere `Enter` does.
 
 In a multi-select question, `Enter` on a regular row toggles its checkbox exactly like
-`Space` — it does not submit. Committing the question means focusing the `Next` row and
-pressing `Enter`. That is deliberate: it makes `Enter` a zero-cost way to flip boxes
-without leaving the home row.
+`Space`. It does not submit. Focus `Next` and press `Enter` to commit the question. That
+is deliberate: it makes `Enter` a zero-cost way to flip boxes without leaving the home row.
+`Space` does nothing on `Next` (it is a command, not a choice).
 
-`Space` is suppressed on two rows: `Next` (it is a command, not a choice) and
-`Type something.` (it is an inline text input, so the space character belongs to your
-answer).
+`Type something.` is an inline input, so Space inserts a space. Its checkbox changes to
+`[✔]` when the input contains text. Press `Enter` in the input or use `Next` to submit
+both the checked options and the custom text.
 
 ## The rows the dialog adds
 
@@ -43,12 +43,15 @@ answer).
 
 Focusing `Type something.` switches the row into an inline multiline editor. In preview
 mode it expands to the full pane width while you type, so a long custom answer is not
-squeezed into the narrow options column. `Shift+Enter` inserts a line break; vertical
+squeezed into the narrow options column. `Shift+Enter` inserts a line break. Vertical
 arrows move between lines and return to row navigation at the draft's top and bottom.
 The draft replaces the static row label while you browse other options and is isolated
-per question. `Ctrl+G` round-trips it through Pi's configured external editor; `Ctrl+U`
-clears it, while `Esc` remains the explicit way to cancel the questionnaire. Confirming
-it produces an answer of `kind: "custom"`.
+per question. `Ctrl+G` sends it through Pi's configured external editor. `Ctrl+U` clears
+it, while `Esc` cancels the questionnaire.
+
+On a single-select question, confirming the input produces `kind: "custom"`. On a
+multi-select question, the result uses `kind: "multi"`: `selected` contains checked
+labels, and `answer` contains the custom text.
 
 Both labels are reserved — the model cannot author an option that collides with them.
 Both localize with the rest of the UI chrome; the reserved-label check always compares
@@ -60,7 +63,10 @@ against the canonical English strings.
 multi-select and whether or not its options carry previews. Notes are stored in a
 side-band keyed by tab index, not inside the answer, so writing a note does not mark a
 question as answered — the Submit tab still lists it as outstanding. The note merges into
-the answer when you confirm it, and reaches the model as `user notes: <text>`.
+the answer when you confirm it, and reaches the model as `user notes: <text>`. Once the
+editor closes, the question shows the saved note as `Note for this answer: …` (its first
+line), and a preview pane's hint changes to "Note saved: press n to edit"; the Submit tab's
+review uses the same label.
 
 On the Submit tab, `n` opens the global note editor instead — one note covering the whole
 questionnaire. It lives outside every answer, so it survives tab switches and never marks
@@ -70,20 +76,47 @@ nothing but a global note still returns an answered result rather than a decline
 Inside the editor, `Shift+Enter` inserts a newline, while `Esc` and `Enter` close it; other
 keystrokes edit the buffer, so `n` types an `n`. Pasted line breaks are preserved.
 
+## Where the dialog appears
+
+The questionnaire opens in Pi's editor area, below the transcript — where Pi's own select
+and input prompts appear. The transcript keeps scrolling with `PageUp`/`PageDown` and the
+wheel while the dialog keeps its own keys. The dialog takes at most 70% of the terminal
+height (at least 12 rows); a taller questionnaire scrolls its options inside that space,
+keeping the header, the question, the focused option and the key hints visible.
+
+Wheel and trackpad scrolling reach the transcript only when the terminal reports them as
+mouse events. A terminal with mouse reporting turned off (Warp, for one) converts them
+into ↑/↓ key presses instead, which move between the dialog's options. `PageUp`/`PageDown`
+(`Fn+↑`/`Fn+↓` on a Mac keyboard) scroll the transcript either way.
+
+Two cases open the questionnaire as an overlay instead:
+
+- **A second question while one is open.** Only one questionnaire fits in the editor area,
+  so the second covers the bottom of the transcript as an overlay.
+- **A question arriving while another overlay, such as `/btw`, is open.** The question
+  stacks on top, so the question you see is the one your keys reach. `Ctrl+]` shrinks it to
+  its one-line row so `/btw` is readable behind it; the question keeps the keys, so `Esc`
+  cancels the question, and `/btw` closes after the question is answered or cancelled.
+
 ## Collapse mode
 
-`Ctrl+]` gets the dialog out of the way: the overlay is marked hidden in Pi's overlay
-stack and shrinks to a single dim hint row, so the transcript it was covering becomes
-readable and chat scrolling resumes. Press the same key to bring the questionnaire back
-with your answers intact. The first time you collapse, Pi notifies you with the key to
-press — that message names your configured key.
+`Ctrl+]` gets the dialog out of the way. In the editor area it shrinks the questionnaire
+to a single dim hint row for more room. The row keeps focus, so the same key brings the
+questionnaire back with your answers intact.
 
-Because Pi routes no input to a hidden overlay, the collapse key is additionally captured
-at the raw terminal level. It only acts when the questionnaire is hidden or focused, so a
-different overlay on top of it (for example `/btw`) keeps its keystrokes.
+When the questionnaire opened as an overlay for a second question, collapse marks the
+overlay hidden in Pi's overlay stack, so the transcript it was covering
+becomes readable and chat scrolling resumes. The first time you collapse, Pi notifies you
+with the key to press — that message names your configured key. Because Pi routes no
+input to a hidden overlay, the collapse key is additionally captured at the raw terminal
+level. It only acts when the questionnaire is hidden or focused, so a different overlay
+on top of it (for example `/btw`) keeps its keystrokes. A question that opened on top of
+an overlay that was already showing (for example `/btw`) is never hidden this way: collapse
+shrinks it to the one-line row and it keeps focus, because Pi closes overlays from the top
+of the stack and would otherwise remove the hidden question when `/btw` closes.
 
-While collapsed, every keystroke other than cancel is ignored, so you cannot mutate
-answers you cannot see.
+While collapsed, every keystroke other than cancel or expand is ignored, so you cannot
+mutate answers you cannot see.
 
 The default `ctrl+]` is free in Terminal.app, iTerm2, Warp, tmux, zellij and screen. On
 keyboard layouts where `]` sits on the shifted layer — Latin American `es-AR` / `es-MX`,

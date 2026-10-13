@@ -1752,6 +1752,44 @@ describe("sessions — halt routing", () => {
 		if (!result.ok) return; // type narrow
 		expect(result.state.stagesCompleted).toBe(1); // advanced exactly once — the field did not block the fold
 	});
+
+	it("a completed row carrying attemptOrdinal replays through the resume fold byte-for-byte (additive — no refusal)", async () => {
+		// The v3 additive ordinal field is resume-safe in the strikes-field style:
+		// the strict resume reader's deep guard tolerates the unknown field (like
+		// errMsg) and `foldKnownStage` reads only status/output/session/stage, so
+		// the row advances stagesCompleted once with no re-dispatch. (The WRITER
+		// stamps the ordinal on collected rows only; a completed row here pins the
+		// reader's tolerance, not the write path.)
+		const header: WorkflowHeader = {
+			runId: "run-resume-ordinal",
+			workflow: "test-wf",
+			input: "x",
+			ts: "2026-01-01T00:00:00.000Z",
+			v: STATE_SCHEMA_VERSION,
+		};
+		const workflow: Workflow = {
+			name: "test-wf",
+			start: "test",
+			stages: { test: { kind: "side-effect", sessionPolicy: "fresh" } },
+			edges: { test: "stop" },
+		};
+		appendHeader(tmpDir, header);
+		appendStage(tmpDir, header.runId, {
+			stageNumber: 1,
+			stage: "test",
+			skill: "test",
+			status: "completed",
+			ts: "2026-01-01T00:00:01.000Z",
+			session: { id: "s1" },
+			attemptOrdinal: 1,
+		});
+
+		const result = await reconstructState(tmpDir, workflow, header);
+
+		expect(result.ok).toBe(true); // NOT refused as malformed-row / version-mismatch
+		if (!result.ok) return; // type narrow
+		expect(result.state.stagesCompleted).toBe(1); // advanced exactly once — the field did not block the fold
+	});
 });
 
 // ---------------------------------------------------------------------------

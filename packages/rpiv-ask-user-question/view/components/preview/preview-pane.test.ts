@@ -41,6 +41,7 @@ import {
 	MAX_PREVIEW_HEIGHT_STACKED,
 	NO_PREVIEW_TEXT,
 	NOTES_AFFORDANCE_TEXT,
+	NOTES_EDIT_AFFORDANCE_TEXT,
 	PREVIEW_MIN_WIDTH,
 	PreviewBlockRenderer,
 	PreviewPane,
@@ -80,6 +81,7 @@ function makePane(question: QuestionData, getWidth: () => number = () => 120) {
 	const previewBlock = new PreviewBlockRenderer({ question, theme, markdownTheme });
 	const pane = new PreviewPane({
 		question,
+		theme,
 		getTerminalWidth: getWidth,
 		optionListView,
 		previewBlock,
@@ -162,15 +164,15 @@ describe("PreviewPane — cache + invalidate", () => {
 	it("creates one Markdown per option lazily; revisit hits cache", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: false, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 0, focused: false, inputMode: false });
 		pane.render(120);
 		expect(markdownConstructed).toBe(1);
 		optionListView.setProps({ selectedIndex: 1, focused: true, inputBuffer: "" });
-		pane.setProps({ notesVisible: false, selectedIndex: 1, focused: false, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 1, focused: false, inputMode: false });
 		pane.render(120);
 		expect(markdownConstructed).toBe(2);
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: false, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 0, focused: false, inputMode: false });
 		pane.render(120);
 		expect(markdownConstructed).toBe(2);
 	});
@@ -215,7 +217,7 @@ describe("PreviewPane — empty preview placeholder (per-question hide-when-no-p
 		};
 		const { pane, optionListView } = makePane(question, () => 80);
 		optionListView.setProps({ selectedIndex: 1, focused: true, inputBuffer: "" });
-		pane.setProps({ notesVisible: false, selectedIndex: 1, focused: false, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 1, focused: false, inputMode: false });
 		const lines = pane.render(80);
 		const mdIndex = lines.findIndex((l) => l.includes(NO_PREVIEW_TEXT));
 		expect(mdIndex).toBeGreaterThan(-1);
@@ -353,7 +355,7 @@ describe("PreviewPane.maxNaturalHeight", () => {
 		const max = pane.maxNaturalHeight(w);
 		for (let i = 0; i < mixedQuestion.options.length; i++) {
 			optionListView.setProps({ selectedIndex: i, focused: true, inputBuffer: "" });
-			pane.setProps({ notesVisible: false, selectedIndex: i, focused: true, inputMode: false });
+			pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: i, focused: true, inputMode: false });
 			expect(pane.naturalHeight(w)).toBeLessThanOrEqual(max);
 		}
 	});
@@ -364,7 +366,7 @@ describe("PreviewPane.maxNaturalHeight", () => {
 		const max = pane.maxNaturalHeight(w);
 		for (let i = 0; i < mixedQuestion.options.length; i++) {
 			optionListView.setProps({ selectedIndex: i, focused: true, inputBuffer: "" });
-			pane.setProps({ notesVisible: false, selectedIndex: i, focused: true, inputMode: false });
+			pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: i, focused: true, inputMode: false });
 			expect(pane.naturalHeight(w)).toBeLessThanOrEqual(max);
 		}
 	});
@@ -372,12 +374,12 @@ describe("PreviewPane.maxNaturalHeight", () => {
 	it("maxNaturalHeight is index-independent (does not depend on the current props.selectedIndex)", () => {
 		const { pane: paneA, optionListView: olA } = makePane(mixedQuestion, () => 120);
 		olA.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		paneA.setProps({ notesVisible: false, selectedIndex: 0, focused: true, inputMode: false });
+		paneA.setProps({ notesVisible: false, hasNote: false, selectedIndex: 0, focused: true, inputMode: false });
 		const maxA = paneA.maxNaturalHeight(120);
 
 		const { pane: paneB, optionListView: olB } = makePane(mixedQuestion, () => 120);
 		olB.setProps({ selectedIndex: 1, focused: true, inputBuffer: "" });
-		paneB.setProps({ notesVisible: false, selectedIndex: 1, focused: true, inputMode: false });
+		paneB.setProps({ notesVisible: false, hasNote: false, selectedIndex: 1, focused: true, inputMode: false });
 		const maxB = paneB.maxNaturalHeight(120);
 
 		expect(maxA).toBe(maxB);
@@ -667,7 +669,7 @@ describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance
 	it("renders 'Notes: press n to add notes' below preview when focused on preview-bearing option", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: true, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 0, focused: true, inputMode: false });
 		const lines = pane.render(120);
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(true);
 	});
@@ -675,11 +677,11 @@ describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance
 	it("hides notes affordance text when option lacks preview (height contract preserved)", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: true, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 0, focused: true, inputMode: false });
 		const linesA = pane.render(120);
 		expect(linesA.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(true);
 		optionListView.setProps({ selectedIndex: 1, focused: true, inputBuffer: "" });
-		pane.setProps({ notesVisible: false, selectedIndex: 1, focused: true, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 1, focused: true, inputMode: false });
 		const linesB = pane.render(120);
 		expect(linesB.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
 		expect(linesA.length).toBe(linesB.length);
@@ -688,7 +690,7 @@ describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance
 	it("hides notes affordance when notesVisible (notes mode active)", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		pane.setProps({ notesVisible: true, selectedIndex: 0, focused: true, inputMode: false });
+		pane.setProps({ notesVisible: true, hasNote: false, selectedIndex: 0, focused: true, inputMode: false });
 		const lines = pane.render(120);
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
 	});
@@ -696,7 +698,7 @@ describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance
 	it("does not render the affordance text when MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE is reached but option lacks preview", () => {
 		const { pane, optionListView } = makePane(question, () => 120);
 		optionListView.setProps({ selectedIndex: 1, focused: true, inputBuffer: "" });
-		pane.setProps({ notesVisible: false, selectedIndex: 1, focused: true, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 1, focused: true, inputMode: false });
 		const lines = pane.render(120);
 		// Side-by-side path: preview pane still renders (option A has preview), but affordance hidden.
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
@@ -712,7 +714,7 @@ describe("PreviewPane — notes affordance row (Slice 4 height-stable affordance
 		applyLocale("fr");
 		const { pane, optionListView } = makePane(question, () => 120);
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
-		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: true, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 0, focused: true, inputMode: false });
 		const lines = pane.render(120);
 		const affordanceLine = lines.find((l) => l.includes("Notes :"));
 		expect(affordanceLine).toBeDefined();
@@ -769,12 +771,13 @@ describe("PreviewPane composes OptionListView state into render output", () => {
 		const previewBlock = new PreviewBlockRenderer({ question: otherQuestion, theme, markdownTheme });
 		const pane = new PreviewPane({
 			question: otherQuestion,
+			theme,
 			getTerminalWidth: () => 120,
 			optionListView,
 			previewBlock,
 		});
 		pane.setGlobalLeftWidth((w) => adaptiveLeftWidth(items, items.length, w));
-		pane.setProps({ notesVisible: false, selectedIndex: 2, focused: true, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 2, focused: true, inputMode: false });
 		optionListView.setProps({ selectedIndex: 2, focused: true, inputBuffer: "Hello" });
 		const lines = pane.render(120);
 		expect(lines.some((l) => l.includes("Hello"))).toBe(true);
@@ -849,6 +852,7 @@ describe("PreviewPane — adaptive left column width", () => {
 		const previewBlock = new PreviewBlockRenderer({ question, theme, markdownTheme });
 		const pane = new PreviewPane({
 			question,
+			theme,
 			getTerminalWidth: () => 120,
 			optionListView,
 			previewBlock,
@@ -903,6 +907,7 @@ describe("PreviewPane — inputMode (custom-answer full-width while typing)", ()
 		const previewBlock = new PreviewBlockRenderer({ question: previewQuestion, theme, markdownTheme });
 		const pane = new PreviewPane({
 			question: previewQuestion,
+			theme,
 			getTerminalWidth: getWidth,
 			optionListView,
 			previewBlock,
@@ -914,7 +919,7 @@ describe("PreviewPane — inputMode (custom-answer full-width while typing)", ()
 	it("inputMode: true → render is a single full-width option list (no side-by-side split, no preview border)", () => {
 		const { pane, optionListView } = makePreviewPaneWithOther();
 		// Focus on the "other" row (index 2 = options.length) with a typed buffer.
-		pane.setProps({ notesVisible: false, selectedIndex: 2, focused: true, inputMode: true });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 2, focused: true, inputMode: true });
 		optionListView.setProps({ selectedIndex: 2, focused: true, inputBuffer: "custom text" });
 		const lines = pane.render(120);
 		// No preview markdown lines, no bordered-box top border.
@@ -926,7 +931,7 @@ describe("PreviewPane — inputMode (custom-answer full-width while typing)", ()
 
 	it("inputMode: false → side-by-side layout renders as before (MD + border present; inputMode branch skipped)", () => {
 		const { pane, optionListView } = makePreviewPaneWithOther();
-		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: true, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 0, focused: true, inputMode: false });
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const lines = pane.render(120);
 		expect(lines.some((l) => /MD\[\d+\]:/.test(l))).toBe(true);
@@ -935,7 +940,7 @@ describe("PreviewPane — inputMode (custom-answer full-width while typing)", ()
 
 	it("inputMode: true → naturalHeight(w) === render(w).length and maxNaturalHeight(w) === render(w).length", () => {
 		const { pane, optionListView } = makePreviewPaneWithOther();
-		pane.setProps({ notesVisible: false, selectedIndex: 2, focused: true, inputMode: true });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 2, focused: true, inputMode: true });
 		optionListView.setProps({ selectedIndex: 2, focused: true, inputBuffer: "x".repeat(200) });
 		for (const w of [100, 120, 160]) {
 			expect(pane.naturalHeight(w)).toBe(pane.render(w).length);
@@ -947,7 +952,7 @@ describe("PreviewPane — inputMode (custom-answer full-width while typing)", ()
 
 	it("inputMode: true → focusedItemRowRange computed at FULL width (matches the full-width option list)", () => {
 		const { pane, optionListView } = makePreviewPaneWithOther();
-		pane.setProps({ notesVisible: false, selectedIndex: 2, focused: true, inputMode: true });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 2, focused: true, inputMode: true });
 		optionListView.setProps({ selectedIndex: 2, focused: true, inputBuffer: "" });
 		const width = 120;
 		expect(pane.focusedItemRowRange(width)).toEqual(optionListView.focusedItemRowRange(width));
@@ -956,15 +961,57 @@ describe("PreviewPane — inputMode (custom-answer full-width while typing)", ()
 	it("preview layout restored on nav-away (inputMode clears → side-by-side returns)", () => {
 		const { pane, optionListView } = makePreviewPaneWithOther();
 		// Typing on "other": full-width option list, no preview.
-		pane.setProps({ notesVisible: false, selectedIndex: 2, focused: true, inputMode: true });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 2, focused: true, inputMode: true });
 		optionListView.setProps({ selectedIndex: 2, focused: true, inputBuffer: "half-typed" });
 		const typingLines = pane.render(120);
 		expect(typingLines.some((l) => /MD\[\d+\]:/.test(l))).toBe(false);
 		// Navigate back to an option row: inputMode clears, side-by-side preview returns.
-		pane.setProps({ notesVisible: false, selectedIndex: 0, focused: true, inputMode: false });
+		pane.setProps({ notesVisible: false, hasNote: false, selectedIndex: 0, focused: true, inputMode: false });
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const restoredLines = pane.render(120);
 		expect(restoredLines.some((l) => /MD\[\d+\]:/.test(l))).toBe(true);
 		expect(restoredLines.some((l) => /┌─+┐/.test(l))).toBe(true);
+	});
+});
+
+describe("PreviewPane — notes affordance follows the saved note (#197)", () => {
+	const question: QuestionData = {
+		question: "pick",
+		header: "pick",
+		options: [
+			{ label: "A", description: "", preview: "alpha preview" },
+			{ label: "B", description: "", preview: "beta preview" },
+		],
+	};
+	const render = (props: { hasNote: boolean; focused?: boolean; notesVisible?: boolean }) => {
+		const { pane, optionListView } = makePane(question, () => 120);
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
+		pane.setProps({
+			notesVisible: props.notesVisible ?? false,
+			hasNote: props.hasNote,
+			selectedIndex: 0,
+			focused: props.focused ?? true,
+			inputMode: false,
+		});
+		return pane.render(120).join("\n");
+	};
+
+	it("offers to add a note while the question has none", () => {
+		const out = render({ hasNote: false });
+		expect(out).toContain(NOTES_AFFORDANCE_TEXT);
+		expect(out).not.toContain(NOTES_EDIT_AFFORDANCE_TEXT);
+	});
+
+	it("offers to edit once a note is saved", () => {
+		const out = render({ hasNote: true });
+		expect(out).toContain(NOTES_EDIT_AFFORDANCE_TEXT);
+		expect(out).not.toContain(NOTES_AFFORDANCE_TEXT);
+	});
+
+	it("shows neither while the notes editor is open or the pane is unfocused", () => {
+		for (const out of [render({ hasNote: true, notesVisible: true }), render({ hasNote: true, focused: false })]) {
+			expect(out).not.toContain(NOTES_EDIT_AFFORDANCE_TEXT);
+			expect(out).not.toContain(NOTES_AFFORDANCE_TEXT);
+		}
 	});
 });

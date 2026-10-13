@@ -100,8 +100,9 @@ export type QuestionParams = Static<typeof QuestionParamsSchema>;
  *
  * Variant semantics:
  * - `option`: user picked one of the author-defined options. `answer` is the option's label.
- * - `custom`: user typed free-text via the "Type something." row. `answer` is the typed text or null.
- * - `multi`: user committed multi-select choices. `selected` carries chosen labels; `answer` is null.
+ * - `custom`: user typed free-text on a single-select question. `answer` is the typed text or null.
+ * - `multi`: user committed a multi-select question. `selected` carries chosen labels and `answer`
+ *   carries optional custom text.
  */
 export interface QuestionAnswer {
 	questionIndex: number;
@@ -146,6 +147,12 @@ export interface QuestionnaireResult {
 	 * byte-identical (`!("globalNote" in result)` holds).
 	 */
 	globalNote?: string;
+	/**
+	 * Indexes of the questions left blank on a partial submit (#291), set only by the
+	 * envelope builder on an answered result — never present when every question is
+	 * answered or the result is a decline, so those stay byte-identical.
+	 */
+	unanswered?: number[];
 	error?: QuestionnaireError;
 }
 

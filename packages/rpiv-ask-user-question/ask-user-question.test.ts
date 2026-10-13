@@ -1,5 +1,12 @@
+import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
-import { buildItemsForQuestion, buildQuestionnaireResponse, buildToolResult } from "./ask-user-question.js";
+import {
+	buildItemsForQuestion,
+	buildQuestionnaireResponse,
+	buildToolResult,
+	registerAskUserQuestionTool,
+} from "./ask-user-question.js";
+import { prepareQuestionArguments } from "./tool/normalize-params.js";
 import type { QuestionnaireResult, QuestionParams } from "./tool/types.js";
 
 describe("buildItemsForQuestion", () => {
@@ -227,7 +234,7 @@ describe("buildQuestionnaireResponse — completed", () => {
 		expect(r.content[0].text).toContain('"Q2?"="No"');
 	});
 
-	it("multiSelect answer renders as comma-joined labels in <A> position", () => {
+	it("multiSelect answer joins selected labels and custom text in <A> position", () => {
 		const params: QuestionParams = {
 			questions: [
 				{
@@ -243,10 +250,10 @@ describe("buildQuestionnaireResponse — completed", () => {
 		};
 		const result: QuestionnaireResult = {
 			cancelled: false,
-			answers: [{ questionIndex: 0, question: "Areas", kind: "multi", answer: null, selected: ["FE", "BE"] }],
+			answers: [{ questionIndex: 0, question: "Areas", kind: "multi", answer: "Docs", selected: ["FE", "BE"] }],
 		};
 		const r = buildQuestionnaireResponse(result, params);
-		expect(r.content[0].text).toContain('"Areas"="FE, BE"');
+		expect(r.content[0].text).toContain('"Areas"="FE, BE, Docs"');
 	});
 
 	it("custom typed answer renders raw text (no 'User answered:' prefix)", () => {
@@ -400,14 +407,15 @@ describe("buildQuestionnaireResponse — global note", () => {
 		);
 	});
 
-	it("zero answers + note is NOT a decline — answered envelope with details by reference", () => {
+	it("zero answers + note is NOT a decline — answered envelope that names every question as unanswered", () => {
 		const result: QuestionnaireResult = { cancelled: false, answers: [], globalNote: "note alone" };
 		const r = buildQuestionnaireResponse(result, params);
 		expect(r.content[0].text.startsWith("User has answered your questions:")).toBe(true);
 		expect(r.content[0].text).toContain("global note:");
+		expect(r.content[0].text).toContain("unanswered:");
 		expect(r.details.cancelled).toBe(false);
 		expect(r.details.globalNote).toBe("note alone");
-		expect(r.details).toBe(result);
+		expect(r.details).toEqual({ ...result, unanswered: params.questions.map((_, i) => i) });
 	});
 
 	it("cancelled + note: DECLINE_MESSAGE text, answers forwarded AND globalNote preserved in details", () => {
@@ -512,7 +520,7 @@ describe("buildQuestionnaireResponse — multi-question mixed types", () => {
 		expect(text).toContain('"Q3?"="Y"');
 	});
 
-	it("skips unanswered questions (omits their segment from envelope)", () => {
+	it("names the questions left blank in an unanswered: segment and details.unanswered (#291)", () => {
 		const params: QuestionParams = {
 			questions: [
 				{
@@ -539,9 +547,49 @@ describe("buildQuestionnaireResponse — multi-question mixed types", () => {
 		};
 		const r = buildQuestionnaireResponse(result, params);
 		expect(r.content[0].text).toBe(
-			'User has answered your questions: "Q2?"="B". You can now continue with the user\'s answers in mind.',
+			'User has answered your questions: "Q2?"="B". unanswered: "Q1?". You can now continue with the user\'s answers in mind.',
 		);
-		expect(r.content[0].text).not.toContain("Q1?");
+		expect(r.details.unanswered).toEqual([0]);
+	});
+
+	it("leaves a fully answered result byte-identical: no unanswered segment, details by reference (#291)", () => {
+		const params: QuestionParams = {
+			questions: [
+				{ question: "Q1?", header: "First", options: [{ label: "A", description: "a" }] },
+				{ question: "Q2?", header: "Second", options: [{ label: "B", description: "b" }] },
+			],
+		};
+		const result: QuestionnaireResult = {
+			cancelled: false,
+			answers: [
+				{ questionIndex: 0, question: "Q1?", kind: "option", answer: "A" },
+				{ questionIndex: 1, question: "Q2?", kind: "option", answer: "B" },
+			],
+		};
+		const r = buildQuestionnaireResponse(result, params);
+		expect(r.content[0].text).not.toContain("unanswered");
+		expect(r.details).toBe(result);
+		expect("unanswered" in r.details).toBe(false);
+	});
+
+	it("orders segments: answers, then unanswered, then the global note (#291)", () => {
+		const params: QuestionParams = {
+			questions: [
+				{ question: "Q1?", header: "First", options: [{ label: "A", description: "a" }] },
+				{ question: "Q2?", header: "Second", options: [{ label: "B", description: "b" }] },
+			],
+		};
+		const r = buildQuestionnaireResponse(
+			{
+				cancelled: false,
+				answers: [{ questionIndex: 0, question: "Q1?", kind: "option", answer: "A" }],
+				globalNote: "later",
+			},
+			params,
+		);
+		expect(r.content[0].text).toBe(
+			'User has answered your questions: "Q1?"="A". unanswered: "Q2?". global note: later. You can now continue with the user\'s answers in mind.',
+		);
 	});
 
 	it("preserves notes in details AND echoes them across multiple questions", () => {
@@ -699,5 +747,13 @@ describe("buildToolResult", () => {
 			content: [{ type: "text", text: "msg" }],
 			details: { answers: [], cancelled: true, error: "no_questions" },
 		});
+	});
+});
+
+describe("tool registration", () => {
+	it("registers prepareArguments so Pi decodes double-encoded arguments before validating (#244)", () => {
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		expect(captured.tools.get("ask_user_question")?.prepareArguments).toBe(prepareQuestionArguments);
 	});
 });

@@ -695,7 +695,7 @@ describe("makeDialog — body residual padding", () => {
 		const multiSelectByTab: ReadonlyArray<MultiSelectView | undefined> = [undefined, mso];
 		const getBodyHeight = (w: number) => Math.max(1, (mso as unknown as Component).render(w).length);
 
-		// Phase 2 adds a "Type something." row to multi-select tabs (+1 to MultiSelectView
+		// The "Type something." row on multi-select tabs adds (+1 to MultiSelectView
 		// height), pushing this 5-option multi tab's body from 11 → 12 and the full dialog past
 		// the prior 24-row default into the overflow regime (which disables the residual spacer
 		// that equalizes cross-tab height). Give the dialog enough rows that both tabs render

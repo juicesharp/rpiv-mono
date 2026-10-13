@@ -59,7 +59,7 @@ Resume folds the JSONL trail back into run state and re-enters at the pending st
 | Non-interactive session | `/wf requires interactive mode` |
 | No workflows registered | A message telling you to install a sibling that bundles workflows or author one in `.rpiv/workflows/config.ts`. This is the standalone-install default state — the package ships zero workflows |
 | Any load issue with `severity: "error"` | `/wf: N config errors — see warnings above (fix and re-run)`; execution is blocked until the config loads clean |
-| A run recorded under an older state schema | Resume is refused with a version mismatch. `STATE_SCHEMA_VERSION` is `2`; there is no in-place migration |
+| A run recorded under an older state schema | Resume is refused with a version mismatch. `STATE_SCHEMA_VERSION` is `3`; there is no in-place migration |
 | First `/wf` before the runtime pre-warms | One toast: `rpiv: loading workflow runtime (first /wf after load)…`. The runtime pre-warms 2000 ms after extension load |
 
 ## File structure
@@ -85,6 +85,15 @@ Every workflow file is TypeScript, loaded via `jiti` (no build step required). I
 ```typescript
 import { defineWorkflow, produces, acts, gate, gt, eq } from "@juicesharp/rpiv-workflow";
 ```
+
+These imports work wherever the file lives, without a `node_modules` folder next to it. The loader maps them to the running copy of rpiv-workflow and to the `typebox` Pi provides:
+
+| Import | Resolves to |
+| --- | --- |
+| `@juicesharp/rpiv-workflow`, `/registration`, `/startup`, `/runner` | the rpiv-workflow already loaded in Pi |
+| `typebox`, `typebox/value`, `typebox/compile` | the `typebox` Pi supplies to extensions |
+
+Any other package an overlay imports resolves normally from the overlay's own folder, so it must be installed where Node can find it.
 
 ## Where files resolve
 
@@ -184,18 +193,21 @@ Alongside the trail:
 - `runs/names.json` — the `--name` slug → run-id index.
 - `runs/<run-id>/sessions/` — the child session files backing that run's stages.
 
-Trails carry `STATE_SCHEMA_VERSION`, currently `2`. A run recorded under a different version cannot be resumed.
+Trails carry `STATE_SCHEMA_VERSION`, currently `3`. A run recorded under a different version cannot be resumed.
 
 The package sets no explicit file modes; writes use the process umask. If a write fails, the error tells you to check filesystem permissions for `.rpiv/workflows/runs/`.
 
 ## Run caps
 
-Two backstops bound every run regardless of what a workflow declares:
+Three backstops bound every run regardless of what a workflow declares:
 
 | Cap | Default | Effect |
 | --- | --- | --- |
 | `maxIterations` | `32` | Run-wide ceiling on loop units of every kind. The effective loop cap is `min(loop.max, run.maxIterations)` |
-| Backward-jump budget | `3` per destination stage | At most 4 executions of any one stage across decision-edge loop-backs |
+| Backward-jump budget | `3` per destination stage | At most 4 executions of any one stage across decision-edge loop-backs. A stage declaring a `progress` hook that reports `"improved"` waives a re-entry past this budget |
+| Lap ceiling | `8` per destination stage | Absolute ceiling on decision-edge re-entries — counted or waived. Even an all-`"improved"` loop halts on the `maxLaps + 1`-th re-entry of one stage |
+
+Both re-entry budgets are per invocation: a resume (`/wf @<run-id>`) starts them fresh. Raise them per run with `--max-jumps <n>` and `--max-laps <n>` — each honored in the leading or trailing position like `--name`, in any relative order, at most once; a mid-position token stays as workflow input text.
 
 ## Trusting overlay files
 

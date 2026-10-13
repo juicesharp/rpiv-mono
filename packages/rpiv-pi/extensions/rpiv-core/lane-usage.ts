@@ -33,7 +33,7 @@ export interface LaneUsage {
 	/** Scalar cost, USD (`SessionStats.cost`). Optional — surfaced when present. */
 	cost?: number;
 	/** Context-window fill %, or `null` if unknown post-compaction
-	 *  (`SessionStats.contextUsage.percent`). Optional — Slice 3 renders `CH%`. */
+	 *  (`SessionStats.contextUsage.percent`). Optional — the lane progress UI renders `CH%`. */
 	percent?: number | null;
 }
 

@@ -2,13 +2,13 @@
  * rpiv-args — core logic.
  *
  * Intercepts `/skill:<name> <args>` at the input hook and emits a Pi skill
- * wrapper. Pipeline (FR9):
+ * wrapper. Pipeline:
  *   strip frontmatter → $N/$ARGUMENTS substitution (opt-in via TOKEN_REGEX)
- *   → ${SKILL_DIR}/${SESSION_ID} substitution (always-on, FR10)
- *   → shell execution (always-on, FR10 — see executeShellInBody)
+ *   → ${SKILL_DIR}/${SESSION_ID} substitution (always-on)
+ *   → shell execution (always-on — see executeShellInBody)
  *   → wrap in <skill name=… location=…>…</skill> block
  *
- * Emit-path divergence (FR12): the trailing-args policy is governed by
+ * Emit-path divergence: the trailing-args policy is governed by
  * ORIGINAL token presence (`hadTokens`). The no-token path emits
  * byte-identical to Pi's built-in `_expandSkillCommand` (`\n\n${args}`);
  * the token path emits the raw args in a `Skill input:`-labeled trailer
@@ -174,11 +174,11 @@ export function substituteVariables(body: string, vars: { skillDir: string; sess
 // Number.isFinite is load-bearing — both NaN and Infinity must be rejected:
 //   - NaN  → would silently bypass exec.js:42's `&& options.timeout > 0`
 //            short-circuit (NaN > 0 is false) and disable the timer, hiding
-//            an FR4 violation.
+//            the configured timeout.
 //   - Infinity → Node's setTimeout(fn, Infinity) clamps to 1ms → an immediate
 //                kill (the opposite of "no timeout").
 //
-// `0` is honored as explicit disable (FR4).
+// `0` is honored as explicit disable.
 // ---------------------------------------------------------------------------
 
 export function resolveShellTimeoutMs(frontmatter: { "shell-timeout"?: unknown }): number {
@@ -198,7 +198,7 @@ export function resolveShellTimeoutMs(frontmatter: { "shell-timeout"?: unknown }
 // inside the fence; running inline first would eat backticks from block
 // content and produce malformed bodies.
 //
-// Sequential iteration (FR11) — never Promise.all. Skill authors rely on
+// Sequential iteration — never Promise.all. Skill authors rely on
 // `!`mkdir x`` → `!`ls x`` ordering. The git-context.ts:36-44 Promise.all
 // precedent for parallel read-only git commands is INTENTIONALLY not copied.
 //
@@ -209,7 +209,7 @@ export function resolveShellTimeoutMs(frontmatter: { "shell-timeout"?: unknown }
 // `pi.exec` NEVER rejects (dist/core/exec.js:10-72 — every termination path
 // calls resolve(...)). No try/catch needed here.
 //
-// FR5 branch order: killed → code !== 0 → success. `killed` is checked first
+// Branch order: killed → code !== 0 → success. `killed` is checked first
 // because a timed-out child may also report a non-zero code via `code ?? 0`
 // (exec.js:60) or `1` via the catch (exec.js:71); the timeout message wins.
 // ---------------------------------------------------------------------------
@@ -218,7 +218,7 @@ export function resolveShellTimeoutMs(frontmatter: { "shell-timeout"?: unknown }
  *  with a `[truncated: hit ...]` footer when truncation occurred. Shared
  *  by the success path (`formatShellOutput`) and the non-zero exit path
  *  in `runOneShellCommand` so a multi-MB stderr from a failed `!`npm test``
- *  cannot bypass FR2's budget (per R1). */
+ *  cannot bypass the truncation budget. */
 function truncateForLLM(content: string): string {
 	const trunc: TruncationResult = truncateTail(content, {
 		maxLines: DEFAULT_MAX_LINES,
@@ -429,8 +429,8 @@ export async function handleInput(
 	const body = stripFrontmatter(content).trim();
 	const timeoutMs = resolveShellTimeoutMs(frontmatter);
 
-	// FR12: emit-path divergence (token-path drops the trailing `\n\n${args}`
-	// suffix) is governed by ORIGINAL token presence only. FR10: variable
+	// Emit-path divergence (token-path drops the trailing `\n\n${args}`
+	// suffix) is governed by ORIGINAL token presence only. Variable
 	// substitution and shell execution run on BOTH paths regardless.
 	const hadTokens = TOKEN_REGEX.test(body);
 

@@ -5,7 +5,34 @@ All notable changes to `@juicesharp/rpiv-args` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.13.8] - 2026-10-12
+
+### Added
+- A presence marker (`globalThis[Symbol.for("@juicesharp/rpiv-args:loaded")]`) set on load, so rpiv-pi can tell rpiv-args is loaded even when it is bundled inside another package — it registers no tool or command to find it by (#216).
+
+## [2.13.7] - 2026-10-12
+
+## [2.13.6] - 2026-10-12
+
+## [2.13.5] - 2026-10-12
+
+## [2.13.4] - 2026-10-11
+
+## [2.13.3] - 2026-10-11
+
+## [2.13.2] - 2026-10-11
+
+## [2.13.1] - 2026-10-11
+
+## [2.13.0] - 2026-10-11
+
+## [2.12.0] - 2026-09-30
+
+## [2.11.0] - 2026-09-21
+
+## [2.10.1] - 2026-09-13
+
+## [2.10.0] - 2026-09-12
 
 ## [2.9.0] - 2026-09-01
 

@@ -117,7 +117,7 @@ no overrides.
 
 | Requirement | Why |
 | --- | --- |
-| [Pi Agent](https://github.com/badlogic/pi-mono) | The host. Install it globally so `pi` is on your PATH |
+| [Pi Agent](https://github.com/badlogic/pi-mono) 0.80.x or 1.x | The host. Install it globally so `pi` is on your PATH. Workflow child sessions are tested against Pi 0.80.6, 1.0.4, and 1.1.0 |
 | A model provider | Pi's own `/login` or `~/.pi/agent/models.json` — see [docs/models-config.md](./docs/models-config.md) |
 | [`@tintinweb/pi-subagents`](https://www.npmjs.com/package/@tintinweb/pi-subagents) | Supplies the `Agent` tool. Without it the parallel-analysis skills cannot dispatch. Installed by `/rpiv-setup` |
 | [`@juicesharp/rpiv-workflow`](https://www.npmjs.com/package/@juicesharp/rpiv-workflow) | Supplies `/wf`. Without it the four built-in workflows do not register. Installed by `/rpiv-setup` |

@@ -1,6 +1,7 @@
+import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import { normalizeLineTerminators, normalizeQuestionParams } from "./normalize-params.js";
-import type { QuestionParams } from "./types.js";
+import { normalizeLineTerminators, normalizeQuestionParams, prepareQuestionArguments } from "./normalize-params.js";
+import { type QuestionParams, QuestionParamsSchema } from "./types.js";
 
 describe("normalizeLineTerminators", () => {
 	it("deletes a lone CR without introducing a phantom space (#192 sample 1)", () => {
@@ -73,5 +74,50 @@ describe("normalizeQuestionParams", () => {
 			questions: [{ question: "Q?", options: [{ label: "A" }, { label: "B" }] }],
 		} as unknown as QuestionParams;
 		expect(normalizeQuestionParams(malformed)).toEqual(malformed);
+	});
+});
+
+describe("prepareQuestionArguments — double-encoded tool arguments (#244)", () => {
+	const question = {
+		question: "Which format?",
+		header: "Format",
+		options: [
+			{ label: "TOML", description: "toml" },
+			{ label: "YAML", description: "yaml" },
+		],
+	};
+	const wellFormed = { questions: [question] };
+
+	it("returns well-formed arguments unchanged", () => {
+		expect(prepareQuestionArguments(wellFormed)).toEqual(wellFormed);
+		expect(Value.Check(QuestionParamsSchema, prepareQuestionArguments(wellFormed))).toBe(true);
+	});
+
+	it.each([
+		["questions as a JSON string", { questions: JSON.stringify([question]) }],
+		["each question as a JSON string (questions.0: must be object)", { questions: [JSON.stringify(question)] }],
+		["options as a JSON string", { questions: [{ ...question, options: JSON.stringify(question.options) }] }],
+		[
+			"each option as a JSON string",
+			{ questions: [{ ...question, options: question.options.map((o) => JSON.stringify(o)) }] },
+		],
+		[
+			"both levels at once",
+			{ questions: JSON.stringify([JSON.stringify({ ...question, options: JSON.stringify(question.options) })]) },
+		],
+	])("decodes %s so schema validation passes", (_name, raw) => {
+		expect(Value.Check(QuestionParamsSchema, raw)).toBe(false); // what Pi rejects today
+		const prepared = prepareQuestionArguments(raw);
+		expect(prepared).toEqual(wellFormed);
+		expect(Value.Check(QuestionParamsSchema, prepared)).toBe(true);
+	});
+
+	it.each([
+		["malformed JSON", { questions: "[{not json" }],
+		["a JSON string of the wrong shape", { questions: JSON.stringify({ question: "not an array" }) }],
+		["a plain-text element", { questions: ["just some text"] }],
+		["a non-object argument", "questions"],
+	])("leaves %s untouched so validation still reports the real problem", (_name, raw) => {
+		expect(prepareQuestionArguments(raw)).toEqual(raw);
 	});
 });

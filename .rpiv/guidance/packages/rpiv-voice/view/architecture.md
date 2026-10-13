@@ -15,7 +15,7 @@ stateful-view.ts            — StatefulView<P> interface + ActiveView union
 component-binding.ts        — ComponentBinding<P> spec + globalBinding() factory producing BoundGlobalBinding
 props-adapter.ts            — VoiceOverlayPropsAdapter: iterates bindings, calls component.setProps, then tui.requestRender()
 screen-content-strategy.ts  — DictationScreenStrategy / SettingsScreenStrategy: each returns ordered Component[]
-overlay-view.ts             — Top-level StatefulView; renders both strategies, height-equalizes bodies, clips to terminal height
+overlay-view.ts             — Top-level StatefulView<OverlayViewProps>; renders both strategies, height-equalizes bodies, clips to terminal height
 components/                  — Leaf renderers (see .rpiv/guidance/packages/rpiv-voice/view/components/architecture.md)
 ```
 
@@ -44,6 +44,7 @@ apply(state: VoiceState): void {
     for (const b of this.bindings) b.apply(state, ctx);  // each calls component.setProps(select(state, ctx))
     this.tui.requestRender();                            // exactly one redraw per state update
 }
+invalidate(): void { /* fans out to components' own invalidate() */ }
 ```
 Bindings are the single registry; fan-out is one-to-many; canonical state crosses into components only through this path.
 

@@ -32,19 +32,36 @@ export function classifyStop(branch: BranchEntry[], offsetStart?: number): StopS
 
 /**
  * One content part inside an assistant message. Pi's internal union
- * carries more variants than these two; we model the ones collectors
- * walk over and let unknown parts pass through structurally (every
- * field besides `type` is optional).
+ * carries more variants than these; we model the ones collectors walk
+ * over and let unknown parts pass through structurally (every field
+ * besides `type` is optional).
  *
  *   - `text` parts carry user-visible markdown via `text`.
- *   - `tool_use` parts carry a tool invocation: `name` + `input` (the
- *     JSON object the agent called the tool with).
+ *   - Tool invocations carry `name` plus an argument object, under either of
+ *     two spellings: `{ type: "toolCall", arguments }` — the shape
+ *     `@earendil-works/pi-ai` emits (`AssistantMessage.content`) and every
+ *     persisted session file carries — or `{ type: "tool_use", input }`, the
+ *     Anthropic wire spelling. `iterToolUses` normalises both to `{ name, input }`;
+ *     a collector never sees the difference. Recognising only one spelling
+ *     silently disables every tool-argument surface (the text-scan fallback,
+ *     `toolCallCollector`) against the shape the host actually produces.
  */
 export type BranchContentPart = {
 	type: string;
 	text?: string;
 	name?: string;
 	input?: Record<string, unknown>;
+	arguments?: Record<string, unknown>;
+};
+
+/** Part types that carry a tool invocation — see `BranchContentPart`. */
+const TOOL_USE_PART_TYPES: ReadonlySet<string> = new Set(["toolCall", "tool_use"]);
+
+/** The invocation's argument object under either spelling (`arguments` first —
+ *  the live SDK shape — then `input`); `{}` when neither is an object. */
+const toolUseInput = (part: BranchContentPart): Record<string, unknown> => {
+	const raw = part.arguments ?? part.input;
+	return raw !== null && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
 };
 
 export type BranchEntry = {
@@ -155,7 +172,7 @@ export function lastAssistantText(branch: BranchEntry[], offsetStart?: number): 
  *
  * Reverse scan because the agent's final message is usually where the
  * actionable path/URL lands; iterating from the tail short-circuits on
- * the first hit. Thinking/tool_use blocks are ignored — only spoken
+ * the first hit. Thinking and tool-invocation parts are ignored — only spoken
  * `text` parts count.
  *
  * `offsetStart` — continue-policy stages pass the prior branch length
@@ -184,10 +201,12 @@ export function lastMatchInBranch(branch: BranchEntry[], pattern: RegExp, offset
 }
 
 /**
- * Yield every tool_use part the assistant emitted in branch order
+ * Yield every tool-invocation part the assistant emitted in branch order
  * (forward — the typical "what did the agent do during this stage?"
- * scan direction). Pure — no I/O. `toolCallCollector` walks this to
- * apply the author's match/toArtifact pair.
+ * scan direction), normalised to `{ name, input }` under both spellings
+ * (`toolCall`/`arguments` — the live SDK shape — and `tool_use`/`input`; see
+ * `BranchContentPart`). Pure — no I/O. `toolCallCollector` and the text-scan
+ * fallback walk this.
  *
  * `offsetStart` — continue-policy stages pass the prior branch length.
  */
@@ -202,9 +221,9 @@ export function* iterToolUses(
 		const content = entry.message.content;
 		if (!Array.isArray(content)) continue;
 		for (const part of content) {
-			if (part.type !== "tool_use") continue;
+			if (!TOOL_USE_PART_TYPES.has(part.type)) continue;
 			if (typeof part.name !== "string") continue;
-			yield { name: part.name, input: part.input ?? {} };
+			yield { name: part.name, input: toolUseInput(part) };
 		}
 	}
 }

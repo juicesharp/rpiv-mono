@@ -96,12 +96,21 @@ into the first real user turn after compaction — hidden by default, visible un
 
 ## Sibling coupling
 
-Sibling **presence** is detected from the filesystem: a case-insensitive regex over the
-`packages[]` array in the active Pi settings file (`<agent dir>/settings.json`, honoring
-`PI_CODING_AGENT_DIR`). No sibling is statically imported from the entry graph; a test
-enforces that.
+A sibling counts as **present** when either signal finds it:
 
-`/rpiv-setup` installs eight packages:
+- a case-insensitive regex over the `packages[]` array in the active Pi settings file
+  (`<agent dir>/settings.json`, honoring `PI_CODING_AGENT_DIR`);
+- or it is actually loaded in this session: the same regex matched against the source
+  path of every loaded tool and extension command, plus a presence marker for
+  `rpiv-args`, which registers neither.
+
+The second signal covers siblings that load without a settings entry of their own:
+bundled inside another Pi package (a kit), installed per project (`pi install -l`), or
+loaded with `pi -e`. They no longer trigger the missing-siblings banner, and
+`/rpiv-setup` does not install a second copy whose tools would conflict. No sibling is
+statically imported from the entry graph; a test enforces that.
+
+`/rpiv-setup` installs whichever of these eight packages are neither declared nor loaded:
 
 | Package | Provides |
 | --- | --- |

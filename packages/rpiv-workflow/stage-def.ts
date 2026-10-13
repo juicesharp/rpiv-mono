@@ -60,6 +60,20 @@ export const STAGE_KINDS = ["produces", "side-effect"] as const;
 export type StageKind = (typeof STAGE_KINDS)[number];
 
 /**
+ * The backward-jump guard's progress verdicts — what a stage's optional
+ * `progress` hook returns per decision-edge re-entry (see `StageDefBase.progress`).
+ * `"improved"` WAIVES the re-entry (the per-destination budget is untouched;
+ * the chain re-dispatches the stage); `"unchanged"` / `"regressed"` /
+ * `"unknown"` COUNT exactly as a hook-less re-entry does. The `as const`
+ * array is the single source of truth (same idiom as `STAGE_KINDS`): the
+ * literal-union type is derived from it, and the guard normalizes any
+ * off-union return (a jiti-loaded literal erased the union) to `"unknown"`
+ * via one membership check against the same array.
+ */
+export const PROGRESS_VALUES = ["improved", "unchanged", "regressed", "unknown"] as const;
+export type ProgressValue = (typeof PROGRESS_VALUES)[number];
+
+/**
  * - `"fresh"` — the stage runs in a brand-new detached child session.
  * - `"continue"` — the stage FORKS its predecessor's persisted child session
  *   (`SessionManager.forkFrom`), so the child carries the prior conversation as
@@ -226,6 +240,27 @@ interface StageDefBase<TIn = unknown, TOut = unknown> {
 	 * own outcome) — `validateWorkflow` warns when set there.
 	 */
 	inheritsArtifacts?: boolean;
+	/**
+	 * Optional backward-jump progress hook, consulted ONLY when a decision
+	 * edge re-enters this stage (never on first visit). The guard awaits
+	 * `(state) => "improved" | "unchanged" | "regressed" | "unknown"` (sync or
+	 * async) and:
+	 *
+	 *   - `"improved"` — WAIVES the re-entry: no budget consumed, the chain
+	 *     re-dispatches this stage exactly as a counted re-entry under the
+	 *     cap would;
+	 *   - anything else — the re-entry COUNTS against the per-destination
+	 *     cap, exactly as a hook-less stage's re-entry does today.
+	 *
+	 * The hook is an observation, never a halt surface: a throwing hook
+	 * degrades to `"unknown"` (counts, never halts by itself); an off-union
+	 * return normalizes to `"unknown"`; an absent hook means every re-entry
+	 * counts. Declared on the base so all three dispatch arms (skill /
+	 * script / prompt) carry it; composes with `loop` / `verify` / `reads`
+	 * (no exclusion rules — a function-valued hook is the only shape rule,
+	 * enforced at load as `progress-not-function`).
+	 */
+	progress?: (state: RunView) => ProgressValue | Promise<ProgressValue>;
 }
 
 /**
@@ -415,7 +450,14 @@ export function defineWorkflow(spec: Workflow): Workflow {
 interface ProducesScriptOptions<TIn = unknown, TOut = unknown>
 	extends Pick<
 		ScriptStage<TIn, TOut>,
-		"outputSchema" | "inputSchema" | "onInvalid" | "maxRetries" | "validateTimeoutMs" | "inheritsArtifacts" | "reads"
+		| "outputSchema"
+		| "inputSchema"
+		| "onInvalid"
+		| "maxRetries"
+		| "validateTimeoutMs"
+		| "inheritsArtifacts"
+		| "reads"
+		| "progress"
 	> {
 	run: ProducesScriptFn<string, TOut>;
 }
@@ -427,7 +469,7 @@ interface ProducesScriptOptions<TIn = unknown, TOut = unknown>
  * (they emit no data envelope), so the retry knobs don't apply.
  */
 interface ActsScriptOptions<TIn = unknown>
-	extends Pick<ScriptStage<TIn, void>, "inputSchema" | "inheritsArtifacts" | "reads"> {
+	extends Pick<ScriptStage<TIn, void>, "inputSchema" | "inheritsArtifacts" | "reads" | "progress"> {
 	run: ActsScriptFn;
 }
 
@@ -441,7 +483,15 @@ interface ActsScriptOptions<TIn = unknown>
 interface ProducesPromptOptions<TIn = unknown, TOut = unknown>
 	extends Pick<
 		PromptStage<TIn, TOut>,
-		"prompt" | "outputSchema" | "inputSchema" | "onInvalid" | "maxRetries" | "validateTimeoutMs" | "loop" | "verify"
+		| "prompt"
+		| "outputSchema"
+		| "inputSchema"
+		| "onInvalid"
+		| "maxRetries"
+		| "validateTimeoutMs"
+		| "loop"
+		| "verify"
+		| "progress"
 	> {
 	outcome: Outcome;
 	/** `"continue"` makes this a follow-up turn on a session a prior stage populated. */
@@ -454,7 +504,7 @@ interface ProducesPromptOptions<TIn = unknown, TOut = unknown>
  * variant: no `outcome` (nothing collected). For a collecting side-effect
  * prompt stage, use the bare `acts({ prompt, outcome })` field form instead.
  */
-interface ActsPromptOptions<TIn = unknown> extends Pick<PromptStage<TIn, void>, "prompt" | "inputSchema"> {
+interface ActsPromptOptions<TIn = unknown> extends Pick<PromptStage<TIn, void>, "prompt" | "inputSchema" | "progress"> {
 	/** `"continue"` makes this a follow-up turn on a session a prior stage populated. */
 	sessionPolicy?: SessionPolicy;
 }

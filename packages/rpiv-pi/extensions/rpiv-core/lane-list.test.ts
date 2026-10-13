@@ -617,6 +617,49 @@ describe("renderRecap — end-of-run summary", () => {
 		setRecap("run-1", { outcome: "aborted", artifacts: [] });
 		expect(renderRecap(identityTheme, W, "run-1")).toEqual([]);
 	});
+
+	it("renders routingNotes as dim parts ordered after the artifact arrow and before the ⚠ reason", () => {
+		recordRun("run-1", "build");
+		setRecap("run-1", {
+			outcome: "failed",
+			failureReason: "grade exploded",
+			artifacts: [".rpiv/artifacts/builds/b.md"],
+			routingNotes: ["pass-through: implement-scope-check defers to validate"],
+		});
+		// Encoding theme: fg(c, s) → "c:s", so the dim part is observable. One
+		// joined line — arrow, then note, then reason.
+		const lines = renderRecap(encTheme, W, "run-1");
+		expect(lines.length).toBe(1);
+		const out = lines[0] as string;
+		const arrowIdx = out.indexOf("→ builds/b.md");
+		const noteIdx = out.indexOf("dim:pass-through: implement-scope-check defers to validate");
+		const reasonIdx = out.indexOf("⚠ grade exploded");
+		expect(arrowIdx).toBeGreaterThanOrEqual(0);
+		expect(noteIdx).toBeGreaterThan(arrowIdx);
+		expect(reasonIdx).toBeGreaterThan(noteIdx);
+	});
+
+	it("renders routingNotes alone on an artifact-less recap (still a single line)", () => {
+		recordRun("run-1", "build");
+		setRecap("run-1", {
+			outcome: "completed",
+			artifacts: [],
+			routingNotes: ["pass-through: implement-scope-check defers to validate"],
+		});
+		expect(renderRecap(identityTheme, W, "run-1")).toEqual([
+			"pass-through: implement-scope-check defers to validate",
+		]);
+	});
+
+	it("renders byte-identically when routingNotes is absent (no note parts leak)", () => {
+		recordRun("run-1", "ship");
+		setRecap("run-1", { outcome: "failed", failureReason: "x", artifacts: ["a.md"] });
+		const lines = renderRecap(identityTheme, W, "run-1");
+		expect(lines.length).toBe(1);
+		expect(lines[0]).toContain("→ a.md");
+		expect(lines[0]).toContain("⚠ x");
+		expect(lines[0]).not.toContain("pass-through");
+	});
 });
 
 describe("renderLaneList — run grand total", () => {

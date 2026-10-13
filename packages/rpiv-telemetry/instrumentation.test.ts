@@ -243,7 +243,7 @@ describe("instrumentation", () => {
 	});
 
 	// -------------------------------------------------------------------------
-	// Sub-agent payload typebox validation (L1-02)
+	// Sub-agent payload typebox validation
 	// -------------------------------------------------------------------------
 
 	it("subagent_created handler dispatches when payload validates", () => {

@@ -146,7 +146,7 @@ export const SUBAGENT_HANDLERS: readonly SubAgentHandlerSpec[] = [
 
 /**
  * Validate a sub-agent EventBus payload, gate on a known session, update the
- * inflight tracker (with composite sessionId+agentId key — see L4-06), and
+ * inflight tracker (with composite sessionId+agentId key), and
  * dispatch the resulting TelemetryEvent.
  *
  * Foreground vs background detection: pi-subagents only emits
@@ -159,7 +159,7 @@ export const SUBAGENT_HANDLERS: readonly SubAgentHandlerSpec[] = [
  * first for the same `(sessionId, agentId)` pair.
  */
 export function handleSubAgentBusEvent(h: SubAgentHandlerSpec, data: unknown): void {
-	// L4-07: drop events that arrive before `session_start` populates currentSessionId.
+	// Drop events that arrive before `session_start` populates currentSessionId.
 	// Without this guard the event would ship with `sessionId: ""` and propagate
 	// into MLflow span attributes as a phantom session.
 	if (!currentSessionId) {

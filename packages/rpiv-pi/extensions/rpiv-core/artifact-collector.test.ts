@@ -225,3 +225,69 @@ describe("disk-corroborated basename fallback", () => {
 		expect(result.kind).toBe("fatal");
 	});
 });
+
+// The tool-argument fallback against the branch shape Pi produces (`toolCall`/
+// `arguments`). The contract: a lane that wrote its artifact through `write` or
+// `edit` but never spoke the path is still collected — from the `path` argument
+// of that call and nothing else. Reads of sibling artifacts, `bash` greps and
+// listings, and paths quoted inside a written `content` body are not evidence
+// of authorship and must never outrank the destination the lane wrote to.
+describe("tool-argument fallback against the live Pi branch shape", () => {
+	const MINE = ".rpiv/artifacts/elaborations/2026-09-01_10-00-00_topic__phase-7.md";
+	const SIBLING = ".rpiv/artifacts/elaborations/2026-09-01_10-00-00_topic__phase-4.md";
+	const PLAN = ".rpiv/artifacts/plans/2026-09-01_10-00-00_topic.md";
+	const call = (name: string, args: Record<string, unknown>): BranchEntry =>
+		({
+			type: "message",
+			message: { role: "assistant", content: [{ type: "toolCall", id: `c-${name}`, name, arguments: args }] },
+		}) as unknown as BranchEntry;
+
+	it("collects the path the `write` call actually wrote when the closing text omits it", async () => {
+		const branch = [
+			call("read", { path: PLAN }),
+			call("write", { path: `/abs/repo/${MINE}`, content: `---\nsource: ${PLAN}\n---\n# body` }),
+			call("bash", { command: `test -s ${MINE} && echo ok` }),
+			asst("Phase 7 elaborated: 11 files, 16 code blocks — the tree reverted byte-identical."),
+		];
+		const result = await rpivBucketCollector("elaborations").collect(collectCtxOf(branch));
+		expect(result.kind === "ok" && result.artifacts[0]?.handle).toEqual({ kind: "fs", path: MINE });
+	});
+
+	it("a later `read` of a sibling's artifact never outranks the lane's own `write`", async () => {
+		const branch = [
+			call("write", { path: MINE, content: "# mine" }),
+			call("read", { path: SIBLING }),
+			call("bash", { command: `ls .rpiv/artifacts/elaborations/ | grep phase-4` }),
+			asst("Done — see the summary above."),
+		];
+		const result = await rpivBucketCollector("elaborations").collect(collectCtxOf(branch));
+		expect(result.kind === "ok" && result.artifacts[0]?.handle).toEqual({ kind: "fs", path: MINE });
+	});
+
+	it("a sibling path quoted inside the written `content` never outranks the `path`", async () => {
+		const branch = [
+			call("write", { path: MINE, content: `Builds on ${SIBLING} — see its Key Interfaces.` }),
+			asst("Done."),
+		];
+		const result = await rpivBucketCollector("elaborations").collect(collectCtxOf(branch));
+		expect(result.kind === "ok" && result.artifacts[0]?.handle).toEqual({ kind: "fs", path: MINE });
+	});
+
+	it("an `edit` in place counts as a write (amend re-emits the plan at the same path)", async () => {
+		const branch = [call("edit", { path: PLAN, edits: [{ oldText: "a", newText: "b" }] }), asst("Amended in place.")];
+		const result = await rpivBucketCollector("plans").collect(collectCtxOf(branch));
+		expect(result.kind === "ok" && result.artifacts[0]?.handle).toEqual({ kind: "fs", path: PLAN });
+	});
+
+	it("a bucket-narrowed collector ignores a `write` into another bucket", async () => {
+		const branch = [call("write", { path: PLAN, content: "# plan" }), asst("Done.")];
+		const result = await rpivBucketCollector("elaborations").collect(collectCtxOf(branch));
+		expect(result.kind).toBe("fatal");
+	});
+
+	it("the spoken announcement still wins over every tool argument", async () => {
+		const branch = [call("write", { path: SIBLING, content: "" }), asst(`**Path:** \`${MINE}\``)];
+		const result = await rpivBucketCollector("elaborations").collect(collectCtxOf(branch));
+		expect(result.kind === "ok" && result.artifacts[0]?.handle).toEqual({ kind: "fs", path: MINE });
+	});
+});

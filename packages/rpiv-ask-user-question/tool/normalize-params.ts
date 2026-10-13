@@ -54,3 +54,49 @@ export function normalizeQuestionParams(params: QuestionParams): QuestionParams 
 		})),
 	};
 }
+
+/**
+ * Pi's `prepareArguments` hook: undo double-encoded tool arguments before schema
+ * validation (#244). Some tool-call parsers (vLLM/LiteLLM-served GLM/Qwen-class
+ * models) intermittently emit nested structures as JSON strings — `questions` itself,
+ * or its elements (`questions.0: must be object`). Only a string at an array/object
+ * position is decoded, and only when it parses to the expected shape; anything else is
+ * passed through untouched so validation still reports the real problem. The same
+ * applies one level down to `options`. Well-formed arguments are returned as-is.
+ */
+export function prepareQuestionArguments(args: unknown): QuestionParams {
+	if (!isRecord(args)) return args as QuestionParams;
+	const questions = decodeArray(args.questions);
+	if (!Array.isArray(questions)) return args as QuestionParams;
+	const decoded = questions.map((q) => {
+		const question = decodeObject(q);
+		if (!isRecord(question)) return question;
+		const options = decodeArray(question.options);
+		return Array.isArray(options) ? { ...question, options: options.map(decodeObject) } : question;
+	});
+	return { ...args, questions: decoded } as unknown as QuestionParams;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** A JSON string holding an array → that array; anything else unchanged. */
+function decodeArray(value: unknown): unknown {
+	const parsed = typeof value === "string" ? parseJson(value) : value;
+	return Array.isArray(parsed) ? parsed : value;
+}
+
+/** A JSON string holding an object → that object; anything else unchanged. */
+function decodeObject(value: unknown): unknown {
+	const parsed = typeof value === "string" ? parseJson(value) : value;
+	return isRecord(parsed) ? parsed : value;
+}
+
+function parseJson(text: string): unknown {
+	try {
+		return JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+}

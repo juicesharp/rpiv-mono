@@ -33,7 +33,7 @@ export interface QuestionnaireState {
 	 * - Hosts with an `OverlayHandle` AND a raw `onTerminalInput` listener (real pi-tui):
 	 *   the `set_overlay_hidden` effect fully hides the overlay; the raw listener registered
 	 *   in `execute()` reopens it, because pi-tui routes no input to a hidden overlay.
-	 * - Hosts without the raw listener (or without a handle): the overlay stays visible and
+	 * - Inline presentation, or hosts without the raw listener/handle: the dialog stays visible and
 	 *   shrinks to a single hint row. The row keeps focus and input routing, so the same key
 	 *   expands it and Esc cancels, and the expand key never falls through to an underlying
 	 *   overlay (e.g. `/btw`). The session gates `set_overlay_hidden` on the listener's

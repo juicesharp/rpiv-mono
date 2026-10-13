@@ -18,7 +18,22 @@ const ctxOf = (branch: BranchEntry[]) => ({
 	skill: "test",
 });
 
+const toolUse = (name: string, url: string): BranchEntry => ({
+	type: "message",
+	message: { role: "assistant", content: [{ type: "tool_use", name, input: { url } }] as never },
+});
+
 describe("urlCollector", () => {
+	it("forwards match to the tool-arg fallback: a filtered-out fetch contributes nothing, a post still hits", async () => {
+		const fetch = ctxOf([toolUse("fetch", "https://example.com/read")]);
+		const post = ctxOf([toolUse("post", "https://example.com/created")]);
+		const unfiltered = urlCollector();
+		const filtered = urlCollector({ match: (tc) => tc.name === "post" });
+		expect((await unfiltered.collect(fetch)).kind).toBe("ok");
+		expect((await filtered.collect(fetch)).kind).toBe("fatal");
+		expect((await filtered.collect(post)).kind).toBe("ok");
+	});
+
 	it("emits a url() handle for an https URL in assistant text", async () => {
 		const collector = urlCollector();
 		const ctx = ctxOf([asst("Opened https://github.com/owner/repo/pull/42 for review.")]);

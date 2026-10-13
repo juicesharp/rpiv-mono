@@ -46,4 +46,4 @@ The splash is an **inline replacement** for the editor (not a bottom overlay) sh
 The pipeline → state surface is intentionally narrow: a frame-level chunk action, a rolling-partial setter, and a committed-segment appender. No other audio-layer concerns leak into the reducer.
 
 ## Cancellation
-One `AbortController` per `/voice` invocation owns the lifecycle: abort flows through to mic-stop, recognizer cleanup, and view tear-down — no orphan timers or in-flight recognitions survive command exit.
+One `AbortController` per `/voice` invocation owns the lifecycle: abort flows through to mic-stop, recognizer cleanup, and view tear-down — no orphan timers or in-flight recognitions survive command exit. Commit drains first: on commit or abort the pipeline stops the mic and drains in-flight recognitions under a bounded wait (`COMMIT_DRAIN_TIMEOUT_MS`, `boundedDrain`) BEFORE resolving, so a committed transcript never loses its final segment.

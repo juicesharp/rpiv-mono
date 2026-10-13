@@ -77,13 +77,14 @@ code. The `content[0].text` string is written for the model, not for a log.
       questionIndex: number,
       question: string,
       kind: "option" | "custom" | "multi",
-      answer: string | null,       // option label, typed text, or null for multi
-      selected?: string[],         // chosen labels, multi-select only
+      answer: string | null,       // option label, custom text, or null
+      selected?: string[],         // chosen labels, multi-select only; can accompany answer
       notes?: string,              // free-text note, when you wrote one
       preview?: string,            // echoed back when the chosen option carried a preview
     }>,
     cancelled: boolean,
     globalNote?: string,          // Submit-tab note; present even when cancelled is true
+    unanswered?: number[],        // indexes of questions left blank on a partial submit
     error?: QuestionnaireError,    // one of the codes above
   }
 }
@@ -100,7 +101,9 @@ question is blank.
 
 Cancelling, and any result with neither answer segments nor a global note, both collapse
 to the single string `User declined to answer questions` so the model sees one canonical
-signal. Partial submission is allowed: unanswered questions simply contribute no segment.
+signal. Partial submission is allowed: the questions left blank are named in an
+`unanswered: "<question>", …` segment after the answers (before any global note), and their
+indexes are in `details.unanswered`. Both are absent when every question is answered.
 A cancelled result always reads as the decline in text; its note, if any, survives only
 in `details.globalNote`.
 

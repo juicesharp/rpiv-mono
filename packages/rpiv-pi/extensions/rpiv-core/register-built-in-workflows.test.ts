@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerBuiltInWorkflows } from "./register-built-in-workflows.js";
 
 // Alphabetical: the four shipped presets.
-const BUILT_IN_NAMES = ["build", "polish", "ship", "vet"];
+const BUILT_IN_NAMES = ["build", "meta", "polish", "ship", "vet"];
 
 describe("registerBuiltInWorkflows", () => {
 	it("registers all built-in workflows (four presets) when rpiv-workflow is present", async () => {

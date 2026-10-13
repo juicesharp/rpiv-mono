@@ -16,12 +16,17 @@
  * Fatal when no match is found — produces stages that wire this
  * promise an output, and silently returning zero artifacts hides the
  * agent's failure mode behind a stale primary-artifact.
+ *
+ * The optional `match` predicate is forwarded verbatim to the shared
+ * text-scan primitive — it narrows the tool-argument fallback surface
+ * (validated there, at construction, by delegation).
  */
 
 import { fs } from "../../handle.js";
 import type { ArtifactCollector } from "../../output-spec.js";
 import { requireOpt } from "./require-opt.js";
 import { textScanCollector } from "./text-scan.js";
+import type { ToolCall } from "./tool-call.js";
 
 export interface TranscriptPathCollectorOpts {
 	/**
@@ -31,9 +36,27 @@ export interface TranscriptPathCollectorOpts {
 	 * only the first match per block is considered.
 	 */
 	pattern: RegExp;
+	/**
+	 * Narrows the tool-argument fallback to matching tool calls — forwarded
+	 * verbatim to `textScanCollector`, whose construction-time guard applies
+	 * by delegation (this factory keeps only its own pattern guard).
+	 */
+	match?: (tc: ToolCall) => boolean;
+	/**
+	 * Narrows the tool-argument fallback to these argument keys of a matching
+	 * call (e.g. `["path"]`) — forwarded verbatim to `textScanCollector`, whose
+	 * construction-time guard applies by delegation.
+	 */
+	argKeys?: readonly string[];
 }
 
 export function transcriptPathCollector(opts: TranscriptPathCollectorOpts): ArtifactCollector {
 	requireOpt("transcriptPathCollector", "pattern", "is required and must be a RegExp", opts.pattern instanceof RegExp);
-	return textScanCollector({ pattern: opts.pattern, toHandle: fs, noun: "path" });
+	return textScanCollector({
+		pattern: opts.pattern,
+		toHandle: fs,
+		noun: "path",
+		match: opts.match,
+		argKeys: opts.argKeys,
+	});
 }

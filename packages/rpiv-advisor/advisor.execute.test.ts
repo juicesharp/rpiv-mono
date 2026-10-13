@@ -29,11 +29,12 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	return {
 		...actual,
 		buildSessionContext: vi.fn(),
+		convertToLlm: vi.fn(actual.convertToLlm),
 	};
 });
 
 import { completeSimple } from "@earendil-works/pi-ai/compat";
-import { buildSessionContext } from "@earendil-works/pi-coding-agent";
+import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 import { registerAdvisorTool, setAdvisorModel } from "./advisor/index.js";
 
 function resp(input: { text?: string; stopReason?: "done" | "aborted" | "error" | "toolUse"; errorMessage?: string }) {
@@ -151,6 +152,32 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		expect(serialized).toContain("post-compaction assistant");
 		expect(serialized).not.toContain("OLD RAW PRE-COMPACTION DETAIL");
 		expect(serialized).not.toContain("old raw assistant detail");
+	});
+
+	it("strips inherited tool declarations from system messages", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "advice" }) as never);
+		const user = makeUserMessage("q");
+		vi.mocked(convertToLlm).mockReturnValueOnce([
+			{
+				role: "system",
+				content: "base",
+				toolsAdded: [{ name: "read", description: "", parameters: {} }],
+				timestamp: 1,
+			},
+			{ role: "system", content: "later", toolsRemoved: [{ name: "read" }], timestamp: 2 },
+			user,
+		] as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+
+		await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, createMockCtx());
+
+		expect(vi.mocked(completeSimple).mock.calls[0]?.[1]?.messages).toEqual([
+			{ role: "system", content: "base", timestamp: 1 },
+			{ role: "system", content: "later", timestamp: 2 },
+			user,
+		]);
 	});
 
 	it("aborted stopReason returns cancel envelope", async () => {

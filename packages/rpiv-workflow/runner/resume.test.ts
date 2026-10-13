@@ -581,8 +581,9 @@ describe("reconstructState", () => {
 		expect(result.detail).toContain("schema v99");
 	});
 
-	it("REFUSES a v1 (sequential) trail — absent or explicit `v: 1` — with version-mismatch (schema v2)", async () => {
-		// Under schema v2 the fold places completion rows by `unitIndex`; a v1
+	it("REFUSES v1 (absent or explicit) and v2 trails with version-mismatch (schema v3)", async () => {
+		// Under schema v3 the fold places completion rows by `unitIndex` and
+		// skips under-budget collected rows budget-aware; a v1
 		// (sequential) trail cannot replay under the new rules, so it is rejected
 		// cleanly ("start a fresh run") rather than mis-folded. An absent `v`
 		// resolves to 1 and is rejected identically.
@@ -610,6 +611,12 @@ describe("reconstructState", () => {
 		expect(explicit.ok).toBe(false);
 		if (explicit.ok) return;
 		expect(explicit.reason).toBe("version-mismatch");
+
+		// A v2 (pre-ordinal parallel-fanout) trail — the live upgrade path — is rejected too.
+		const v2 = await reconstructState(tmpDir, linearWorkflow, { ...baseHeader, v: 2 });
+		expect(v2.ok).toBe(false);
+		if (v2.ok) return;
+		expect(v2.reason).toBe("version-mismatch");
 	});
 
 	it("row whose stage is not in workflow.stages: returns stage-gone refusal", async () => {
@@ -704,6 +711,44 @@ describe("reconstructState", () => {
 		// Generation closed → no trailing open generation.
 		expect(result.trailing).toBeUndefined();
 		expect(result.drift).toBeUndefined();
+	});
+
+	it("fanout generation closed with every unit done: recorded unit tags are authoritative, no drift on a recompute mismatch", async () => {
+		// The live unit source now yields a DIFFERENT roster than the trail recorded
+		// (the shape a basename-keyed snapshot overwritten by a later round produces).
+		const units: FanoutFn = () => [{ prompt: "x", label: "task", id: "task-1" }];
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "build",
+			stages: {
+				build: produces({ outcome: makeOutcome("builds"), loop: fanout({ units }) }),
+				deploy: produces({ outcome: makeOutcome("deploys") }),
+			},
+			edges: { build: "deploy", deploy: "stop" },
+		} as Workflow;
+		const tail = fakeArtifact("deploys/d.md");
+		writeRunStages([
+			fanoutUnitRow("build", "phase-1", 0, 1, fakeOutput([fakeArtifact("builds/b1.md")])),
+			{
+				session: null,
+				stageNumber: 2,
+				stage: "deploy",
+				skill: "deploy",
+				status: "completed",
+				ts: "t2",
+				output: fakeOutput([tail]),
+			},
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		// The generation was closed by the deploy row with its one unit completed:
+		// the recorded tag stands in for the recompute and the fold does not drift.
+		expect(result.drift).toBeUndefined();
+		expect(result.state.stagesCompleted).toBe(2);
+		expect(result.trailing).toBeUndefined();
 	});
 
 	it("fanout drift: a recomputed unit id differs from a recorded row → ok with drift set, state still applied", async () => {
@@ -2121,6 +2166,258 @@ function writeTrail(rows: Array<WorkflowStage | RoutingDecision>): WorkflowHeade
 	return baseHeader;
 }
 
+// ---------------------------------------------------------------------------
+// Fresh re-entry budgets on resume (revisits + laps) — both directions.
+// The per-destination ledgers are ENGINE MEMORY (never folded from the
+// trail), so a resume starts both empty: the direction that GRANTS (a
+// stranded cap-halt's first re-entry counts 1 and continues) and the
+// direction that BINDS (fresh budgets still halt an always-retry loop, so
+// repeated resumes cannot loop forever). Plus the fold-never-consults-hook
+// pin: reconstructState replays rows, it never votes.
+// ---------------------------------------------------------------------------
+
+describe("resumeWorkflow — fresh re-entry budgets (revisits + laps)", () => {
+	/** Write an artifact file at the given relative path under tmpDir. */
+	const writeArtifact = (relPath: string, content = "") => {
+		const parts = relPath.split("/");
+		const dir = join(tmpDir, ...parts.slice(0, -1));
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(tmpDir, relPath), content);
+	};
+
+	/** The stranded trail: pass 1 completed, then the ORIGINAL invocation's
+	 * guard halted re-entering `a` at its cap — the failure row a resume picks up. */
+	const capHaltedRows = (): WorkflowStage[] => [
+		{
+			session: null,
+			stageNumber: 1,
+			stage: "a",
+			skill: "a",
+			status: "completed",
+			ts: "t1",
+			output: fakeOutput([fakeArtifact(".rpiv/artifacts/a/a1.md")]),
+		},
+		{
+			session: null,
+			stageNumber: 2,
+			stage: "b",
+			skill: "b",
+			status: "completed",
+			ts: "t2",
+			output: fakeOutput([fakeArtifact(".rpiv/artifacts/b/b1.md")]),
+		},
+		{
+			session: null,
+			stageNumber: 3,
+			stage: "a",
+			skill: "a",
+			status: "failed",
+			ts: "t3",
+			errMsg: 'Backward-jump limit exceeded: stage "a" re-entered 4 times (max 3)',
+		},
+	];
+
+	const loopWf = (pick: () => "a" | "stop", progress?: import("../api.js").StageDef["progress"]): Workflow => ({
+		name: "resume-wf",
+		start: "a",
+		stages: {
+			a: { kind: "produces", sessionPolicy: "fresh", outcome: artifactOutcome, ...(progress ? { progress } : {}) },
+			b: { kind: "produces", sessionPolicy: "fresh", outcome: artifactOutcome },
+		},
+		edges: {
+			a: "b",
+			b: defineRoute(["a", "stop"], pick, { readsData: false }),
+		},
+	});
+
+	it("stranded cap-halt: the resumed run's first re-entry counts 1 on fresh revisits/laps and continues", async () => {
+		appendHeader(tmpDir, resumeHeader);
+		for (const row of capHaltedRows()) appendStage(tmpDir, resumeHeader.runId, row);
+		for (const rel of [
+			".rpiv/artifacts/a/a2.md",
+			".rpiv/artifacts/b/b2.md",
+			".rpiv/artifacts/a/a3.md",
+			".rpiv/artifacts/b/b3.md",
+		]) {
+			writeArtifact(rel);
+		}
+
+		let picks = 0;
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a2.md")] },
+				{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b2.md")] },
+				{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a3.md")] },
+				{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b3.md")] },
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: loopWf(() => (++picks <= 1 ? "a" : "stop")),
+			header: resumeHeader,
+			ref: "@2026-06-03_07-30-00-ab12",
+		});
+
+		// Failed-trailer re-ran `a` (a2) → b (b2) → b's decision re-entered `a` —
+		// the FIRST re-entry on the fresh ledgers (revisits 1, laps 1), not the
+		// 5th on the exhausted ones — then a3 → b3 → stop.
+		expect(result.success).toBe(true);
+		expect(result.stagesCompleted).toBe(6);
+	});
+
+	it("fresh budgets still bind — a hook-less always-retry loop stops at the FRESH cap after resume", async () => {
+		appendHeader(tmpDir, resumeHeader);
+		for (const row of capHaltedRows()) appendStage(tmpDir, resumeHeader.runId, row);
+
+		for (let i = 2; i <= 5; i++) {
+			writeArtifact(`.rpiv/artifacts/a/a${i}.md`);
+			writeArtifact(`.rpiv/artifacts/b/b${i}.md`);
+		}
+		const steps: Array<{ branch: ReturnType<typeof mockAssistantMessage>[] }> = [];
+		for (let i = 2; i <= 5; i++) {
+			steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/a/a${i}.md`)] });
+			steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/b/b${i}.md`)] });
+		}
+		const chain = createMockSessionChain({ cwd: tmpDir, steps });
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: loopWf(() => "a"),
+			header: resumeHeader,
+			ref: "@2026-06-03_07-30-00-ab12",
+		});
+
+		// Fresh cap 3: the resumed run re-runs a, b (a2/b2), then 3 counted
+		// re-entries (a3/b3, a4/b4, a5/b5) and halts when the 4th re-entry reads
+		// revisits 4 > 3 — a FRESH 4, not the pre-resume cumulative (a stale
+		// ledger would have halted the very first re-entry instead).
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/4.*max 3/);
+		expect(result.stagesCompleted).toBe(10);
+	});
+
+	it("fresh budgets still bind — an all-improved loop stops at the ceiling (maxLaps threads through resume)", async () => {
+		appendHeader(tmpDir, resumeHeader);
+		for (const row of capHaltedRows()) appendStage(tmpDir, resumeHeader.runId, row);
+
+		for (let i = 2; i <= 4; i++) {
+			writeArtifact(`.rpiv/artifacts/a/a${i}.md`);
+			writeArtifact(`.rpiv/artifacts/b/b${i}.md`);
+		}
+		const steps: Array<{ branch: ReturnType<typeof mockAssistantMessage>[] }> = [];
+		for (let i = 2; i <= 4; i++) {
+			steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/a/a${i}.md`)] });
+			steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/b/b${i}.md`)] });
+		}
+		const chain = createMockSessionChain({ cwd: tmpDir, steps });
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: loopWf(
+				() => "a",
+				() => "improved",
+			),
+			header: resumeHeader,
+			ref: "@2026-06-03_07-30-00-ab12",
+			maxBackwardJumps: 5,
+			maxLaps: 2,
+		});
+
+		// cap 5 is outlived by "improved" waivers; the fresh lap ceiling (2)
+		// still binds: re-entries 1 and 2 are waived, the 3rd (laps 3 > 2) halts.
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/absolute lap ceiling/);
+		expect(result.error).toMatch(/3.*max 2/);
+		expect(result.stagesCompleted).toBe(8);
+	});
+
+	it("a malformed budget is refused pre-flight on resume — no row appended, no re-dispatch", async () => {
+		appendHeader(tmpDir, resumeHeader);
+		const rows = capHaltedRows();
+		for (const row of rows) appendStage(tmpDir, resumeHeader.runId, row);
+		const before = readFileSync(join(tmpDir, ".rpiv", "workflows", "runs", `${resumeHeader.runId}.jsonl`), "utf8");
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: loopWf(
+				() => "a",
+				() => "improved",
+			),
+			header: resumeHeader,
+			ref: "@2026-06-03_07-30-00-ab12",
+			maxBackwardJumps: 5,
+			maxLaps: Number.NaN,
+		});
+
+		expect(result).toEqual({
+			stagesCompleted: 0,
+			success: false,
+			error: "maxLaps must be a non-negative integer, got NaN",
+		});
+		const after = readFileSync(join(tmpDir, ".rpiv", "workflows", "runs", `${resumeHeader.runId}.jsonl`), "utf8");
+		expect(after).toBe(before);
+	});
+
+	it("the fold never consults the progress hook — reconstructState replays rows without voting", async () => {
+		const progressSpy = vi.fn(() => "improved" as const);
+		const spyWf: Workflow = {
+			name: "test-wf",
+			start: "a",
+			stages: {
+				a: { kind: "produces", sessionPolicy: "fresh", outcome: makeOutcome("a"), progress: progressSpy },
+				b: { kind: "produces", sessionPolicy: "fresh", outcome: makeOutcome("b") },
+			},
+			edges: {
+				a: "b",
+				b: defineRoute(["a", "stop"], () => "stop", { readsData: false }),
+			},
+		};
+		// A trail with a revisit round: a, b, a, b — the fold replays all four.
+		writeRunStages([
+			{
+				session: null,
+				stageNumber: 1,
+				stage: "a",
+				skill: "a",
+				status: "completed",
+				ts: "t1",
+				output: fakeOutput([fakeArtifact(".rpiv/artifacts/a/a1.md")]),
+			},
+			{
+				session: null,
+				stageNumber: 2,
+				stage: "b",
+				skill: "b",
+				status: "completed",
+				ts: "t2",
+				output: fakeOutput([fakeArtifact(".rpiv/artifacts/b/b1.md")]),
+			},
+			{
+				session: null,
+				stageNumber: 3,
+				stage: "a",
+				skill: "a",
+				status: "completed",
+				ts: "t3",
+				output: fakeOutput([fakeArtifact(".rpiv/artifacts/a/a2.md")]),
+			},
+			{
+				session: null,
+				stageNumber: 4,
+				stage: "b",
+				skill: "b",
+				status: "completed",
+				ts: "t4",
+				output: fakeOutput([fakeArtifact(".rpiv/artifacts/b/b2.md")]),
+			},
+		]);
+
+		const recon = await reconstructState(tmpDir, spyWf, baseHeader);
+
+		expect(recon.ok).toBe(true);
+		expect(progressSpy).not.toHaveBeenCalled();
+	});
+});
+
 describe("reconstructState — gate-stop halts", () => {
 	const completedRow = (stage: string, num: number, output: Output): WorkflowStage => ({
 		session: null,
@@ -2422,6 +2719,25 @@ describe("resumeWorkflow — gate-stop halts (the re-measure)", () => {
 		// re-paying the whole front-load) into "fix and resume".
 		const toast = FAIL_GATE_STOP("validate", 'value "fail" matched no branch', "2026-06-03_07-30-00-ab12").toast;
 		expect(toast).toContain("resume with /wf @2026-06-03_07-30-00-ab12");
+	});
+
+	it("an exhausted-budget halt points at a fresh run, NOT resume (resume would re-decide the same stop)", () => {
+		// meta unit-graph exhaustion vocabulary — the round/generation counters are
+		// derived from the trail and never reset on resume, so `/wf @<id>` re-halts
+		// identically. Each exhaustion note must drop the resume remedy.
+		for (const note of [
+			"plan red — 3/3 rounds spent; 1 failure(s), first: missing await",
+			"plan red — the same failures survived a correction (round 2); 1 failure(s)",
+			"implement FATAL — the user's pre-existing work was lost; see trail",
+			"plan-verdicts: no gate record — terminated (integrity stop)",
+		]) {
+			const { toast, error } = FAIL_GATE_STOP("plan-gate", note, "2026-10-01_08-57-20-042b");
+			expect(toast).toContain("start a fresh run");
+			expect(toast).not.toContain("resume with /wf");
+			// "matched no branch" is wrong for a halt that routed to `stop` on purpose.
+			expect(toast).not.toContain("matched no branch");
+			expect(error).not.toContain("matched no branch");
+		}
 	});
 
 	it("multi-target side-effect gate: resume re-routes (idempotent re-stop) — never replays the arm", async () => {

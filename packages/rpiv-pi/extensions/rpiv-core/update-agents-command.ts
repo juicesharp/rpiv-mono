@@ -6,6 +6,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { cleanupPerCwdAgents, type SyncResult, summarizeCleanupSkips, syncBundledAgents } from "./agents.js";
+import { readLoadedSiblingSources } from "./loaded-siblings.js";
 import { invalidateModelsConfigCache } from "./models-config.js";
 
 const MSG_UP_TO_DATE = "All agents already up-to-date.";
@@ -27,8 +28,9 @@ export function registerUpdateAgentsCommand(pi: ExtensionAPI): void {
 			// breaking the "/rpiv-update-agents applies edits" promise
 			// (models-config.ts module doc).
 			invalidateModelsConfigCache();
-			const cleanup = cleanupPerCwdAgents(ctx.cwd);
-			const result = syncBundledAgents(true);
+			const loaded = readLoadedSiblingSources(pi);
+			const cleanup = cleanupPerCwdAgents(ctx.cwd, loaded);
+			const result = syncBundledAgents(true, loaded);
 			if (!ctx.hasUI) return;
 			const parts: string[] = [];
 			if (cleanup.cleanedUp.length > 0) parts.push(`${cleanup.cleanedUp.length} old dir(s) cleaned up`);

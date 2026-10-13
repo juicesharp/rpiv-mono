@@ -101,10 +101,22 @@ tasks' `blockedBy` arrays.
 }
 ```
 
+## Persistence
+
 `details` is the persistence format. Every successful call embeds the complete
-post-mutation snapshot, and the session-lifecycle handlers rebuild state by
-walking the branch and taking the last snapshot they find — which is why tasks
-survive `/reload` and compaction without any disk writes.
+post-mutation snapshot. Every call that changes the list (`create`, `delete`,
+`clear`, or an `update` that changed something) also saves the same `details`
+object as a `rpiv-todo-state` custom entry on the session branch. Custom entries
+are never sent to the model.
+
+The custom entry matters when `todo` is called from another tool, such as a Pi
+codemode script: Pi records that call only as a short summary on the outer
+tool's result, so its own `details` never reach the branch.
+
+The session-lifecycle handlers rebuild state by walking the branch and taking
+the last `rpiv-todo-state` snapshot. Sessions saved before these entries existed
+fall back to the last `todo` tool result's `details`. Either way, tasks survive
+`/reload`, `/resume`, `/tree` and compaction without any disk writes.
 
 ## Content strings
 

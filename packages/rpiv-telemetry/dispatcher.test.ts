@@ -307,7 +307,7 @@ describe("dispatcher", () => {
 		expect(warnSpy).not.toHaveBeenCalled();
 	});
 
-	// L2-04: provider failure tracking — warn once per failure transition
+	// Provider failure tracking — warn once per failure transition
 	it("warns once on first provider failure and once on recovery", async () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		let shouldFail = true;
@@ -353,7 +353,7 @@ describe("dispatcher", () => {
 		expect(recoveryWarns[0][0]).toContain("flaky");
 	});
 
-	// L2-04: separate providers track independently
+	// Separate providers track independently
 	it("tracks failures per provider independently", async () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		registerTelemetryProvider(
@@ -386,7 +386,7 @@ describe("dispatcher", () => {
 		expect(failureWarns.some((c) => String(c[0]).includes("b"))).toBe(true);
 	});
 
-	// L2-05: dispatcher.maxQueueSize is config-driven (default 100)
+	// dispatcher.maxQueueSize is config-driven (default 100)
 	it("honours config.dispatcher.maxQueueSize for backpressure cap", async () => {
 		vi.mocked(loadTelemetryConfig).mockReturnValue({
 			providers: {},

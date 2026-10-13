@@ -23,7 +23,7 @@
  * module are cycle-free).
  */
 
-import type { StageDef, Workflow } from "./api.js";
+import type { ProgressValue, StageDef, Workflow } from "./api.js";
 import type { LifecycleDispatcher, LifecycleListeners } from "./events.js";
 import type { Artifact } from "./handle.js";
 import type { ModelSelection, WorkflowHost, WorkflowHostContext } from "./host.js";
@@ -111,8 +111,9 @@ export interface RunState {
 	telemetry: {
 		/**
 		 * Run-wide cumulative count of backward jumps (decision-edge routes to
-		 * an already-visited stage). Never reset. The halt decision reads the
-		 * per-destination `RunContext.revisits` ledger, not this total.
+		 * an already-visited stage — every decision-edge re-entry, waived or
+		 * counted). Never reset. The halt decision reads the per-destination
+		 * `RunContext.revisits` ledger, not this total.
 		 */
 		backwardJumps: number;
 		/**
@@ -212,6 +213,15 @@ export interface RunWorkflowOptions {
 	host?: WorkflowHost;
 	/** Per-destination decision-edge re-entry cap. Defaults to MAX_BACKWARD_JUMPS. */
 	maxBackwardJumps?: number;
+	/**
+	 * Per-destination ABSOLUTE ceiling on decision-edge re-entries — unlike
+	 * the waive-aware `maxBackwardJumps` cap, every re-entry counts toward it
+	 * (a `progress` verdict of "improved" waives the cap, never this), so
+	 * the `maxLaps + 1`-th re-entry of one stage always halts. Defaults to
+	 * MAX_LAPS; fresh per invocation (a resume starts both re-entry ledgers
+	 * empty).
+	 */
+	maxLaps?: number;
 	/** Run-wide safety cap on loop units (all kinds). Defaults to MAX_ITERATIONS. */
 	maxIterations?: number;
 	/**
@@ -339,6 +349,30 @@ export interface RunContext {
 	 */
 	revisits: Map<string, number>;
 	/**
+	 * Observation-only ring of a destination's most recent `progress`
+	 * verdicts (oldest → newest, bounded at 3), keyed per destination like
+	 * `revisits`. Appended ONLY when the re-entered stage declares a
+	 * `progress` hook — an absent hook leaves the ring empty. The trail
+	 * rides the halt text (`; last progress: …`) and the routing row's
+	 * guard note; it is NEVER consulted for the halt decision (the verdict
+	 * itself already waived or counted the re-entry when it was recorded).
+	 * Fresh on every invocation — like `revisits`, a resume starts with an
+	 * empty ring.
+	 */
+	progressTrail: Map<string, ProgressValue[]>;
+	/**
+	 * ABSOLUTE decision-edge re-entry count per destination — the lap ledger
+	 * behind the `maxLaps` ceiling. Three counters, three taxonomies:
+	 * `laps` counts EVERY re-entry (improved-waived included) and feeds only
+	 * the ceiling halt; `revisits` above skips improved-waived re-entries and
+	 * feeds only the cap halt — so `revisits ≤ laps` always, and both limits
+	 * trip on the same re-entry only when `maxBackwardJumps ≥ maxLaps`;
+	 * `state.telemetry.backwardJumps` is the run-wide cumulative total,
+	 * never consulted for a halt decision. Fresh on every invocation like
+	 * the other two ledgers — engine memory, never persisted to the trail.
+	 */
+	laps: Map<string, number>;
+	/**
 	 * Set of bare skill names registered with Pi at workflow start (e.g.
 	 * "research", "blueprint" — the `skill:` prefix is stripped). Snapshot
 	 * is taken ONCE in `runWorkflow` before any `ctx.newSession()` runs,
@@ -395,6 +429,13 @@ export interface RunContext {
 	 */
 	worktreeDigest?: (cwd: string) => string | undefined;
 	maxBackwardJumps: number;
+	/**
+	 * Per-destination ABSOLUTE ceiling on decision-edge re-entries — see
+	 * `laps`. The verdict-proof bound above the waive-aware cap: the
+	 * `maxLaps + 1`-th re-entry of one stage halts whatever the `progress`
+	 * verdict. Defaults to `MAX_LAPS`; fresh per invocation.
+	 */
+	maxLaps: number;
 	/**
 	 * Run-wide safety cap on loop units — clamps the effective cap of EVERY
 	 * loop kind (`min(loop.max, run.maxIterations)`), the backstop for a
@@ -559,6 +600,15 @@ export interface StageSessionContext extends SessionContext {
 	 * consume to resolve the budget's ceiling). Immutable per-activation.
 	 */
 	bashTimeoutStrikes?: number;
+	/**
+	 * 1-based dispatch ordinal of THIS attempt within a fanout unit's
+	 * `retryHaltedUnits` window — stamped by the parallel dispatcher
+	 * (`dispatchUnitDetached` threads the per-attempt count through
+	 * `buildUnitSession`) and projected onto the collected halt row by
+	 * `auditFor` → `recordUnitHalt`. Undefined for sequential units
+	 * (iterate/assess) and single stages.
+	 */
+	attemptOrdinal?: number;
 	/**
 	 * Present iff this session IS one loop unit. Pre-decorated at session
 	 * construction by the driver (`stageName` carries the DISPLAY decoration;

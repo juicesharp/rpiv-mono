@@ -33,6 +33,8 @@ jobs:
 
       - run: npm run check:decision-codes
 
+      - run: npm run check:file-sizes
+
       - run: npm run check
 
       - run: npm run coverage -- --reporter=default --reporter=json --outputFile=test-results.json

@@ -18,6 +18,20 @@ contract:
           enum: [in-progress, in-review, ready]
         verdict:
           enum: [pass, fail]
+        blockers:
+          type: array
+          items:
+            type: object
+            required: [command, file]
+            properties:
+              id:
+                type: string
+              command:
+                type: string
+              file:
+                type: string
+              line:
+                type: number
   consumes:
     reads:
       plans: {}
@@ -140,6 +154,7 @@ For each phase in the plan:
 10. **Execute the acceptance inventory** (only when `--acceptance` was provided):
    - Read the inventory fully. Its `items:` are the goal-derived standard of completion, frozen BEFORE planning — the one executable measure the plan did not author, so it catches what the plan's own criteria structurally cannot: an ask the planning narrowed away. Cross-reference the plan's `acceptance:` disposition mapping when it carries one.
    - **An item the plan marked `deferred`** (with a reason, matching an `## Out of Scope` line): do not run its command; record the deferral under `#### Deviations from Plan:` as a non-blocking note quoting the reason — the deferral was legible and gate-approved. An item the plan never disposed of at all is judged exactly like an `implemented` one — silence does not defer.
+   - **An item the plan marked `rebound`** (`command` + `reason` present; else undisposed): run the rebound command instead of the inventory's. Exit 0 ⇒ met, noted under `#### Deviations from Plan:` with the reason and both commands. Non-zero ⇒ fails like `implemented`, rebound command in the `blockers:` entry. Never run both and keep the passing one.
    - **An item with a `command`** (not deferred): RUN it as written from the repo root. Exit 0 ⇒ the item holds — record it met. Non-zero ⇒ the item fails: force **`verdict: fail`**, report it under **Deviations from Plan** quoting the item's `statement`, and add a `blockers:` entry for it (Step 3.2's shape — the item's `command` verbatim; attribute `file`/`line` to the in-delta file the command or the item's statement most directly names). A failing acceptance command with a sound premise is never "pre-existing debt" — the inventory is future-tense by construction. Only when the command itself is unrunnable as written (a path that never existed at any revision, a malformed invocation) rule the ITEM unmeasurable, non-blocking, under `#### Potential Issues:` — never silently rewrite the command into something weaker.
    - **An item with only a `manual` procedure** (not deferred): record it under the report's manual-verification section with its procedure — homework for the human, never a blocker.
 
@@ -157,6 +172,7 @@ For each phase in the plan:
 2. **Determine verdict** (`status` is always `ready` — written once):
    - `verdict: pass` — every phase marked `- [x]` in the plan is verified against the code, every automated command passes (excluding whole-plan failures ruled pre-existing/non-blocking per Step 2.6), no Deviations from Plan and no Potential Issues require action, every plan `risks:` flag ruled `pass`, every scope-floor finding and quarantine-manifest entry (Step 2.7) is explained, and every non-deferred `--acceptance` item with a command passed (Step 2.10).
    - `verdict: fail` — any phase fails verification, any automated command fails (excluding whole-plan failures ruled pre-existing/non-blocking per Step 2.6), any Deviations / Potential Issues list items that require action, **any plan risk flag ruled `pass: false`** (a flagged risk shipped unaddressed), **any scope-floor finding or quarantined/refused file you could not rule benign** (Step 2.7), or **any non-deferred acceptance item whose command fails** (Step 2.10).
+   - **A comment-only gap never forces the verdict** — the same comment-only class `grade` rates `low` (a Deviation or Potential Issue whose ONLY remedy is comment/doc text, even when the text is wrong): no executable line changes and no downstream stage fails as written. Report it under `#### Deviations from Plan:` / `#### Potential Issues:`, but it neither leaves a phase incomplete for `verdict: pass` nor forces `verdict: fail`.
    - When the plan carried a `risks:` array, add a `risk_rulings: [{ id, pass }]` field to the report frontmatter — one ruling per flag.
    - When any failure forcing `verdict: fail` is NOT already captured by a `pass: false` risk ruling — a whole-plan gate command, a phase's automated command failing on files inside the run's delta, or a failing acceptance-item command (Step 2.10) — add a `blockers:` array to the report frontmatter, one entry per failing command: `blockers: [{ id: b1, command: "<the failing command, verbatim-runnable from the repo root>", file: "<in-delta file the failure attributes to>", line: <line> }]` (`file`/`line` come from Step 2.6's attribution, or Step 2.10's for an acceptance item; number ids `b1`, `b2`, …). These structured entries are the ONLY handles the workflow's remediation arm may act on — a blocking failure recorded only in the report prose is invisible to it, and the run stops at the validate gate instead of looping. Omit the field when every blocking failure already rides a failing ruling.
 

@@ -70,6 +70,11 @@ const SLICE_DESIGN_FANOUT = fanout({
 	max: MAX_PHASES,
 	depArtifactFlag: "--upstream",
 	haltWhenAllFailed: true,
+	// A design the contract refuses (`filename_slice` ≠ `matches` — see design.ts)
+	// gets the in-session validation retry, then ONE fresh re-dispatch, so a
+	// hand-composed filename drift is repaired while the lane still owns it —
+	// never discovered five stages later at `subplan`.
+	retryHaltedUnits: 1,
 	units: ({ state, cwd }) => {
 		const doc = latestFsArtifact(state, "slices");
 		if (doc?.handle.kind !== "fs") return [];
@@ -200,12 +205,38 @@ const sliceCovers = (entry: Record<string, unknown>): string[] => {
 /** A design filename encodes its slice as `…slice-<N>…` — the design-fanout naming convention. */
 const DESIGN_SLICE_RE = /slice-(\d+)/;
 
+/** A positive integer, or a string spelling one (`slice_n: "3"` survives a quoted scalar). */
+const positiveInt = (v: unknown): number | undefined => {
+	const n = typeof v === "number" ? v : typeof v === "string" && /^\d+$/.test(v) ? Number(v) : Number.NaN;
+	return Number.isInteger(n) && n > 0 ? n : undefined;
+};
+
+/**
+ * The slice number a design artifact identifies as its own. The AUTHORITY is
+ * the frontmatter `slice_n` the design-slice skill stamps — `frontmatterParser`
+ * lifts it onto the channel as `output.data`, so it reaches here without a
+ * file read. The filename's `slice-<N>` token is the same fact re-spelled by
+ * hand (a lane once dropped it while `slice_n` was right), so it is the
+ * FALLBACK for an entry whose data carries no `slice_n` — a parser-less
+ * re-emit or a hand-published channel entry. `undefined` when neither resolves.
+ *
+ * `data` is the output's PRIMARY artifact's frontmatter (`frontmatterParser`
+ * reads `ctx.artifacts[0]`), so a caller passes it only for that artifact.
+ */
+const designSliceOf = (data: unknown, path: string): number | undefined => {
+	const fromData = positiveInt((data as Record<string, unknown> | null | undefined)?.slice_n);
+	if (fromData !== undefined) return fromData;
+	const match = DESIGN_SLICE_RE.exec(basename(path));
+	return match ? Number(match[1]) : undefined;
+};
+
 /**
  * Map slice number → its design artifact path, from the design fanout's published
- * outputs. An identity resolver: it maps an ARTIFACT to a slice NUMBER. It FAILS
- * LOUD only when identity is genuinely UNRESOLVABLE — a design filename that
- * carries no `slice-<N>` token, where a positional `idx + 1` guess would scramble
- * the cluster→design wiring and drop slices.
+ * outputs. An identity resolver: it maps an ARTIFACT to a slice NUMBER via
+ * `designSliceOf` (frontmatter `slice_n` first, filename token second). It FAILS
+ * LOUD only when identity is genuinely UNRESOLVABLE — neither carrier names a
+ * slice — where a positional `idx + 1` guess would scramble the cluster→design
+ * wiring and drop slices.
  *
  * A slice claimed by MORE THAN ONE output is NOT ambiguous: the `designs` channel
  * legitimately accumulates several entries per slice — `slice-design` emits it,
@@ -219,21 +250,20 @@ const DESIGN_SLICE_RE = /slice-(\d+)/;
 const designPathsBySlice = (state: RunView): Map<number, string> => {
 	const bySlice = new Map<number, string>();
 	for (const out of state.named.designs ?? []) {
-		for (const a of out.artifacts) {
-			if (a.handle.kind !== "fs") continue;
-			const name = basename(a.handle.path);
-			const match = DESIGN_SLICE_RE.exec(name);
-			if (!match) {
+		out.artifacts.forEach((a, i) => {
+			if (a.handle.kind !== "fs") return;
+			const n = designSliceOf(i === 0 ? out.data : undefined, a.handle.path);
+			if (n === undefined) {
 				throw haltPreflight(
 					"designPathsBySlice",
-					`designPathsBySlice: design ${name} has no slice number`,
-					`designPathsBySlice: design artifact ${a.handle.path} carries no 'slice-<N>' token — cannot resolve which slice it designs; a positional guess would mis-route the cluster→design mapping and drop slices`,
+					`designPathsBySlice: design ${basename(a.handle.path)} has no slice number`,
+					`designPathsBySlice: design artifact ${a.handle.path} carries no frontmatter 'slice_n' and no 'slice-<N>' filename token — cannot resolve which slice it designs; a positional guess would mis-route the cluster→design mapping and drop slices`,
 				);
 			}
 			// Latest design per slice wins — the channel holds multiple entries per
 			// slice by design (design-review re-emits), and the newest is authoritative.
-			bySlice.set(Number(match[1]), handleToString(a.handle));
-		}
+			bySlice.set(n, handleToString(a.handle));
+		});
 	}
 	return bySlice;
 };
@@ -283,6 +313,7 @@ export {
 	clusterSliceDag,
 	DESIGN_SLICE_RE,
 	designPathsBySlice,
+	designSliceOf,
 	SLICE_DESIGN_FANOUT,
 	SYNTH_CLUSTER_FANOUT,
 	sliceCoverageUnits,

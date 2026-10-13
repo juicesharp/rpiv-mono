@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CollectContext, ParseContext } from "@juicesharp/rpiv-workflow/registration";
@@ -46,6 +46,48 @@ describe("remediationOutcome", () => {
 		const before = gitTreeDigest(tmpDir);
 		writeFileSync(join(tmpDir, "b.ts"), "export const b = 1;\n");
 		expect(changedOf(collect(before))).toBe(true);
+	});
+
+	it("reports changed: true when an EXISTING untracked file's bytes mutated in the window — the porcelain line is byte-identical, only content differs (the pre-widening digest was blind here)", () => {
+		// Created BEFORE the snapshot so the `?? untracked.ts` porcelain line is
+		// byte-identical on both sides: status and diff cannot see this
+		// mutation — only the untracked-content component can.
+		writeFileSync(join(tmpDir, "untracked.ts"), "export const u = 1;\n");
+		const before = gitTreeDigest(tmpDir);
+		writeFileSync(join(tmpDir, "untracked.ts"), "export const u = 2;\n");
+		expect(changedOf(collect(before))).toBe(true);
+	});
+
+	it("reports changed: false on a no-edit hop with untracked files present", () => {
+		writeFileSync(join(tmpDir, "untracked.ts"), "export const u = 1;\n");
+		const before = gitTreeDigest(tmpDir);
+		expect(changedOf(collect(before))).toBe(false);
+	});
+
+	it("reports changed: false when only untracked .rpiv/ bookkeeping churned in the window", () => {
+		// Pre-existing trail content (a prior validate lap's report) so the
+		// collapsed `?? .rpiv/` porcelain line is byte-identical on both sides —
+		// a run always carries .rpiv/ by the time validate-fix fires.
+		mkdirSync(join(tmpDir, ".rpiv", "artifacts", "validation"), { recursive: true });
+		writeFileSync(join(tmpDir, ".rpiv", "artifacts", "validation", "2026-09-03_10-46-57.md"), "# report\n");
+		const before = gitTreeDigest(tmpDir);
+		// Fresh validate report + scratch created between snapshot and collect.
+		writeFileSync(join(tmpDir, ".rpiv", "artifacts", "validation", "2026-09-03_18-04-28.md"), "# report\n");
+		mkdirSync(join(tmpDir, ".rpiv", "tmp"), { recursive: true });
+		writeFileSync(join(tmpDir, ".rpiv", "tmp", "scratch.txt"), "scratch\n");
+		expect(changedOf(collect(before))).toBe(false);
+	});
+
+	it("reports changed: false when a gitignored path appears in the window (--exclude-standard drops it)", () => {
+		// The .gitignore is committed BEFORE the snapshot so the ignore file's
+		// own tracked state cannot flip the digest — this fixture tests
+		// exclusion, not porcelain noise from the ignore file's appearance.
+		writeFileSync(join(tmpDir, ".gitignore"), "ignored.ts\n");
+		execFileSync("git", ["add", "."], { cwd: tmpDir, stdio: "ignore" });
+		execFileSync("git", ["commit", "-q", "-m", "ignore-file"], { cwd: tmpDir, stdio: "ignore" });
+		const before = gitTreeDigest(tmpDir);
+		writeFileSync(join(tmpDir, "ignored.ts"), "export const ig = 1;\n");
+		expect(changedOf(collect(before))).toBe(false);
 	});
 
 	it("degrades to changed: true on a missing signal (non-repo cwd) — never stop on no signal", () => {

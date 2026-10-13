@@ -1,7 +1,7 @@
 ---
 name: synthesize
 description: Merge N independent per-slice designs (plus the research they rest on) into ONE coherent phased plan in .rpiv/artifacts/plans/ — reconciling cross-slice overlaps, wiring inter-slice integration, and ordering phases by slice dependencies. Single-pass, no subagents, no self-review. The fan-in barrier of a fanout-and-synthesize flow — one phase per slice, plan-compatible so implement/validate consume it unchanged. For large slice maps it also runs hierarchically — as a per-cluster partial (`--as-subplan` turns designs into a subplan) and as the root merge (`--subplans` turns subplans into a plan) — so no single pass must hold every design at once. Use after a per-slice design fanout.
-argument-hint: "--designs <path>... [--research <path>] [--as-subplan] [--cluster <k>]  |  --subplans <path>... [--research <path>]"
+argument-hint: "--designs <path>... [--research <path>] [--as-subplan] [--cluster <k>]  |  --subplans <path>... [--research <path>] [--goal <path>] [--acceptance <path>]"
 allowed-tools: Read, Grep, Glob, Write
 shell-timeout: 10
 disable-model-invocation: true
@@ -38,11 +38,24 @@ contract:
             properties:
               id: { type: string }
               claim: { type: string }
+        acceptance:
+          type: array
+          items:
+            type: object
+            required: [id, disposition]
+            properties:
+              id: { type: string }
+              disposition: { enum: [implemented, deferred, rebound] }
+              phase: { type: integer, minimum: 1 }
+              reason: { type: string }
+              command: { type: string }
   consumes:
     reads:
       designs: {}
       subplans: {}
       research: {}
+      goal: {}
+      acceptance: {}
 ---
 
 # Synthesize
@@ -58,6 +71,8 @@ You merge several independent per-slice designs into **one coherent phased plan*
 - `--research <path>` *(optional)* — the research the slices rest on, for cross-slice constraints.
 - `--as-subplan` *(flag)* — emit a **sub-plan** (partial mode) instead of a full plan.
 - `--cluster <k>` *(optional, partial mode)* — the ordinal written into the sub-plan's `_cluster-<k>.md` filename. The cluster fanout supplies it; for manual partial invocation pick an unused `<k>` (scan `.rpiv/artifacts/subplans/` for existing `*_cluster-<k>.md` and take the next unused positive integer) so a re-dispatched pass writes a distinct file and never clobbers a sibling sub-plan.
+- `--goal <path>` *(optional, root/flat)* — the verbatim brief. Every ask it names is implemented by a phase or deferred under `## Out of Scope` with a reason. Partial mode ignores it.
+- `--acceptance <path>` *(optional, root/flat)* — the frozen acceptance inventory (`items:`, ids `a1…`). Every id is disposed in the frontmatter `acceptance:` block (step 3b). Partial mode ignores it; missing or unreadable → omit the block.
 
 If neither `--designs` nor `--subplans` is present, print an error and stop.
 
@@ -97,6 +112,7 @@ Copy values verbatim. `<iso>` is the first tab-separated field; `<slug>` is the 
       - **`disposition: verify-at-implement`** — the panel may defer the risk to a later phase rather than rule it in this panel. A deferred pass is accepted ONLY when the flag ALSO carries a concrete **`procedure`** (the named command/test the owner phase runs to discharge it) and an **`owner`** (the phase `n` that runs that step); a bare "verify later" with no procedure demotes. Use it for risks that genuinely need the shipped tree (a real `build` run, a coverage gate) the plan-grade panel cannot run.
       - Default (no `claim_type`, no `disposition`) stays the ordinary `{ id, claim }` shape — the panel rules it on the artifact as today, with no evidence or procedure duty.
 3. **Sequence phases** — one phase per slice (flat/partial) or carry the sub-plans' phases through (root), ordered so a phase never precedes one it `depends_on`. Tightly-coupled units may merge into one phase; note any merge. Populate each entry's `files:` from that phase's `### Changes` paths (every repo-root-relative path the phase creates or edits) and `depends_on` only for semantic ordering NOT visible in `files:` (a phase that needs an earlier phase to run first despite no shared file) — lower `n` only.
+3b. **Dispose every acceptance id** (root/flat, `--acceptance` given): one `acceptance:` entry per inventory id, in order — `implemented` + `phase` (its command exits 0 as written on that phase's tree) or `deferred` + `reason` + an `## Out of Scope` line. Every id once; no invented ids; prose is not a disposition. `rebound` + `phase` + `command` + `reason` when the substance is delivered but the frozen command pins a mechanism the design changed (a file or helper name, a count): the replacement command measures the SAME observable as the item's `statement`/`expect`, reuses a check the phase's own AV runs, and drops no conjunct without saying why; substance not delivered ⇒ `deferred`, never `rebound`.
 4. **Write the output** (below), `status: ready`:
    - **Flat / root** → a standard **plan** in `.rpiv/artifacts/plans/` — phases with concrete changes and Success Criteria that pass through unchanged to `implement`/`validate`.
    - **Partial** (`--as-subplan`) → a **sub-plan** in `.rpiv/artifacts/subplans/` — the same phase shape PLUS a `summary` and an `exports` block naming the seams (files/symbols/interfaces this cluster owns) the root will wire other clusters into. Keep it compact: the root reads it instead of your cluster's designs.
@@ -116,7 +132,7 @@ exports:
 depends_on_clusters: []
 ```
 
-The frontmatter **must** carry a `phases:` array and `phase_count` equal to **both** the array length **and** the number of `## Phase N:` headings in the body (a downstream derive-check rejects a mismatch) — for sub-plans too.
+The frontmatter **must** carry a `phases:` array and `phase_count` equal to **both** the array length **and** the number of `## Phase N:` headings in the body (a downstream derive-check rejects a mismatch) — for sub-plans too. `acceptance:` appears ONLY with `--acceptance` in root/flat mode; sub-plans never carry it.
 
 ```markdown
 ---
@@ -135,6 +151,9 @@ risks:
   - { id: r1, claim: "<a decision you want the grade panel + validate to rule on>" }
   - { id: r2, claim: "<a checkable mechanism>", claim_type: mechanics }
   - { id: r3, claim: "<needs the shipped tree to discharge>", disposition: verify-at-implement, procedure: "<named command/test>", owner: <phase n> }
+acceptance:
+  - { id: a1, disposition: implemented, phase: 1 }
+  - { id: a2, disposition: deferred, reason: "<one line, mirrored by an ## Out of Scope line>" }
 sources: [<each --designs path>, <--research path>]
 tags: [plan, synthesized]
 ---

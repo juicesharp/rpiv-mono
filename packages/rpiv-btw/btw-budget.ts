@@ -95,10 +95,11 @@ export function capHistory(history: BtwTurn[], budget = BTW_HISTORY_TOKEN_BUDGET
 // ---------------------------------------------------------------------------
 
 export interface FitBranchInput {
-	/** Raw session entries from the snapshot (findCutPoint/getLastAssistantUsage contract). */
+	/** The main agent's context entries from the snapshot (compaction summary + kept +
+	 *  newer; findCutPoint/getLastAssistantUsage contract). */
 	entries: SessionEntry[];
-	/** Cached converted branch messages (type==="message"-filtered via branchToMessages).
-	 *  Returned by reference on the fast path (byte-identical prefix). */
+	/** Cached main-agent context messages (`branchToContextMessages`) — the same context
+	 *  the usage anchor measured. Returned by reference on the fast path (byte-identical prefix). */
 	messages: Message[];
 	model: Model<Api>;
 	systemPrompt: string;
@@ -218,9 +219,10 @@ function trimBranch(entries: SessionEntry[], keepRecentTokens: number): { messag
 	const startIdx = forwardScanToTurnStart(entries, cut.firstKeptEntryIndex);
 	if (startIdx < 0) return { messages: null }; // no turn-start in the kept suffix → stub the cache
 	const keptEntries = entries.slice(startIdx);
-	// Hybrid filter: after a cut, UNFILTERED sessionEntryToContextMessages (the sibling
-	// conversion seam — shares convertToLlm with branchToMessages, no duplication) so a
-	// head compaction/branch summary survives, matching the main agent's post-compact context.
+	// After a cut, convert entry by entry (UNFILTERED sessionEntryToContextMessages) so a
+	// head compaction/branch summary survives, matching the main agent's post-compact
+	// context. Pi >= 1.0 context edits are not re-applied to the kept suffix; what is sent
+	// is exactly what is estimated, so the budget still holds.
 	const trimmed = convertToLlm(keptEntries.flatMap((e) => sessionEntryToContextMessages(e)));
 	return { messages: trimmed };
 }
@@ -306,6 +308,16 @@ function truncateToFit(result: Message[], budget: number): boolean {
 					content[target.ci] = { ...part, text: `${part.text.slice(0, keepChars)}${marker}` };
 					result[target.mi] = { ...msg, content };
 				}
+			}
+		} else if (msg.role === "system") {
+			// Pi ≥ 1.1 passes system messages through convertToLlm; content is a string or text parts.
+			if (typeof msg.content === "string") {
+				result[target.mi] = { ...msg, content: `${msg.content.slice(0, keepChars)}${marker}` };
+			} else {
+				const content = [...msg.content];
+				const part = content[target.ci];
+				content[target.ci] = { ...part, text: `${part.text.slice(0, keepChars)}${marker}` };
+				result[target.mi] = { ...msg, content };
 			}
 		} else if (msg.role === "assistant") {
 			const content = [...msg.content];

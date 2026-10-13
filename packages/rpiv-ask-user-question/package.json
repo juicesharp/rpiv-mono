@@ -1,6 +1,6 @@
 {
 	"name": "@juicesharp/rpiv-ask-user-question",
-	"version": "2.9.0",
+	"version": "2.13.8",
 	"description": "Pi extension. A structured questionnaire the model can put to you when it would otherwise guess, with typed options instead of free-form replies.",
 	"keywords": [
 		"pi-package",
@@ -35,6 +35,7 @@
 		"config.ts",
 		"events.ts",
 		"index.ts",
+		"presentation.ts",
 		"reconcile.ts",
 		"LICENSE",
 		"locales/",
@@ -73,7 +74,9 @@
 		"view/components/tab-bar.ts",
 		"view/components/wrapping-select.ts",
 		"view/dialog-builder.ts",
+		"view/dialog-copy.ts",
 		"view/props-adapter.ts",
+		"view/scroll-window.ts",
 		"view/stateful-view.ts",
 		"view/tab-components.ts",
 		"view/tab-content-strategy.ts"
@@ -87,7 +90,8 @@
 	"peerDependencies": {
 		"@juicesharp/rpiv-i18n": "*",
 		"@earendil-works/pi-coding-agent": "*",
-		"@earendil-works/pi-tui": "*"
+		"@earendil-works/pi-tui": "*",
+		"typebox": "*"
 	},
 	"peerDependenciesMeta": {
 		"@juicesharp/rpiv-i18n": {
@@ -95,7 +99,6 @@
 		}
 	},
 	"dependencies": {
-		"@juicesharp/rpiv-config": "^2.9.0",
-		"typebox": "^1.1.24"
+		"@juicesharp/rpiv-config": "^2.13.8"
 	}
 }

@@ -3,12 +3,13 @@
  * (acyclicity, coverage conservation, citation backing) and the subplan
  * cluster-coverage check between the cluster fanout and the root merge.
  */
-import { basename } from "node:path";
+import { writeFileSync } from "node:fs";
+import { basename, isAbsolute, join } from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { handleToString, type Output, type RunView, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
 import { verifyCitations } from "./citations.js";
-import { latestVerdictPerDimension } from "./gates.js";
-import { fencedSpans } from "./markdown-fence.js";
+import { latestVerdictPerDimension, type SeedOnlyVerdict, seedOnlyFindings } from "./gates.js";
+import { fencedSpans, forEachLineOutsideFences } from "./markdown-fence.js";
 import {
 	haltPreflight,
 	latestFsArtifact,
@@ -81,12 +82,9 @@ const sliceShape = (round: Output | undefined): string | undefined => {
 	return d?.slices === undefined ? undefined : JSON.stringify({ slices: d.slices, coverage: d.coverage ?? null });
 };
 
-/** The verdict fields the cite-only discharge consults. */
-type CiteRemedyVerdict = {
-	pass?: boolean;
-	remedy?: string;
-	findings?: readonly { requires?: unknown }[];
-};
+/** The verdict fields the cite-only discharge consults live in gate-passes.ts
+ * (re-exported by the gates.ts facade) as `SeedOnlyVerdict` — the one spelling
+ * the classification, the discharge, and the seed lift share. */
 
 /**
  * Deterministic discharge of a CITE-ONLY `design-readiness` fail — the middle
@@ -94,26 +92,38 @@ type CiteRemedyVerdict = {
  * lone dimension failed) and "buy a full re-grade panel" (wasteful when the
  * grader already named the exact citations to add or refresh). A fix that
  * also restructured forfeits the discharge and takes the normal re-grade.
+ * The seed-only classification (`seedOnlyFindings`) accepts a `remedy` that
+ * is `"cite"` or absent — the judge-omits-the-marker leak is closed
+ * engine-side by the findings' own shape — and subsumes the zero-findings
+ * guard (a seed-only verdict carries ≥ 1 finding by definition).
  */
 const citeRemedyDischarged = (state: RunView, mapBody: string): boolean => {
 	const verdict = latestVerdictPerDimension(state.named["slice-verdicts"]).get("design-readiness");
-	const v = verdict?.data as CiteRemedyVerdict | undefined;
-	if (v?.pass !== false || v.remedy !== "cite") return false;
+	const v = verdict?.data as SeedOnlyVerdict | undefined;
+	if (!seedOnlyFindings(v)) return false;
 	// A fix must have LANDED since the verdict — discharging the judged map
 	// unchanged would contradict the grader, who read it and found the cites
 	// wrong. Basename inequality cannot witness the fix (a re-slice may
 	// legitimately edit the map in place); publication order can: the latest
-	// `slices` round must postdate the verdict.
+	// `slices` round OR seed-lift entry must postdate the verdict (the lift
+	// amends the map in place and publishes on its own channel, so it can be
+	// the sole witness with no `slices` round after the verdict).
 	const entries = state.named.slices ?? [];
+	const liftEntries = state.named["slice-seed-lift"] ?? [];
 	const verdictTs = verdict?.meta?.ts;
-	const currentTs = entries.at(-1)?.meta?.ts;
-	if (typeof verdictTs !== "string" || typeof currentTs !== "string" || currentTs <= verdictTs) return false;
-	const findings = Array.isArray(v.findings) ? v.findings : [];
-	if (findings.length === 0) return false;
+	const witnessTails = [entries.at(-1)?.meta?.ts, liftEntries.at(-1)?.meta?.ts].filter(
+		(ts): ts is string => typeof ts === "string",
+	);
+	const witnessTs = witnessTails.length > 0 ? witnessTails.reduce((a, b) => (a > b ? a : b)) : undefined;
+	if (typeof verdictTs !== "string" || witnessTs === undefined || witnessTs <= verdictTs) return false;
+	const rawFindings = v?.findings;
+	const findings = Array.isArray(rawFindings) ? rawFindings : [];
 	const spans = fencedSpans(mapBody);
 	if (!findings.every((f) => f != null && citeFindingSatisfied(mapBody, spans, f))) return false;
 	// Shape must match the round the grader judged — located by publication
-	// order, not filename, for the same in-place reason.
+	// order, not filename, for the same in-place reason. A lift-only witness
+	// leaves the judged round as the latest `slices` entry, so the comparison
+	// is the round to itself: shape-conserved by construction.
 	const judged = [...entries].reverse().find((s) => typeof s.meta?.ts === "string" && s.meta.ts <= verdictTs);
 	const judgedShape = sliceShape(judged);
 	return judgedShape !== undefined && judgedShape === sliceShape(entries.at(-1));
@@ -154,7 +164,7 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	}
 	const mapBody = readArtifactFile(latest.handle.path, cwd);
 	const records = sliceRecords(mapBody, "slice-check", latest.handle.path);
-	const findings: { detail: string; where: string }[] = [];
+	const findings: StructureFinding[] = [];
 
 	const cycle = sliceDepCycle(records);
 	if (cycle.length > 0) {
@@ -182,15 +192,136 @@ const sliceStructureCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	// Citation backing — every file:line the map cites must resolve.
 	findings.push(...verifyCitations(mapBody, cwd));
 
-	// Stamp the cite-only discharge ONLY on a green floor: structure clean +
-	// citation backing verified + demanded seeds present + shape unchanged is
-	// exactly what a fresh design-readiness pass on this map would re-establish,
-	// so the `sliceGatePasses` skip stays provably equivalent to "re-grade, then pass".
+	// Stamp the cite-only discharge ONLY when the floor's findings are all
+	// advisory (an empty set included): structure clean, every citation
+	// verified or advisory-only, demanded seeds present, and shape unchanged is
+	// exactly what a fresh design-readiness pass on this map would
+	// re-establish, so the `sliceGatePasses` skip stays provably equivalent to
+	// "re-grade, then pass". The floor mirrors the routing severity floor — a
+	// `low` advisory-only verdict passes `allDimensionsPass` — so an advisory
+	// resolver limitation can no longer zero the stamp and buy the re-grade
+	// panel the stamp exists to skip. A BLOCKING finding (cycle, dropped
+	// coverage) still withholds — fail-closed.
 	const discharge =
-		findings.length === 0 && citeRemedyDischarged(state, mapBody)
+		findings.every((f) => f.advisory === true) && citeRemedyDischarged(state, mapBody)
 			? { citeDischarged: basename(latest.handle.path) }
 			: undefined;
 	return writeStructureVerdict("slice-check", latest.handle, findings, cwd, discharge);
+};
+
+/** A `## Slice N:` section heading — the target a cite-remedy finding's
+ *  `where` names, and the section delimiter the seed lift walks. */
+const SLICE_HEADING_RE = /^##\s+Slice\s+(\d+)/;
+
+/** The `Draws on:` line the seed lift appends a demanded seed to. */
+const DRAWS_ON_LINE_RE = /^\s*\*\*Draws on:\*\*/;
+
+/**
+ * One cite-remedy seed the lift acted on: the demanded `requires` citation,
+ * the slice section it targeted, and — for a refused seed — why (the lift
+ * refuses rather than guess where a seed belongs; a refused seed leaves the
+ * discharge unsatisfied and the loop takes the structural fix arm).
+ */
+type SeedLiftRecord = {
+	requires: string;
+	slice?: number;
+	reason?: "no-slice-heading" | "no-draws-on-line";
+};
+
+/**
+ * Deterministic seed lift — the engine-owned half of the cite remedy. A
+ * seed-only `design-readiness` fail (every finding demanding a concrete
+ * `requires` citation) names EXACTLY the seeds to append; re-cutting the
+ * whole map through the structural fix arm for them is a full LLM re-slice
+ * plus re-grade that repairs nothing the verdict actually flagged. This
+ * stage appends each demanded seed to its finding's named slice section's
+ * `Draws on:` line, in place, and publishes the amended map as its row
+ * artifact on its OWN stage channel (a script stage structurally cannot
+ * carry an outcome, and none is needed: `latestFsArtifact(state, "slices")`
+ * still resolves the same path, now carrying the amended bytes — the
+ * plan-snapshot precedent for an in-place side-effecting script stage).
+ * The re-run `slice-check` stamps `citeDischarged` when every seed landed on
+ * a structurally unchanged map, so the gate folds green without a re-grade.
+ *
+ * Refusal semantics: a seed whose `where` names no `## Slice N:` heading, or
+ * whose slice section carries no `Draws on:` line, is recorded `skipped`
+ * with its reason and the map is left unchanged for it — never guessed onto
+ * another slice. A seed already satisfied on the evolving body is not
+ * re-appended (the discharge's own satisfaction test — dedup by
+ * construction, so the post-lift every-seed-satisfied conjunct holds).
+ *
+ * Misroute guard: no map, or a latest verdict that is not seed-only, halts
+ * loud via `haltPreflight` — this stage is reachable only from the seed-only
+ * branch of the `slice-grade` route, so anything else is a wiring bug.
+ */
+const sliceSeedLift = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
+	const latest = latestFsArtifact(state, "slices");
+	if (latest?.handle.kind !== "fs") {
+		throw haltPreflight(
+			"slice-seed-lift",
+			"slice-seed-lift: no slice map to lift seeds onto",
+			"slice-seed-lift: no fs artifact on the 'slices' channel — slice must run before the seed lift",
+		);
+	}
+	const verdict = latestVerdictPerDimension(state.named["slice-verdicts"]).get("design-readiness");
+	const v = verdict?.data as SeedOnlyVerdict | undefined;
+	if (!seedOnlyFindings(v)) {
+		throw haltPreflight(
+			"slice-seed-lift",
+			"slice-seed-lift: latest design-readiness verdict is not seed-only",
+			"slice-seed-lift: the slice-grade route dispatched the seed lift, but the latest design-readiness verdict is not a seed-only cite fail (pass false, remedy cite-or-absent, every finding carrying a concrete requires). This is a routing/wiring defect — investigate it; do not hand-edit the slice map to work around it",
+		);
+	}
+	const mapPath = latest.handle.path;
+	let body = readArtifactFile(mapPath, cwd);
+	const lines = body.split("\n");
+	const rawFindings = v?.findings;
+	const findings = (Array.isArray(rawFindings) ? rawFindings : []).filter(
+		(f): f is { requires?: unknown; where?: unknown } => f != null,
+	);
+	const lifted: SeedLiftRecord[] = [];
+	const skipped: SeedLiftRecord[] = [];
+	for (const f of findings) {
+		const requires = typeof f.requires === "string" ? f.requires : "";
+		if (requires.length === 0) continue; // unreachable past the guard; kept fail-soft
+		// Dedup on the EVOLVING body: a seed already satisfied (the discharge's
+		// own test) is never re-appended.
+		if (citeFindingSatisfied(body, fencedSpans(body), f)) continue;
+		const where = typeof f.where === "string" ? f.where : "";
+		const heading = SLICE_HEADING_RE.exec(where);
+		if (!heading) {
+			skipped.push({ requires, reason: "no-slice-heading" });
+			continue;
+		}
+		const slice = Number(heading[1]);
+		// Locate the `Draws on:` line inside the `## Slice N:` section — the
+		// section spans to the next `## Slice` heading or end of body, and the
+		// walk is fence-aware (a fenced example line is never a real target).
+		let drawsOn: number | undefined;
+		let inTarget = false;
+		forEachLineOutsideFences(body, (line, index) => {
+			if (drawsOn !== undefined) return;
+			const h = SLICE_HEADING_RE.exec(line);
+			if (h) {
+				inTarget = Number(h[1]) === slice;
+				return;
+			}
+			if (inTarget && DRAWS_ON_LINE_RE.test(line)) drawsOn = index;
+		});
+		if (drawsOn === undefined) {
+			skipped.push({ requires, slice, reason: "no-draws-on-line" });
+			continue;
+		}
+		lines[drawsOn] = `${lines[drawsOn]}, ${requires}`;
+		body = lines.join("\n");
+		lifted.push({ requires, slice });
+	}
+	writeFileSync(isAbsolute(mapPath) ? mapPath : join(cwd, mapPath), body, "utf-8");
+	return {
+		kind: "json",
+		artifacts: [{ handle: { kind: "fs", path: mapPath } }],
+		data: { lifted, skipped },
+	};
 };
 
 /**
@@ -351,7 +482,9 @@ const sourcesCoverageGaps = (state: RunView, cwd: string, sliceNumbers: Set<numb
  * Preflight: a slice with NO design on the `designs` channel halts LOUD before
  * any reconciliation — the fanout drops (or under-feeds) its cluster pre-dispatch
  * (`if (!designs.length) return undefined`), so re-dispatching `subplan` re-drops
- * it every round until `maxBackwardJumps` exhausts with a diagnostic naming the
+ * it every round until the re-entry budgets exhaust (the `maxBackwardJumps`
+ * cap, default 3, or the absolute `maxLaps` ceiling, default 8 — both fresh
+ * per invocation) with a diagnostic naming the
  * refused re-entry instead of the cause. The missing design is upstream
  * (`slice-design`/`design-review`) and unreachable from this loop's backward
  * edge; halting here names the actual defect and spends no jump budget.
@@ -360,7 +493,9 @@ const sourcesCoverageGaps = (state: RunView, cwd: string, sliceNumbers: Set<numb
  * `pass:false` verdict rated `low`/`none`; a lost cluster MUST rate `high` or it
  * ships). Deliberately NOT the `match("verdict", …)` STOP idiom
  * `implementScopeCheck` uses — a lost cluster IS repairable by re-dispatch, so the
- * floor routes the backward edge to `subplan`, bounded by `maxBackwardJumps`.
+ * floor routes the backward edge to `subplan`, bounded by `maxBackwardJumps`
+ * (default 3) under the absolute `maxLaps` ceiling (default 8; both budgets
+ * fresh per invocation).
  * Deterministic ⇒ idempotent across re-dispatch rounds: the verdict basename is
  * keyed on the slice-map basename, so a re-run OVERWRITES its own slot.
  */
@@ -386,8 +521,9 @@ const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta
 
 	// A slice with no design cannot be repaired by the backward edge: the fanout
 	// drops a zero-design cluster pre-dispatch, so every `subplan` re-dispatch
-	// reproduces the identical gap until maxBackwardJumps exhausts blaming the
-	// re-entry. Halt loud at the floor instead, naming the upstream cause.
+	// reproduces the identical gap until the re-entry budgets exhaust (the
+	// maxBackwardJumps cap, default 3, or the absolute maxLaps ceiling, default
+	// 8) blaming the re-entry. Halt loud at the floor instead, naming the upstream cause.
 	const designBySlice = designPathsBySlice(state);
 	const undesigned = designCoverageGap(sliceNumbers, designBySlice);
 	if (undesigned.length > 0) {
@@ -417,4 +553,4 @@ const subplanCoverageCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta
 	return writeStructureVerdict("subplan-check", latestSliceMap.handle, findings, cwd);
 };
 
-export { sliceStructureCheck, subplanCoverageCheck };
+export { sliceSeedLift, sliceStructureCheck, subplanCoverageCheck };

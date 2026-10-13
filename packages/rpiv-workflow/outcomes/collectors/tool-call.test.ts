@@ -109,4 +109,43 @@ describe("toolCallCollector", () => {
 			{ kind: "fs", path: "old.ts" },
 		]);
 	});
+
+	it("walks the live `toolCall`/`arguments` shape Pi actually emits (normalised to input)", async () => {
+		const collector = toolCallCollector({
+			match: (tc) => tc.name === "write",
+			toArtifact: (tc) => ({ handle: fs(String(tc.input.path)) }),
+		});
+		const branch: BranchEntry[] = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [
+						{ type: "toolCall", id: "c1", name: "read", arguments: { path: "ignored.ts" } },
+						{ type: "toolCall", id: "c2", name: "write", arguments: { path: "real.ts", content: "..." } },
+					] as never,
+				},
+			},
+		];
+		const result = await collector.collect(ctxOf(branch));
+		expect(result.kind === "ok" && result.artifacts).toEqual([{ handle: { kind: "fs", path: "real.ts" } }]);
+	});
+
+	it("a toolCall part whose arguments is not an object yields an empty input, never throws", async () => {
+		const collector = toolCallCollector({
+			match: () => true,
+			toArtifact: (tc) => (typeof tc.input.path === "string" ? { handle: fs(tc.input.path) } : undefined),
+		});
+		const branch: BranchEntry[] = [
+			{
+				type: "message",
+				message: {
+					role: "assistant",
+					content: [{ type: "toolCall", id: "c1", name: "write", arguments: "oops" }] as never,
+				},
+			},
+		];
+		const result = await collector.collect(ctxOf(branch));
+		expect(result).toEqual({ kind: "ok", artifacts: [] });
+	});
 });

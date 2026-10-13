@@ -1,6 +1,13 @@
-import { buildSessionEntries, createMockCtx, makeTodoToolResult, makeUserMessage } from "@juicesharp/rpiv-test-utils";
+import {
+	buildSessionEntries,
+	createMockCtx,
+	makeCustomEntry,
+	makeMessageEntry,
+	makeTodoToolResult,
+	makeUserMessage,
+} from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
-import type { Task, TaskDetails } from "../tool/types.js";
+import { STATE_ENTRY_TYPE, type Task, type TaskDetails } from "../tool/types.js";
 import { isTaskDetails, replayFromBranch } from "./replay.js";
 
 function buildBranch(snapshots: TaskDetails[]) {
@@ -125,5 +132,118 @@ describe("replayFromBranch", () => {
 		const fresh = replayFromBranch(ctx2);
 		expect(fresh.tasks).toEqual([]);
 		expect(fresh.nextId).toBe(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// State entries — the snapshot persisted for every state-changing call,
+// including calls made through another tool (codemode) that leave no toolResult.
+// ---------------------------------------------------------------------------
+
+const snap = (tasks: Task[], nextId: number): TaskDetails => ({ action: "update", params: {}, tasks, nextId });
+const stateEntry = (details: unknown) => makeCustomEntry(STATE_ENTRY_TYPE, details);
+const todoResult = (details: TaskDetails) => makeMessageEntry(makeTodoToolResult(details));
+
+describe("replayFromBranch — state entries", () => {
+	it("matches the STATE_ENTRY_TYPE the tool writes (replay.ts keeps the literal)", () => {
+		expect(STATE_ENTRY_TYPE).toBe("rpiv-todo-state");
+	});
+
+	it("replays a branch whose only snapshots are state entries (codemode-only session)", () => {
+		const ctx = createMockCtx({
+			branch: [
+				...buildSessionEntries([makeUserMessage("hi")]),
+				stateEntry(snap([taskFixture(1, "A")], 2)),
+				stateEntry(snap([taskFixture(1, "A"), taskFixture(2, "B")], 3)),
+			],
+		});
+		const state = replayFromBranch(ctx);
+		expect(state.tasks.map((t) => t.subject)).toEqual(["A", "B"]);
+		expect(state.nextId).toBe(3);
+	});
+
+	it("clear resets authoritative state entries even when an older tool result follows", () => {
+		const snapshot = snap([taskFixture(1, "old")], 2);
+		const ctx = createMockCtx({
+			branch: [stateEntry(snapshot), makeCustomEntry("rpiv-todo-clear", undefined), todoResult(snapshot)],
+		});
+		expect(replayFromBranch(ctx)).toEqual({ tasks: [], nextId: 1 });
+	});
+
+	it("a new state entry after clear restores the new list", () => {
+		const ctx = createMockCtx({
+			branch: [
+				stateEntry(snap([taskFixture(1, "old")], 2)),
+				makeCustomEntry("rpiv-todo-clear", undefined),
+				stateEntry(snap([taskFixture(1, "new")], 2)),
+			],
+		});
+		expect(replayFromBranch(ctx).tasks.map((task) => task.subject)).toEqual(["new"]);
+	});
+
+	it("legacy tool results after clear still restore a new list without state entries", () => {
+		const ctx = createMockCtx({
+			branch: [
+				todoResult(snap([taskFixture(1, "old")], 2)),
+				makeCustomEntry("rpiv-todo-clear", undefined),
+				todoResult(snap([taskFixture(1, "new")], 2)),
+			],
+		});
+		expect(replayFromBranch(ctx).tasks.map((task) => task.subject)).toEqual(["new"]);
+	});
+
+	it("a later state entry wins over an earlier toolResult (nested completion after a direct call)", () => {
+		const ctx = createMockCtx({
+			branch: [
+				todoResult(snap([taskFixture(1, "T", { status: "in_progress" })], 2)),
+				stateEntry(snap([taskFixture(1, "T", { status: "completed" })], 2)),
+			],
+		});
+		expect(replayFromBranch(ctx).tasks[0]?.status).toBe("completed");
+	});
+
+	it("state entries are authoritative over a toolResult that lands after them", () => {
+		// A direct call's entry is appended during execute(), before its toolResult message;
+		// a read (list/get) result carries no entry. Neither may override the entry trail.
+		const ctx = createMockCtx({
+			branch: [
+				stateEntry(snap([taskFixture(1, "T", { status: "completed" })], 2)),
+				todoResult(snap([taskFixture(1, "T", { status: "in_progress" })], 2)),
+			],
+		});
+		expect(replayFromBranch(ctx).tasks[0]?.status).toBe("completed");
+	});
+
+	it("falls back to toolResult snapshots on a branch with no state entries (older sessions)", () => {
+		const ctx = createMockCtx({ branch: [todoResult(snap([taskFixture(1, "legacy")], 2))] });
+		expect(replayFromBranch(ctx).tasks[0]?.subject).toBe("legacy");
+	});
+
+	it("restores a cleared list from its empty snapshot instead of resurrecting tasks", () => {
+		const ctx = createMockCtx({
+			branch: [stateEntry(snap([taskFixture(1, "gone")], 2)), stateEntry(snap([], 1))],
+		});
+		const state = replayFromBranch(ctx);
+		expect(state.tasks).toEqual([]);
+		expect(state.nextId).toBe(1);
+	});
+
+	it("ignores malformed state entries and other custom entry types", () => {
+		const ctx = createMockCtx({
+			branch: [
+				stateEntry(snap([taskFixture(1, "good")], 2)),
+				stateEntry({ tasks: "corrupt", nextId: 9 }),
+				makeCustomEntry("codemode-store", { tasks: [], nextId: 1 }),
+			],
+		});
+		const state = replayFromBranch(ctx);
+		expect(state.tasks.map((t) => t.subject)).toEqual(["good"]);
+		expect(state.nextId).toBe(2);
+	});
+
+	it("clones tasks from a state entry so replayed state never aliases branch data", () => {
+		const fixture = taskFixture(1, "original");
+		const ctx = createMockCtx({ branch: [stateEntry(snap([fixture], 2))] });
+		expect(replayFromBranch(ctx).tasks[0]).not.toBe(fixture);
 	});
 });

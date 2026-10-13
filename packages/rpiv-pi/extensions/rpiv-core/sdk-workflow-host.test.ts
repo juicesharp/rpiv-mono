@@ -138,6 +138,7 @@ import {
 	readPiManifestFlag,
 	SdkWorkflowHost,
 	type SdkWorkflowHostDeps,
+	UnresolvedModelError,
 	withoutAmbientExtensions,
 } from "./sdk-workflow-host.js";
 import { getSubagentUsageForRun } from "./subagent-usage.js";
@@ -211,7 +212,7 @@ it("SdkWorkflowHost satisfies the executor port (compile-time assert above)", ()
 });
 
 describe("spawnChild — fresh child", () => {
-	it("borrows only modelRegistry (authStorage defaulted), supplies a filtered resourceLoader, creates a run-scoped session", async () => {
+	it("borrows only the model services (legacy host: modelRegistry), supplies a filtered resourceLoader, creates a run-scoped session", async () => {
 		const { deps } = makeDeps();
 		const host = new SdkWorkflowHost(deps);
 
@@ -222,7 +223,9 @@ describe("spawnChild — fresh child", () => {
 
 		expect(createAgentSessionMock).toHaveBeenCalledTimes(1);
 		const passed = createAgentSessionMock.mock.calls[0][0] as Record<string, unknown>;
+		// The fixture registry has no runtime slot (Pi ≤ 0.80.7) → passed through verbatim.
 		expect(passed.modelRegistry).toBe(deps.modelRegistry);
+		expect(passed).not.toHaveProperty("modelRuntime");
 		expect(passed).not.toHaveProperty("authStorage");
 		// (A) resourceLoader is now SUPPLIED (filtered + reloaded), not omitted.
 		expect(passed.resourceLoader).toBeDefined();
@@ -232,6 +235,21 @@ describe("spawnChild — fresh child", () => {
 		expect(passed.cwd).toBe("/work");
 		expect(sessionManagerCreate).toHaveBeenCalledWith("/work", "/run/sessions");
 		expect(sessionManagerOpen).not.toHaveBeenCalled();
+	});
+
+	it("shares the launcher's ModelRuntime on Pi ≥ 0.80.8 (where modelRegistry is ignored)", async () => {
+		const runtime = { streamSimple: vi.fn() };
+		const find = vi.fn();
+		const { deps } = makeDeps({
+			modelRegistry: { find, runtime } as unknown as SdkWorkflowHostDeps["modelRegistry"],
+		});
+		const host = new SdkWorkflowHost(deps);
+
+		await host.spawnChild({ prompt: "p", withSession: async () => undefined });
+
+		const passed = createAgentSessionMock.mock.calls[0][0] as Record<string, unknown>;
+		expect(passed.modelRuntime).toBe(runtime);
+		expect(passed).not.toHaveProperty("modelRegistry");
 	});
 
 	it("harvests the child's tool definitions into the shared disk-fallback cache", async () => {
@@ -436,6 +454,51 @@ describe("spawnChild — model resolution (no global pi.setModel)", () => {
 		expect(find).not.toHaveBeenCalled();
 		const passed = createAgentSessionMock.mock.calls[0][0] as Record<string, unknown>;
 		expect(passed.model).toBeUndefined();
+	});
+
+	it("rejects an unknown explicit model with a typed UnresolvedModelError — no child session, no silent default", async () => {
+		const { deps, find } = makeDeps();
+		find.mockReturnValue(undefined);
+		const host = new SdkWorkflowHost(deps);
+		const withSession = vi.fn(async () => undefined);
+
+		const err = await host
+			.spawnChild({ prompt: "p", model: { model: "anthropic/does-not-exist" }, withSession })
+			.then(
+				() => undefined,
+				(e) => e,
+			);
+
+		expect(err).toBeInstanceOf(UnresolvedModelError);
+		expect(err).toMatchObject({ key: "anthropic/does-not-exist" });
+		expect((err as Error).message).toMatch(/"anthropic\/does-not-exist" is not available/);
+		expect(find).toHaveBeenCalledWith("anthropic", "does-not-exist");
+		expect(createAgentSessionMock).not.toHaveBeenCalled();
+		expect(resourceLoaders).toHaveLength(0);
+		expect(withSession).not.toHaveBeenCalled();
+	});
+
+	it("rejects a malformed explicit model key without consulting the registry", async () => {
+		const { deps, find } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await expect(
+			host.spawnChild({ prompt: "p", model: { model: "no-provider" }, withSession: async () => undefined }),
+		).rejects.toBeInstanceOf(UnresolvedModelError);
+		expect(find).not.toHaveBeenCalled();
+		expect(createAgentSessionMock).not.toHaveBeenCalled();
+	});
+
+	it("applies a thinking-only override without a model key (host default model)", async () => {
+		const { deps, find } = makeDeps();
+		const host = new SdkWorkflowHost(deps);
+
+		await host.spawnChild({ prompt: "p", model: { thinking: "low" }, withSession: async () => undefined });
+
+		expect(find).not.toHaveBeenCalled();
+		const passed = createAgentSessionMock.mock.calls[0][0] as Record<string, unknown>;
+		expect(passed.model).toBeUndefined();
+		expect(passed.thinkingLevel).toBe("low");
 	});
 });
 

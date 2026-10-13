@@ -221,12 +221,17 @@ function depArtifactSuffix(e: LoopEntry, cursor: LoopCursor, index: number, idTo
 	return suffix;
 }
 
-/** Dispatch one fanout unit in its own child and RETURN its output. The cursor is NOT
- *  touched here — the wave fold consumes the return value in index order. `promptSuffix`
- *  (the resolved dep-artifact injection) is appended to the unit prompt by `fanoutUnitAt`.
- *  A halted unit leaves `captured` unset; returns failedOutput. (Settle shapes unchanged
- *  from the pre-wave dispatcher: collect-all unit failure → sentinel; fail-fast halt →
- *  placement sentinel + graceful return; ABORT → throws WorkflowAbortError → unfilled slot.) */
+/** Dispatch one fanout unit in its own child and RETURN its output — the
+ *  unit's FINAL settled output when the loop opts into `retryHaltedUnits`
+ *  (a soft-halted attempt re-dispatches up to that many more times; earlier
+ *  attempts' sentinels never reach the fold). The cursor is NOT touched here —
+ *  the wave fold consumes the return value in index order. `promptSuffix`
+ *  (the resolved dep-artifact injection) is appended to the unit prompt by
+ *  `fanoutUnitAt`. Settle shapes: collect-all unit failure → sentinel (retried
+ *  when opted in); fail-fast halt → placement sentinel + graceful return;
+ *  ABORT → throws WorkflowAbortError → unfilled slot. Both sentinel shapes
+ *  carry the unit's label as their dimension so a dead unit is never
+ *  anonymous to the gate folds. */
 async function dispatchUnitDetached(
 	hostCtx: WorkflowHostContext,
 	e: LoopEntry,
@@ -236,25 +241,67 @@ async function dispatchUnitDetached(
 	signal: AbortSignal | undefined, // genAbort.signal — run-level abort OR fail-fast sibling cancel
 	promptSuffix = "",
 ): Promise<Output> {
-	if (signal?.aborted) throw new WorkflowAbortError(); // never open a child after abort; isAbortError → unfilled slot
+	// One attempt = the unit's whole dispatch: lifecycle start, pre-attempt
+	// snapshot, session build, execution. `attemptOrdinal` is the attempt's
+	// 1-based count — stamped onto the session so the collected halt row
+	// carries it (the resume fold's budget input). Returns the attempt's settled output
+	// when its continuation ran (a real output, or the soft-halt sentinel
+	// `softHaltUnit` handed `onSuccess`), `undefined` when the halt never
+	// reached `onSuccess` (a fail-fast / infra-death terminal halt — the run is
+	// over, there is nothing to retry).
+	const attempt = async (attemptOrdinal: number): Promise<Output | undefined> => {
+		if (signal?.aborted) throw new WorkflowAbortError(); // never open a child after abort; isAbortError → unfilled slot
+		const u = fanoutUnitAt(e, index, promptSuffix);
+		await run.lifecycle.fire(
+			hostCtx,
+			"onUnitStart",
+			skillStageRef(e.name, e.stageIdx + 1, u.skill),
+			{ role: u.role, index, unitId: u.id, label: u.label, skill: u.skill },
+			lifecycleCtxFor(run),
+		);
+		// Re-captured PER ATTEMPT, before the stage body: a file is "new since
+		// snapshot" iff it is absent from THIS listing or its mtime moved — so a
+		// retry's disk-first collection sees only what the retry's own session
+		// wrote, never attempt-1's leftovers.
+		const snapshot = await deps.captureSnapshot(hostCtx, e.name, u.def, e.stageIdx, run);
+		let captured: Output | undefined;
+		await deps.executeStageSession(
+			hostCtx,
+			buildUnitSession(
+				e,
+				u,
+				index,
+				run,
+				snapshot,
+				signal,
+				(_child, output) => {
+					captured = output;
+					return Promise.resolve();
+				},
+				attemptOrdinal,
+			),
+		);
+		return captured;
+	};
+
+	// Retry bound: a collect-all unit whose attempt settled as a failed
+	// sentinel (the unit soft-halted; the run survived) re-dispatches up to
+	// `retryHaltedUnits` more times — the ledger bound that a dead grade unit
+	// is re-dispatched once before any gate folds on its absence. Inert without
+	// the option, and under failFast by construction (a fail-fast halt leaves
+	// `captured` unset — the terminal path below, never a retry).
+	const retries = e.loop.kind === "fanout" && !isFailFast(e.loop) ? (e.loop.retryHaltedUnits ?? 0) : 0;
+	let settled = await attempt(1);
+	for (let used = 0; used < retries && settled !== undefined && isFailedOutput(settled); used++) {
+		settled = await attempt(used + 2);
+	}
+	if (settled !== undefined) return settled;
+	// Fail-fast placement sentinel (the run is terminating when this is used, so
+	// it is never read downstream; it only keeps the fold's Output type intact
+	// without a throw). The label rides as the dimension — symmetry with the
+	// soft-halt sentinel, so even this terminal shape names its unit.
 	const u = fanoutUnitAt(e, index, promptSuffix);
-	await run.lifecycle.fire(
-		hostCtx,
-		"onUnitStart",
-		skillStageRef(e.name, e.stageIdx + 1, u.skill),
-		{ role: u.role, index, unitId: u.id, label: u.label, skill: u.skill },
-		lifecycleCtxFor(run),
-	);
-	const snapshot = await deps.captureSnapshot(hostCtx, e.name, u.def, e.stageIdx, run);
-	let captured: Output | undefined;
-	await deps.executeStageSession(
-		hostCtx,
-		buildUnitSession(e, u, index, run, snapshot, signal, (_child, output) => {
-			captured = output;
-			return Promise.resolve();
-		}),
-	);
-	return captured ?? failedOutput(unitOutputMeta(e, u, run), `${u.label}: unit halted`);
+	return failedOutput(unitOutputMeta(e, u, run), `${u.label}: unit halted`, u.label);
 }
 
 /** Minimal OutputMeta for a fail-fast placement sentinel. The run is terminating when

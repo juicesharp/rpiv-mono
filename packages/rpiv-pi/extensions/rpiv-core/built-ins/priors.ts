@@ -3,7 +3,7 @@
  * surgical-fix guard, and the risk-duty demotion stamp.
  */
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join } from "node:path";
+import { basename, extname, isAbsolute, join } from "node:path";
 import {
 	type Artifact,
 	handleToString,
@@ -47,9 +47,16 @@ const snapshotLatestPlan =
 			);
 		}
 		const src = isAbsolute(latest.handle.path) ? latest.handle.path : join(cwd, latest.handle.path);
-		const priorRel = join(PRIOR_DIR, basename(latest.handle.path));
+		// One file per round, so a resume replaying an earlier round reads that
+		// round's bytes, not the newest copy. The basename-keyed file is still
+		// written for readers that key on it.
+		const round = (state.named[who]?.length ?? 0) + 1;
+		const base = basename(latest.handle.path);
+		const ext = extname(base);
+		const priorRel = join(PRIOR_DIR, `${base.slice(0, base.length - ext.length)}.r${round}${ext}`);
 		mkdirSync(join(cwd, PRIOR_DIR), { recursive: true });
 		copyFileSync(src, join(cwd, priorRel));
+		copyFileSync(src, join(cwd, PRIOR_DIR, base));
 		return {
 			kind: "artifact-md",
 			artifacts: [{ handle: { kind: "fs", path: priorRel }, role: "prior" }],

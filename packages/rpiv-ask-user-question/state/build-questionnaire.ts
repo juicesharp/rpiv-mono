@@ -47,6 +47,12 @@ export interface QuestionnaireBuildConfig {
 	 * of runtime context.
 	 */
 	collapseKey: string;
+	/**
+	 * Maps `tui.terminal.rows` to the rows the dialog may render — identity for the
+	 * overlay, a capped share for the inline editor slot (`../presentation.ts`). Applied
+	 * inside `getTerminalRows`, so `DialogView`'s overflow partition is mode-agnostic.
+	 */
+	rowBudget: (terminalRows: number) => number;
 }
 
 export interface QuestionnaireBuilt {
@@ -117,13 +123,14 @@ class QuestionnaireBuilder {
 	private readonly initialState: QuestionnaireState;
 	private readonly getCurrentTab: () => number;
 	private readonly collapseKey: string;
+	private readonly rowBudget: (terminalRows: number) => number;
 
 	private readonly selectTheme: WrappingSelectTheme;
 	private readonly markdownTheme = getMarkdownTheme();
 	private readonly notesInput: Editor;
 	private readonly inlineInput: Editor;
 	private readonly getTerminalWidth = () => this.tui.terminal.columns;
-	private readonly getTerminalRows = () => this.tui.terminal.rows;
+	private readonly getTerminalRows = () => this.rowBudget(this.tui.terminal.rows);
 
 	constructor(config: QuestionnaireBuildConfig) {
 		this.tui = config.tui;
@@ -134,6 +141,7 @@ class QuestionnaireBuilder {
 		this.initialState = config.initialState;
 		this.getCurrentTab = config.getCurrentTab;
 		this.collapseKey = config.collapseKey;
+		this.rowBudget = config.rowBudget;
 
 		this.selectTheme = this.makeSelectTheme();
 		const textEditorTheme = editorTheme(this.theme);
@@ -186,6 +194,7 @@ class QuestionnaireBuilder {
 		});
 		const preview = new PreviewPane({
 			question,
+			theme: this.theme,
 			getTerminalWidth: this.getTerminalWidth,
 			optionListView: optionList,
 			previewBlock,

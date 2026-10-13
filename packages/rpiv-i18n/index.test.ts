@@ -3,8 +3,7 @@
  * handler-failure tests in rpiv-advisor + rpiv-web-tools + rpiv-voice.
  *
  * The SDK-level boolean return of saveLocaleConfig is asserted in i18n.test.ts.
- * This file exercises the persist-first save-then-apply invariant that
- * Phase 4 restored at index.ts:64 — i.e. that a failed disk write produces
+ * This file exercises the persist-first save-then-apply invariant — i.e. that a failed disk write produces
  * an error notification AND skips applyLocale, leaving the in-memory locale
  * untouched so the next session's detection chain runs cleanly.
  */

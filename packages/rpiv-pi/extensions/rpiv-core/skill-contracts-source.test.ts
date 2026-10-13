@@ -216,8 +216,8 @@ describe("bundled skill contracts", () => {
 	// dropped, or fails to parse (a malformed block is silently skipped).
 	const declared = new Map(buildSkillContractsFromFrontmatter(BUNDLED_SKILLS_DIR));
 
-	it("declares a contract for the 30 pipeline + orthogonal skills", () => {
-		expect(declared.size).toBe(30);
+	it("declares a contract for the 31 pipeline + orthogonal skills", () => {
+		expect(declared.size).toBe(31);
 		for (const name of [
 			"discover",
 			"research",
@@ -268,6 +268,33 @@ describe("bundled skill contracts", () => {
 			| undefined;
 		expect(data?.required).toContain("phases");
 		expect(data?.properties?.phases).toBeDefined();
+	});
+
+	it("validate declares blockers as an optional array whose items require command + file", () => {
+		// The structured remediation handles the validate gate routes on and the
+		// scope floor's validate-report acceptance credits: optional (a pass or a
+		// fail covered by risk rulings omits it), but an entry that IS emitted must
+		// carry a runnable command + an attributable file for the acceptance to
+		// read (id/line are optional provenance).
+		const data = declared.get("validate")?.produces?.data as
+			| {
+					required?: string[];
+					properties?: {
+						blockers?: {
+							type?: string;
+							items?: { required?: string[]; properties?: Record<string, { type?: string }> };
+						};
+					};
+			  }
+			| undefined;
+		expect(data?.required).not.toContain("blockers");
+		const blockers = data?.properties?.blockers;
+		expect(blockers?.type).toBe("array");
+		expect(blockers?.items?.required).toEqual(["command", "file"]);
+		expect(blockers?.items?.properties?.id?.type).toBe("string");
+		expect(blockers?.items?.properties?.command?.type).toBe("string");
+		expect(blockers?.items?.properties?.file?.type).toBe("string");
+		expect(blockers?.items?.properties?.line?.type).toBe("number");
 	});
 
 	it("documents the declared-but-not-harvested orthogonal set", () => {

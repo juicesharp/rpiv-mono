@@ -6,13 +6,14 @@ import type { TabBarProps } from "../../view/components/tab-bar.js";
 import type { DialogProps } from "../../view/dialog-builder.js";
 import { displayLabel } from "../i18n-bridge.js";
 import type { GlobalSelector, PerTabBindingContext, PerTabSelector } from "./contract.js";
-import { selectConfirmedIndicator } from "./derivations.js";
+import { selectConfirmedIndicator, selectSavedNote } from "./derivations.js";
 
 function emptyMultiSelectProps(ctx: PerTabBindingContext): MultiSelectViewProps {
 	return {
 		rows: [],
 		other: {
 			active: false,
+			checked: false,
 			inputMode: false,
 			inputBuffer: ctx.inputBuffer,
 			inputCursorOffset: ctx.inputCursorOffset,
@@ -46,6 +47,7 @@ export const selectMultiSelectProps: PerTabSelector<MultiSelectViewProps> = (sta
 		rows,
 		other: {
 			active: otherActive,
+			checked: ctx.inputBuffer.trim().length > 0,
 			inputMode: state.inputMode,
 			inputBuffer: ctx.inputBuffer,
 			inputCursorOffset: ctx.inputCursorOffset,
@@ -80,6 +82,7 @@ export const selectSubmitPickerProps: GlobalSelector<SubmitPickerProps> = (state
 
 export const selectPreviewPaneProps: PerTabSelector<PreviewPaneProps> = (state, ctx) => ({
 	notesVisible: state.notesVisible,
+	hasNote: selectSavedNote(state.notesByTab, state.answers, ctx.i) !== undefined,
 	selectedIndex: state.optionIndex,
 	focused: ctx.activeView === "options",
 	inputMode: state.inputMode,

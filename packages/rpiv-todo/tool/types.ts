@@ -12,6 +12,15 @@ export const TOOL_NAME = "todo";
 export const TOOL_LABEL = "Todo";
 export const COMMAND_NAME = "todos";
 
+/**
+ * Custom session-entry type carrying the `details` snapshot of every
+ * state-changing `todo` call — the replay source that survives calls made
+ * through another tool (`ctx.executeTool`, e.g. Pi's codemode), whose results
+ * never land on the branch as standalone `toolResult` messages. Persistence key
+ * for branch replay, like `TOOL_NAME`. DO NOT rename.
+ */
+export const STATE_ENTRY_TYPE = "rpiv-todo-state";
+
 // ---------------------------------------------------------------------------
 // User-facing strings (kept stable for /todos UX parity).
 // ---------------------------------------------------------------------------
@@ -74,8 +83,7 @@ export interface TaskMutationParams {
 
 // ---------------------------------------------------------------------------
 // TypeBox parameter schema — every `description` doubles as LLM-facing prompt
-// copy. Field order and wording are pinned by registration tests and the
-// pre-refactor schema at `packages/rpiv-todo/todo.ts:512-573`.
+// copy. Field order and wording are pinned by registration tests.
 // ---------------------------------------------------------------------------
 
 export const TodoParamsSchema = Type.Object({

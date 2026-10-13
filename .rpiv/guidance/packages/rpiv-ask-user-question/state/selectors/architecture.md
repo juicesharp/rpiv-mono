@@ -10,7 +10,9 @@ All exports are pure. Projection selectors are `(state, ctx) => P` (`GlobalSelec
 ```
 contract.ts     — Type-only: BindingContext, PerTabBindingContext, GlobalSelector<P>, PerTabSelector<P>
 focus.ts        — Single discriminant: selectActiveView
-derivations.ts  — Small reusable computations: selectConfirmedIndicator, selectActivePreviewPaneIndex
+derivations.ts  — Small reusable computations: selectConfirmedIndicator, selectActivePreviewPaneIndex,
+                  selectSavedNote (a tab's committed note: `notesByTab` side-band ?? `answer.notes`, empty = none —
+                  same precedence as the reducer's `notesValueFor`; read by the question-tab note row and `hasNote`)
 projections.ts  — Per-component prop selectors: selectMultiSelectProps, selectOptionListProps,
                    selectSubmitPickerProps, selectPreviewPaneProps, selectTabBarProps, selectDialogProps
 ```
@@ -66,8 +68,8 @@ export function selectActivePreviewPaneIndex(currentTab: number, totalQuestions:
 ```
 
 ## Free-Text `other` Row
-- `selectMultiSelectProps` projects an `other` sub-object `{ active, inputMode, inputBuffer, inputCursorOffset }` — the `other` row occupies `optionIndex === options.length`, shifting the Next sentinel to `options.length + 1` (`projections.ts:34-35`)
-- `selectPreviewPaneProps` forwards `inputMode: state.inputMode` (`projections.ts:78`) so the Type-something row stays live in single-select preview-pane mode
+- `selectMultiSelectProps` projects an `other` sub-object `{ active, inputMode, inputBuffer, inputCursorOffset }` — the `other` row occupies `optionIndex === options.length`, shifting the Next sentinel to `options.length + 1` (`projections.ts:43-44`)
+- `selectPreviewPaneProps` forwards `inputMode: state.inputMode` (`projections.ts:85`) so the Type-something row stays live in single-select preview-pane mode
 - `selectConfirmedIndicator` handles only `option`/`custom` prior-answer kinds — `custom` maps back to the `other` row with `labelOverride: prior.answer` (`derivations.ts:21-25`)
 
 ## Conventions

@@ -48,7 +48,7 @@ import { DEFAULT_TRIGGER } from "../triggers.js";
 import type { RunContext, RunWorkflowOptions, RunWorkflowResult } from "../types.js";
 import { reconstructState } from "./resume.js";
 import { resumeRefusalError, selectResumeEntry } from "./resume-entry.js";
-import { buildRunContext, freshRunState } from "./run-context.js";
+import { buildRunContext, freshRunState, validateRunBudgets } from "./run-context.js";
 import { dispatchStageOrRecordFailure } from "./run-stage.js";
 
 // ---------------------------------------------------------------------------
@@ -216,6 +216,12 @@ export async function runWorkflow(ctx: WorkflowHostContext, options: RunWorkflow
 		};
 	}
 
+	// A malformed budget (`NaN`, a negative, a fraction) would make a ledger
+	// compare fail open — refused here, before the name claim and the header,
+	// so nothing is written for a run that could never halt.
+	const budgetError = validateRunBudgets(options);
+	if (budgetError !== undefined) return { stagesCompleted: 0, success: false, error: budgetError };
+
 	const cwd = ctx.cwd;
 	const runId = generateRunId();
 	const trigger = options.trigger ?? DEFAULT_TRIGGER;
@@ -284,6 +290,14 @@ export interface ResumeWorkflowOptions {
 	host?: WorkflowHost;
 	/** Per-destination decision-edge re-entry cap. Defaults to MAX_BACKWARD_JUMPS. */
 	maxBackwardJumps?: number;
+	/**
+	 * Per-destination ABSOLUTE ceiling on decision-edge re-entries — counts
+	 * every re-entry (improved-waived laps included), unlike the waive-aware
+	 * `maxBackwardJumps` cap. The `maxLaps + 1`-th re-entry of one stage
+	 * halts. Defaults to MAX_LAPS; fresh per invocation (a resume starts
+	 * both re-entry ledgers empty).
+	 */
+	maxLaps?: number;
 	/** Run-wide safety cap on loop units (all kinds). Defaults to MAX_ITERATIONS. */
 	maxIterations?: number;
 	/** The user's `@<ref>` — surfaced in trigger.meta + refusal messages. */
@@ -317,6 +331,12 @@ export async function resumeWorkflow(
 ): Promise<RunWorkflowResult> {
 	const { workflow, header } = options;
 	const cwd = ctx.cwd;
+
+	// Same pre-flight refusal as `runWorkflow` — a resume threads the same
+	// budget options and appends to the same trail, so a malformed budget is
+	// refused before any row lands.
+	const budgetError = validateRunBudgets(options);
+	if (budgetError !== undefined) return { stagesCompleted: 0, success: false, error: budgetError };
 
 	const recon = await reconstructState(cwd, workflow, header);
 	if (!recon.ok) {

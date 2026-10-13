@@ -139,8 +139,8 @@ const FRONTMATTER_PHASE_FANOUT = fanout({
 });
 
 /**
- * Derive the directed `deps` edges for ONE implement phase under the dep-gated
- * DAG fanout (`IMPLEMENT_DAG_FANOUT`). Edges point strictly downward (toward
+ * Derive the directed `deps` edges for ONE phase under the dep-gated DAG
+ * fanouts (`IMPLEMENT_DAG_FANOUT`, `ELABORATE_PHASE_FANOUT`). Edges point strictly downward (toward
  * LOWER phase numbers), so the graph is acyclic by construction. Two clauses:
  *
  *  - clause A (self declares a `files:` write-set): `self` depends on every
@@ -156,7 +156,7 @@ const FRONTMATTER_PHASE_FANOUT = fanout({
  * and `phaseDeps` — both defined later textually, but only inside this
  * runtime closure, so no TDZ (same pattern as `sliceDeps`).
  */
-const implementPhaseDeps = (records: readonly PhaseRecord[], self: PhaseRecord): string[] => {
+const phaseWriteSetDeps = (records: readonly PhaseRecord[], self: PhaseRecord): string[] => {
 	// Twin-expanded (`withTestTwins`) so a phase declaring `x.ts` conflicts with
 	// one declaring `x.test.ts` — the production phase's implicit twin write would
 	// otherwise race a concurrent sibling that owns the test explicitly.
@@ -179,30 +179,59 @@ const implementPhaseDeps = (records: readonly PhaseRecord[], self: PhaseRecord):
 };
 
 /**
- * Dep-gated DAG variant of `FRONTMATTER_PHASE_FANOUT` — `implement`'s twin that
- * emits per-phase `id`/`deps` edges so the wave scheduler orders phases by their
- * declared write-set overlap + explicit `depends_on`. The spread idiom inherits
- * `source`/`unit`/`max`/`onCap`/`result`/`kind` verbatim from the base; the new
- * `units` closure emits the SAME `prompt`/`label` strings AND adds
- * `id: \`phase-${r.n}\`` + `deps: implementPhaseDeps(records, r)`. NO
- * `depArtifactFlag` — implement phases feed each other through the working tree
- * (not published artifacts), so `deps` drive ONLY wave ordering. NO
- * `concurrency` property is set (the spread overrides only `units`), so the loop
- * inherits the host cap and phases fan out concurrently, bounded by `deps`.
+ * The dep-gated `units` closure shared by the DAG fanouts: emits the SAME
+ * `prompt`/`label` strings as `FRONTMATTER_PHASE_FANOUT` AND adds
+ * `id: \`phase-${r.n}\`` + `deps: phaseWriteSetDeps(records, r)`, so the wave
+ * scheduler orders phases by their declared write-set overlap + explicit
+ * `depends_on`. `who` names the fanout in preflight halts.
  */
-const IMPLEMENT_DAG_FANOUT = {
-	...FRONTMATTER_PHASE_FANOUT,
-	units: ({ state, cwd }: FanoutContext) => {
-		const read = readPlanPhaseRecords(state, cwd, "IMPLEMENT_DAG_FANOUT");
+const dagPhaseUnits =
+	(who: string) =>
+	({ state, cwd }: FanoutContext) => {
+		const read = readPlanPhaseRecords(state, cwd, who);
 		if (!read) return [];
 		const { records, promptPath } = read;
 		return records.map((r) => ({
 			prompt: `${promptPath} Phase ${r.n}: ${r.title}`.trimEnd(),
 			label: `phase ${r.index + 1}/${r.total}`,
 			id: `phase-${r.n}`,
-			deps: implementPhaseDeps(records, r),
+			deps: phaseWriteSetDeps(records, r),
 		}));
-	},
+	};
+
+/**
+ * Dep-gated DAG variant of `FRONTMATTER_PHASE_FANOUT` — `implement`'s twin. The
+ * spread idiom inherits `source`/`unit`/`max`/`onCap`/`result`/`kind` verbatim
+ * from the base; `units` is `dagPhaseUnits`. NO `depArtifactFlag` — implement
+ * phases feed each other through the working tree (not published artifacts), so
+ * `deps` drive ONLY wave ordering. NO `concurrency` property is set (the spread
+ * overrides only `units`), so the loop inherits the host cap and phases fan out
+ * concurrently, bounded by `deps`.
+ */
+const IMPLEMENT_DAG_FANOUT = {
+	...FRONTMATTER_PHASE_FANOUT,
+	units: dagPhaseUnits("IMPLEMENT_DAG_FANOUT"),
+};
+
+/**
+ * The elaborate fanout: the same dep-gated `units` as `IMPLEMENT_DAG_FANOUT`,
+ * plus one re-dispatch for a unit whose output failed its contract after the
+ * in-session retries — a malformed section is re-produced with the failure
+ * memo, not stitched.
+ *
+ * Dep-gated for the same reason implement is: every lane's self-check probes
+ * the ONE shared working tree (apply → check → revert its own write-scope), and
+ * two lanes whose `files:` overlap cannot both revert byte-identically — a lane
+ * that snapshots a co-owned file while a sibling's probe is live restores the
+ * sibling's transient blocks after the sibling reverted them (run
+ * 2026-09-12_14-29-13-5eb9: phase 5's test blocks came back through phase 3's
+ * copy-back and phase 2's rebuild, and broke the test target for implement).
+ * File-disjoint phases still fan out concurrently.
+ */
+const ELABORATE_PHASE_FANOUT = {
+	...FRONTMATTER_PHASE_FANOUT,
+	units: dagPhaseUnits("ELABORATE_PHASE_FANOUT"),
+	retryHaltedUnits: 1,
 };
 
 /**
@@ -251,7 +280,7 @@ const phaseDeps = (entry: unknown): number[] => {
  *  read straight off `PhaseRecord.entry` so `planPhaseRecords` preserves the new
  *  key unchanged. Consumed by the plan-time coverage floor
  *  (`verifyPhaseFilesCoverage`) and, in a later phase, the dep-gated implement
- *  fanout (`implementPhaseDeps`). */
+ *  fanout (`phaseWriteSetDeps`). */
 const phaseFiles = (entry: unknown): string[] => {
 	const raw = (entry as { files?: unknown } | undefined)?.files;
 	return Array.isArray(raw) ? raw.filter((f): f is string => typeof f === "string") : [];
@@ -264,7 +293,7 @@ const phaseFiles = (entry: unknown): string[] => {
  * mechanical follow-up edit in its twin — so requiring every plan author,
  * elaborator, and grader to re-declare the twin is paperwork the convention
  * already guarantees. Applied at BOTH consumers of the declared set — the
- * DAG conflict fold (`implementPhaseDeps`) and the scope floors — so the
+ * DAG conflict fold (`phaseWriteSetDeps`) and the scope floors — so the
  * planner and the floor can never disagree; on the DAG side it also closes the
  * latent race where phases declaring `x.ts` and `x.test.ts` counted as
  * disjoint yet predictably collide. Asymmetric by design: declaring a TEST
@@ -412,6 +441,7 @@ const PLANS_PHASE_FANOUT = fanout({
 const IMPLEMENT_PLANS_FANOUT = { ...PLANS_PHASE_FANOUT, concurrency: 1 };
 
 export {
+	ELABORATE_PHASE_FANOUT,
 	FRONTMATTER_PHASE_FANOUT,
 	IMPLEMENT_DAG_FANOUT,
 	IMPLEMENT_PLANS_FANOUT,

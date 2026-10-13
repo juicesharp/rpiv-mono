@@ -25,7 +25,7 @@
 
 export { registerAdvisorCommand } from "./command.js";
 export { loadAdvisorConfig, saveAdvisorConfig } from "./config.js";
-export { ensureUserTailForAdvisor, stripInflightAdvisorCall } from "./context.js";
+export { ensureUserTailForAdvisor, stripInflightAdvisorCall, stripToolDeclarations } from "./context.js";
 export {
 	registerAdvisorBeforeAgentStart,
 	registerModelSelectHandler,

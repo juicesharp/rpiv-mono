@@ -41,7 +41,10 @@ Four tiers, first match wins:
 4. **`brave`**, the built-in default.
 
 `/web-tools --show` prints the resolved name together with its source
-(`env`, `config`, or `default`), so you can see which tier won.
+(`env`, `config`, or `default`), so you can see which tier won. The model-facing
+`web_search` schema uses the same resolution and labels this provider as the
+default; it exposes only providers configured with a key or explicit base URL,
+plus the active provider.
 
 An unknown name at tier 1 or tier 2 throws:
 

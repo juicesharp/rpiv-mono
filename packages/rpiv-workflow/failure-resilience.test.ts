@@ -1,17 +1,15 @@
 /**
- * FRD §6 integration test — the incident replay.
+ * Failure-resilience integration test — the incident replay.
  *
  * One end-to-end scenario chaining the full recover → remember → preserve →
  * gate ladder against a mock workflow whose collect-all fan-out has a unit
- * whose verification command times out deterministically. Asserts the FRD §6
- * sequence in ONE test and concludes with the cost-bound the FRD names:
+ * whose verification command times out deterministically. Asserts the full ladder
+ * sequence in ONE test and concludes with the watchdog cost-bound:
  * total watchdog-attributable cost ≤ strikes × ceiling, NOT stages × ceiling.
  *
- * Depends on the behavioral phases being applied first: the
- * `createMockSessionChain` `onSend`/mutable-`toolTimeout` surface +
- * `ERR_VALIDATE_RETRY_UNCHANGED` message const; the `readSessionBranch`
- * execution provider; the `worktreeDigest` run option. See the plan's
- * ## Notes / Deferred for the resolved-default assumptions.
+ * Depends on: the `createMockSessionChain` `onSend`/mutable-`toolTimeout`
+ * surface + `ERR_VALIDATE_RETRY_UNCHANGED` message const; the
+ * `readSessionBranch` execution provider; the `worktreeDigest` run option.
  */
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

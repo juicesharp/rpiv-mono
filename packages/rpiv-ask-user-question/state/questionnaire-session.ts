@@ -30,6 +30,8 @@ export interface QuestionnaireSessionConfig {
 	 * would hide the overlay into a state nothing can reopen.
 	 */
 	canReopenWhileHidden: boolean;
+	/** Terminal rows → rows the dialog may render; see `QuestionnaireBuildConfig.rowBudget`. */
+	rowBudget: (terminalRows: number) => number;
 }
 
 export interface QuestionnaireSessionComponent {
@@ -107,6 +109,7 @@ export class QuestionnaireSession {
 			initialState: this.state,
 			getCurrentTab: () => this.state.currentTab,
 			collapseKey: this.collapseKey,
+			rowBudget: config.rowBudget,
 		});
 
 		this.notesInput = built.notesInput;
@@ -127,7 +130,8 @@ export class QuestionnaireSession {
 	}
 
 	/**
-	 * Collapsed render: a single dim row at the bottom of the overlay. pi-tui sizes
+	 * Collapsed render: a single dim row (inline presentation: in the editor slot, where it
+	 * keeps focus so the same key expands it). For the overlay, pi-tui sizes
 	 * the overlay to `min(lines.length, maxHeight)`, so returning one line shrinks
 	 * the bottom-anchored overlay from full-height to one row and the transcript
 	 * behind it becomes readable (#47). The overlay stays focused and in the

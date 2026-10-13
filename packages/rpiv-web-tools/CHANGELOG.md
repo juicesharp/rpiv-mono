@@ -5,7 +5,39 @@ All notable changes to `@juicesharp/rpiv-web-tools` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.13.8] - 2026-10-12
+
+## [2.13.7] - 2026-10-12
+
+### Fixed
+
+- `web_search` no longer runs on an unconfigured provider the model picked itself. The `provider` parameter used to list every supported backend, so a model could pass `provider: "brave"` and override the provider chosen in `/web-tools`. It now lists only configured providers (a resolved API key, or an explicit base URL) plus the active one, the description names the default provider and its source, and saving in `/web-tools` refreshes the list without a restart (#204, #256).
+
+## [2.13.6] - 2026-10-12
+
+## [2.13.5] - 2026-10-12
+
+## [2.13.4] - 2026-10-11
+
+## [2.13.3] - 2026-10-11
+
+## [2.13.2] - 2026-10-11
+
+## [2.13.1] - 2026-10-11
+
+## [2.13.0] - 2026-10-11
+
+## [2.12.0] - 2026-09-30
+
+### Fixed
+
+- **`typebox` is declared as a `peerDependencies: "*"` entry, no longer a `dependencies` entry.** Pi provides `typebox` to extensions and aliases the bare specifier to its own bundled copy at load time, so the copy this manifest installed was dead weight at best and a second live instance at worst. Pi 0.99.1 warns at every startup about the old shape ("Host-provided extension packages must be declared in peerDependencies with a \"*\" range, not dependencies: typebox"); this clears it once the release is installed. Contributed in #282; reported in #266, #268, #272 and #277.
+
+## [2.11.0] - 2026-09-21
+
+## [2.10.1] - 2026-09-13
+
+## [2.10.0] - 2026-09-12
 
 ## [2.9.0] - 2026-09-01
 

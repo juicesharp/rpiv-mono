@@ -442,7 +442,21 @@ export interface SequentialStrategy extends LoopKindStrategy {
  *  named channel. `cursor.filledCount` becomes the filled-slot count (completion);
  *  `cursor.index` is left untouched — it stays the next-unit pointer. `lastProduce`
  *  is the highest-index non-failed slot (deterministic — order-free, so live +
- *  resume + re-dispatch agree). */
+ *  resume + re-dispatch agree).
+ *
+ * THE INDEX-OVERWRITE HAZARD this fold owns: the sentinel a soft-halted unit
+ * places overwrites whatever its slot held from prior rounds, so the stale
+ * round-N fail the gate should have blocked on is ERASED from the channel the
+ * moment that dimension's unit dies — the gate then folds only the surviving
+ * dimensions, and absence is not failure. Only a DIMENSION-BEARING sentinel
+ * can represent the unresolved dimension (the gate-side twin comment sits on
+ * `allDimensionsPass`): it registers as the dimension's latest entry carrying
+ * no `pass`/`severity`, which reads blocking. The mirror hazard — an UNFILLED
+ * slot (infra death wrote no row) leaving the stale fail as the channel's
+ * entry for that dimension — blocks on a verdict the fix may already have
+ * addressed; that shape stays distinguishable because its slot is
+ * `undefined`, not a sentinel.
+ */
 export function foldFanoutCompletion(
 	state: RunState,
 	cursor: LoopCursor,
@@ -523,6 +537,7 @@ export function buildUnitSession(
 	snapshot: unknown,
 	signal: AbortSignal | undefined,
 	onSuccess: StageSessionContext["onSuccess"],
+	attemptOrdinal?: number,
 ): StageSessionContext {
 	return {
 		cwd: run.cwd,
@@ -545,6 +560,10 @@ export function buildUnitSession(
 		worktreeDigest: run.worktreeDigest,
 		collectAll: shouldCollectAll(e.loop),
 		laneUnitIndex: laneIndexFor(e.loop, index),
+		// The v3 trail contract's attempt ordinal (present on every fanout unit
+		// attempt; `auditFor` projects it onto the collected halt row). Omitted
+		// when undefined so the sequential callers keep byte-identical sessions.
+		...(attemptOrdinal !== undefined ? { attemptOrdinal } : {}),
 		onFailure: undefined,
 		onSuccess,
 	};

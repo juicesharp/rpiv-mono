@@ -4,13 +4,24 @@ import { join } from "node:path";
 import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EdgeTarget, FanoutFn, ScriptContext, StageDef, StageKind, StageSchema, Workflow } from "./api.js";
-import { defineRoute, defineWorkflow, gate, match, produces, terminal } from "./api.js";
+import type {
+	EdgeTarget,
+	FanoutFn,
+	ProgressValue,
+	ScriptContext,
+	StageDef,
+	StageKind,
+	StageSchema,
+	Workflow,
+} from "./api.js";
+import { defineRoute, defineWorkflow, gate, match, produces, setRouteNote, terminal } from "./api.js";
 import { registerBuiltIns } from "./built-ins.js";
+import { LifecycleDispatcher } from "./events.js";
 import { fs as fsHandle } from "./handle.js";
 import { fanout } from "./loop-constructors.js";
 import type { Outcome } from "./output-spec.js";
 import { eq, gt } from "./predicates.js";
+import { evaluateBackwardJumpGuard } from "./runner/chain-advance.js";
 import { runWorkflow, runWorkflowByName } from "./runner/index.js";
 import type { CompositionComparator } from "./skill-contract.js";
 import { registerCompositionComparator, registerSkillContracts } from "./skill-contracts/index.js";
@@ -26,6 +37,7 @@ import {
 import { addNameToIndex } from "./state/names.js";
 import { hasAssistantMessage, lastAssistantStopReason } from "./transcript.js";
 import { typeboxSchema } from "./typebox-adapter.js";
+import type { RunContext, RunState } from "./types.js";
 
 // Note: transcript-path scanning moved to rpiv-pi (`rpivArtifactCollector`)
 // since the `.rpiv/artifacts/<bucket>/<file>.md` layout is an rpiv
@@ -2350,6 +2362,705 @@ describe("runWorkflow", () => {
 			// budget; a shared pool would trip C's first retry at count 2 > cap=1.
 			expect(result.success).toBe(true);
 			expect(result.stagesCompleted).toBe(8);
+		});
+
+		// -----------------------------------------------------------------
+		// progress hook: a destination stage's optional `progress` hook votes
+		// per decision-edge re-entry — "improved" waives the re-entry (budget
+		// untouched; telemetry still counts), everything else counts exactly
+		// as a hook-less re-entry does.
+		// -----------------------------------------------------------------
+		describe("progress hook — waiver semantics", () => {
+			it("improved (sync) waives re-entries — improving laps run past maxBackwardJumps", async () => {
+				for (let i = 1; i <= 3; i++) {
+					writeArtifact(tmpDir, `.rpiv/artifacts/a/a${i}.md`);
+					writeArtifact(tmpDir, `.rpiv/artifacts/b/b${i}.md`);
+				}
+				const chain = createMockSessionChain({
+					cwd: tmpDir,
+					steps: [
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a3.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b3.md")] },
+						{ branch: [mockAssistantMessage("Done.")] },
+					],
+				});
+				let bPicks = 0;
+				const workflow = wf(
+					"waive-sync",
+					["a", "b", "c"],
+					{ a: { progress: () => "improved" }, c: { kind: "side-effect" } },
+					{ b: defineRoute(["a", "c"], () => (++bPicks <= 2 ? "a" : "c"), { readsData: false }) },
+				);
+
+				const result = await runWorkflow(chain.ctx, { workflow, input: "x", maxBackwardJumps: 1 });
+
+				// cap=1 with two improving re-entries of `a` — both waived, so the run
+				// completes all 7 stages instead of halting at 4 (the hook-less
+				// outcome under the same edge script).
+				expect(result.success).toBe(true);
+				expect(result.stagesCompleted).toBe(7);
+				// Every waived re-entry row carries verdict + budget arithmetic with
+				// an untouched count.
+				const rows = readRoutingDecisions(tmpDir, result.runId!);
+				const waived = rows.filter((r) => /waived/.test(r.note ?? ""));
+				expect(waived).toHaveLength(2);
+				expect(waived[0]?.note).toBe("jump: waived (improved), 0/1, lap 1/8");
+				expect(waived[1]?.note).toBe("jump: waived (improved), 0/1, lap 2/8");
+			});
+
+			it("improved (async hook) waives identically — the guard awaits the verdict", async () => {
+				writeArtifact(tmpDir, ".rpiv/artifacts/a/a1.md");
+				writeArtifact(tmpDir, ".rpiv/artifacts/b/b1.md");
+				writeArtifact(tmpDir, ".rpiv/artifacts/a/a2.md");
+				writeArtifact(tmpDir, ".rpiv/artifacts/b/b2.md");
+				writeArtifact(tmpDir, ".rpiv/artifacts/c/c1.md");
+				const chain = createMockSessionChain({
+					cwd: tmpDir,
+					steps: [
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/c/c1.md")] },
+					],
+				});
+				let bPicks = 0;
+				const workflow = wf(
+					"waive-async",
+					["a", "b", "c"],
+					{ a: { progress: async () => "improved" as const } },
+					{ b: defineRoute(["a", "c"], () => (++bPicks <= 1 ? "a" : "c"), { readsData: false }) },
+				);
+
+				const result = await runWorkflow(chain.ctx, { workflow, input: "x", maxBackwardJumps: 0 });
+
+				// cap=0: the improving re-entry is waived and the run escapes to c —
+				// a hook-less run would halt at 2 stages on the same script.
+				expect(result.success).toBe(true);
+				expect(result.stagesCompleted).toBe(5);
+			});
+
+			it.each<[string, NonNullable<StageDef["progress"]> | undefined, string | undefined]>([
+				["an absent hook", undefined, undefined],
+				['a "unchanged" verdict', () => "unchanged", "; last progress: unchanged"],
+				['a "regressed" verdict', () => "regressed", "; last progress: regressed"],
+				['a "unknown" verdict', () => "unknown", "; last progress: unknown"],
+				[
+					'an off-union "better" return (normalized to unknown)',
+					() => "better" as unknown as ProgressValue,
+					"; last progress: unknown",
+				],
+				[
+					"a throwing hook (degrades to unknown)",
+					() => {
+						throw new Error("hook blew up");
+					},
+					"; last progress: unknown",
+				],
+			])("counts %s — halt at max+1 with a failure row", async (_label, progress, clause) => {
+				writeArtifact(tmpDir, ".rpiv/artifacts/a/a1.md");
+				writeArtifact(tmpDir, ".rpiv/artifacts/b/b1.md");
+				const chain = createMockSessionChain({
+					cwd: tmpDir,
+					steps: [
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
+					],
+				});
+				const workflow = wf(
+					"count-progress",
+					["a", "b", "c"],
+					{ a: { progress } },
+					{ b: defineRoute(["a", "c"], () => "a", { readsData: false }) },
+				);
+
+				const result = await runWorkflow(chain.ctx, { workflow, input: "x", maxBackwardJumps: 0 });
+
+				// cap=0 ⇒ the waive-ineligible re-entry (count 1 = max+1) halts.
+				expect(result.success).toBe(false);
+				expect(result.error).toMatch(/Backward-jump limit exceeded: stage "a" re-entered 1 times \(max 0\)/);
+				if (clause === undefined) {
+					// Absent hook ⇒ no trail entry ⇒ no progress clause at all.
+					expect(result.error).not.toContain("last progress");
+				} else {
+					expect(result.error).toContain(clause);
+				}
+				const { stages } = readState(tmpDir);
+				const stageRows = stages.filter((s) => typeof s.stageNumber === "number");
+				expect(stageRows.filter((s) => s.status === "failed")).toHaveLength(1);
+			});
+
+			it('a throwing hook never halts by itself — its re-entries read "unknown" on the trail', async () => {
+				for (let i = 1; i <= 2; i++) {
+					writeArtifact(tmpDir, `.rpiv/artifacts/a/a${i}.md`);
+					writeArtifact(tmpDir, `.rpiv/artifacts/b/b${i}.md`);
+				}
+				const chain = createMockSessionChain({
+					cwd: tmpDir,
+					steps: [
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b2.md")] },
+					],
+				});
+				const workflow = wf(
+					"throwing-hook",
+					["a", "b", "c"],
+					{
+						a: {
+							progress: () => {
+								throw new Error("boom");
+							},
+						},
+					},
+					{ b: defineRoute(["a", "c"], () => "a", { readsData: false }) },
+				);
+
+				const result = await runWorkflow(chain.ctx, { workflow, input: "x", maxBackwardJumps: 1 });
+
+				// Both re-entries degraded to "unknown" and COUNTED: the first
+				// stays under budget (1 ≤ 1 — the throw did not halt it), the
+				// second trips. The ring carries both unknowns in invocation order.
+				expect(result.success).toBe(false);
+				expect(result.stagesCompleted).toBe(4);
+				expect(result.error).toContain("last progress: unknown, unknown");
+			});
+
+			it("hook never invoked on first visit; first-visit routing rows carry no guard note", async () => {
+				for (let i = 1; i <= 2; i++) {
+					writeArtifact(tmpDir, `.rpiv/artifacts/a/a${i}.md`);
+					writeArtifact(tmpDir, `.rpiv/artifacts/b/b${i}.md`);
+				}
+				const progressA = vi.fn((): ProgressValue => "unchanged");
+				const progressB = vi.fn((): ProgressValue => "unchanged");
+				const chain = createMockSessionChain({
+					cwd: tmpDir,
+					steps: [
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b2.md")] },
+					],
+				});
+				let aPicks = 0;
+				let bPicks = 0;
+				const workflow = wf(
+					"first-visit-spy",
+					["a", "b"],
+					{ a: { progress: progressA }, b: { progress: progressB } },
+					{
+						a: defineRoute(["b", "stop"], () => (++aPicks <= 2 ? "b" : "stop"), { readsData: false }),
+						b: defineRoute(["a", "stop"], () => (++bPicks <= 1 ? "a" : "stop"), { readsData: false }),
+					},
+				);
+
+				const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+
+				// a(1) →decide b (FIRST VISIT: neither hook runs) → b(2) →decide a
+				// (re-entry: hook a) → a(3) →decide b (re-entry: hook b) → b(4)
+				// →decide stop.
+				expect(result.success).toBe(true);
+				expect(result.stagesCompleted).toBe(4);
+				expect(progressA).toHaveBeenCalledTimes(1);
+				expect(progressB).toHaveBeenCalledTimes(1);
+				const rows = readRoutingDecisions(tmpDir, result.runId!);
+				const firstVisit = rows.find((r) => r.fromStage === "a" && r.decision === "b");
+				expect(firstVisit?.note).toBeUndefined();
+				const reEntries = rows.filter((r) => r.decision !== "stop" && r.note !== undefined);
+				expect(reEntries).toHaveLength(2);
+				expect(reEntries.every((r) => r.note === "jump: counted (unchanged) 1/3, lap 1/8")).toBe(true);
+			});
+
+			it('guard note composes "; "-joined after the edge\'s ROUTE_NOTE on re-entry rows', async () => {
+				writeArtifact(tmpDir, ".rpiv/artifacts/a/a1.md");
+				writeArtifact(tmpDir, ".rpiv/artifacts/b/b1.md");
+				const chain = createMockSessionChain({
+					cwd: tmpDir,
+					steps: [
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
+					],
+				});
+				const route = defineRoute(
+					["a", "c"],
+					() => {
+						setRouteNote(route, "retry: verdict still blocking");
+						return "a";
+					},
+					{ readsData: false },
+				);
+				const workflow = wf("composed-note", ["a", "b", "c"], { a: { progress: () => "unchanged" } }, { b: route });
+
+				const result = await runWorkflow(chain.ctx, { workflow, input: "x", maxBackwardJumps: 0 });
+
+				expect(result.success).toBe(false);
+				const rows = readRoutingDecisions(tmpDir, result.runId!);
+				expect(rows.at(-1)?.note).toBe("retry: verdict still blocking; jump: counted (unchanged) 1/0, lap 1/8");
+			});
+
+			it("trip row order: routing row (with note) then failure row, exactly one of each; no onRoute on the trip", async () => {
+				for (let i = 1; i <= 2; i++) {
+					writeArtifact(tmpDir, `.rpiv/artifacts/a/a${i}.md`);
+					writeArtifact(tmpDir, `.rpiv/artifacts/b/b${i}.md`);
+				}
+				const chain = createMockSessionChain({
+					cwd: tmpDir,
+					steps: [
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b2.md")] },
+					],
+				});
+				const onRoute = vi.fn();
+				const workflow = wf(
+					"trip-order",
+					["a", "b", "c"],
+					{ a: { progress: () => "regressed" } },
+					{ b: defineRoute(["a", "c"], () => "a", { readsData: false }) },
+				);
+
+				const result = await runWorkflow(chain.ctx, {
+					workflow,
+					input: "x",
+					maxBackwardJumps: 1,
+					lifecycle: { onRoute },
+				});
+
+				// cap=1: re-entry 1 counts and continues (onRoute fires), re-entry 2
+				// trips. No new JSONL row kind; routing rows carry the guard note.
+				expect(result.success).toBe(false);
+				const { stages } = readState(tmpDir);
+				const routingRows = stages.filter((s) => s.type === "routing");
+				const failedRows = stages.filter((s) => s.status === "failed");
+				expect(routingRows).toHaveLength(2);
+				expect(failedRows).toHaveLength(1);
+				expect(routingRows[0]?.note).toBe("jump: counted (regressed) 1/1, lap 1/8");
+				expect(routingRows[1]?.note).toBe("jump: counted (regressed) 2/1, lap 2/8");
+				// Trip order: the trip's routing row is immediately followed by the
+				// failure row, and the failure row is the trail's last row.
+				const tripIdx = stages.indexOf(routingRows[1]!);
+				const failureIdx = stages.indexOf(failedRows[0]!);
+				expect(tripIdx).toBeGreaterThan(-1);
+				expect(failureIdx).toBe(stages.length - 1);
+				expect(failureIdx).toBe(tripIdx + 1);
+				// onRoute fired for the initial hop, the continued re-entry, and the
+				// deterministic a→b — but NOT for the trip (the halt returns first).
+				expect(onRoute.mock.calls.map((c) => c[1])).toEqual(["b", "a", "b"]);
+			});
+		});
+
+		describe("evaluateBackwardJumpGuard — unit semantics (ledgers, telemetry, ring)", () => {
+			/** Hand-built RunContext with `a` pre-visited — every call is a re-entry. */
+			const guardRun = (
+				opts: { progress?: StageDef["progress"]; maxBackwardJumps?: number; maxLaps?: number } = {},
+			): RunContext => {
+				const workflow: Workflow = {
+					name: "guard-unit",
+					start: "a",
+					stages: { a: { kind: "produces", sessionPolicy: "fresh", progress: opts.progress } },
+					edges: { a: "stop" },
+				};
+				const state: RunState = {
+					originalInput: "x",
+					primaryArtifact: undefined,
+					output: undefined,
+					named: {},
+					stagesCompleted: 1,
+					lastAllocatedStageNumber: 1,
+					telemetry: { backwardJumps: 0, droppedRoutingRows: [], droppedFailureRows: [] },
+					failureMemos: [],
+					lastGatedDispatch: undefined,
+					termination: { status: "running" },
+				};
+				return {
+					cwd: tmpDir,
+					runId: "guard-unit",
+					workflow,
+					totalStages: 1,
+					state,
+					visited: new Set(["a"]),
+					revisits: new Map(),
+					progressTrail: new Map(),
+					laps: new Map(),
+					maxBackwardJumps: opts.maxBackwardJumps ?? 3,
+					maxLaps: opts.maxLaps ?? 8,
+					maxIterations: 1,
+					trigger: { kind: "command", name: "/wf" },
+					lifecycle: new LifecycleDispatcher(undefined),
+				};
+			};
+
+			it("first visit: hook never invoked, nothing mutated", async () => {
+				const progress = vi.fn((): ProgressValue => "improved");
+				const run = guardRun({ progress });
+				run.visited.delete("a");
+
+				const g = await evaluateBackwardJumpGuard(run, "a");
+
+				expect(g).toEqual({ kind: "first-visit" });
+				expect(progress).not.toHaveBeenCalled();
+				expect(run.state.telemetry.backwardJumps).toBe(0);
+				expect(run.revisits.size).toBe(0);
+				expect(run.progressTrail.size).toBe(0);
+			});
+
+			it("improved (sync) waives: budget untouched, telemetry still counts, ring records the verdict", async () => {
+				const run = guardRun({ progress: () => "improved", maxBackwardJumps: 1 });
+
+				const g = await evaluateBackwardJumpGuard(run, "a");
+
+				expect(g).toMatchObject({ kind: "re-entry" });
+				if (g.kind !== "re-entry") return;
+				expect(g.halt).toBeUndefined();
+				expect(g.note).toBe("jump: waived (improved), 0/1, lap 1/8");
+				expect(run.revisits.get("a")).toBeUndefined();
+				// Telemetry increments on WAIVED re-entries too.
+				expect(run.state.telemetry.backwardJumps).toBe(1);
+				expect(run.progressTrail.get("a")).toEqual(["improved"]);
+			});
+
+			it("improved (async) waives identically", async () => {
+				const run = guardRun({ progress: async () => "improved" as const, maxBackwardJumps: 1 });
+
+				const g = await evaluateBackwardJumpGuard(run, "a");
+
+				expect(g).toMatchObject({ kind: "re-entry" });
+				if (g.kind !== "re-entry") return;
+				expect(g.halt).toBeUndefined();
+				expect(run.revisits.get("a")).toBeUndefined();
+				expect(run.state.telemetry.backwardJumps).toBe(1);
+			});
+
+			it.each(["unchanged", "regressed", "unknown"] as const)(
+				"a %s verdict counts like a hook-less re-entry",
+				async (verdict) => {
+					const run = guardRun({ progress: () => verdict, maxBackwardJumps: 1 });
+
+					const g = await evaluateBackwardJumpGuard(run, "a");
+
+					expect(g).toMatchObject({ kind: "re-entry" });
+					if (g.kind !== "re-entry") return;
+					expect(g.halt).toBeUndefined();
+					expect(g.note).toBe(`jump: counted (${verdict}) 1/1, lap 1/8`);
+					expect(run.revisits.get("a")).toBe(1);
+					expect(run.state.telemetry.backwardJumps).toBe(1);
+					expect(run.progressTrail.get("a")).toEqual([verdict]);
+				},
+			);
+
+			it('normalizes an off-union return to "unknown" on the trail', async () => {
+				const run = guardRun({
+					progress: () => "better" as unknown as ProgressValue,
+					maxBackwardJumps: 1,
+				});
+
+				const g = await evaluateBackwardJumpGuard(run, "a");
+
+				expect(g).toMatchObject({ kind: "re-entry" });
+				expect(run.revisits.get("a")).toBe(1);
+				expect(run.progressTrail.get("a")).toEqual(["unknown"]);
+			});
+
+			it('a throwing hook degrades to "unknown" and never halts by itself (under budget)', async () => {
+				const run = guardRun({
+					progress: () => {
+						throw new Error("boom");
+					},
+					maxBackwardJumps: 3,
+				});
+
+				const g = await evaluateBackwardJumpGuard(run, "a");
+
+				expect(g).toMatchObject({ kind: "re-entry" });
+				if (g.kind !== "re-entry") return;
+				expect(g.halt).toBeUndefined();
+				expect(run.revisits.get("a")).toBe(1);
+				expect(run.progressTrail.get("a")).toEqual(["unknown"]);
+			});
+
+			it("halts with the trail ring when the count exceeds the cap", async () => {
+				const run = guardRun({ progress: () => "regressed", maxBackwardJumps: 1 });
+				await evaluateBackwardJumpGuard(run, "a"); // 1 ≤ 1 continue
+
+				const g = await evaluateBackwardJumpGuard(run, "a"); // 2 > 1 halt
+
+				expect(run.revisits.get("a")).toBe(2);
+				expect(g).toMatchObject({ kind: "re-entry" });
+				if (g.kind !== "re-entry") return;
+				expect(g.halt?.error).toContain("Backward-jump limit");
+				expect(g.halt?.error).toContain("last progress: regressed, regressed");
+			});
+
+			it("absent hook: counts with no trail entry and no verdict segment", async () => {
+				const run = guardRun({ maxBackwardJumps: 1 });
+
+				const g = await evaluateBackwardJumpGuard(run, "a");
+
+				expect(g).toMatchObject({ kind: "re-entry" });
+				if (g.kind !== "re-entry") return;
+				expect(g.note).toBe("jump: counted 1/1, lap 1/8");
+				expect(run.revisits.get("a")).toBe(1);
+				expect(run.progressTrail.size).toBe(0);
+			});
+
+			it("waived re-entries still increment telemetry — cumulative across waive+count", async () => {
+				const run = guardRun({ maxBackwardJumps: 0 });
+				let verdict: ProgressValue = "improved";
+				run.workflow.stages.a!.progress = () => verdict;
+
+				await evaluateBackwardJumpGuard(run, "a"); // waived
+				verdict = "unchanged";
+				// cap 0: the single counted re-entry reads 1 > 0 and trips — the
+				// halt this row asserts (at cap 1 it would read 1 ≤ 1 and continue).
+				const g = await evaluateBackwardJumpGuard(run, "a"); // counts → trips
+
+				expect(run.state.telemetry.backwardJumps).toBe(2);
+				expect(run.revisits.get("a")).toBe(1); // only the counted one
+				expect(g).toMatchObject({
+					kind: "re-entry",
+					halt: expect.objectContaining({ toast: expect.any(String) }),
+				});
+			});
+
+			it("ring is per-destination and bounded at 3 — the 4th verdict drops the oldest", async () => {
+				const run = guardRun({ progress: () => "unchanged", maxBackwardJumps: 99 });
+				run.visited.add("b");
+
+				for (let i = 0; i < 4; i++) await evaluateBackwardJumpGuard(run, "a");
+				await evaluateBackwardJumpGuard(run, "b"); // b has no hook → no ring entry
+
+				expect(run.progressTrail.get("a")).toEqual(["unchanged", "unchanged", "unchanged"]);
+				expect(run.progressTrail.has("b")).toBe(false);
+			});
+		});
+
+		describe("maxLaps ceiling — the absolute per-destination re-entry bound", () => {
+			it("all-improved laps still halt at the maxLaps+1-th re-entry — revisits never increments on waived laps", async () => {
+				for (let i = 1; i <= 3; i++) {
+					writeArtifact(tmpDir, `.rpiv/artifacts/a/a${i}.md`);
+					writeArtifact(tmpDir, `.rpiv/artifacts/b/b${i}.md`);
+				}
+				const chain = createMockSessionChain({
+					cwd: tmpDir,
+					steps: [
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a3.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b3.md")] },
+					],
+				});
+
+				const workflow = wf(
+					"improved-ceiling",
+					["a", "b", "c"],
+					{ a: { progress: () => "improved" } },
+					{ b: defineRoute(["a", "c"], () => "a", { readsData: false }) },
+				);
+
+				// cap 1 would halt at the 2nd counted re-entry; every lap is
+				// "improved" so the cap is waived — laps 1 and 2 pass under maxLaps 2,
+				// and the 3rd re-entry (laps 3 > 2) halts on the ceiling BEFORE
+				// re-entering a. 6 stages complete; had the waived laps spent the
+				// cap, the run would have halted at 4.
+				const result = await runWorkflow(chain.ctx, {
+					workflow,
+					input: "x",
+					maxBackwardJumps: 1,
+					maxLaps: 2,
+				});
+
+				expect(result.success).toBe(false);
+				expect(result.error).toMatch(/absolute lap ceiling/);
+				expect(result.error).toMatch(/3.*max 2/);
+				expect(result.stagesCompleted).toBe(6);
+			});
+
+			it("maxLaps: 0 halts on the first re-entry even when improved (mirrors maxBackwardJumps: 0)", async () => {
+				writeArtifact(tmpDir, ".rpiv/artifacts/a/a1.md");
+				writeArtifact(tmpDir, ".rpiv/artifacts/b/b1.md");
+				const chain = createMockSessionChain({
+					cwd: tmpDir,
+					steps: [
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
+					],
+				});
+
+				const workflow = wf(
+					"zero-laps",
+					["a", "b", "c"],
+					{ a: { progress: () => "improved" } },
+					{ b: defineRoute(["a", "c"], () => "a", { readsData: false }) },
+				);
+
+				const result = await runWorkflow(chain.ctx, { workflow, input: "x", maxBackwardJumps: 5, maxLaps: 0 });
+
+				expect(result.success).toBe(false);
+				expect(result.error).toMatch(/absolute lap ceiling/);
+				expect(result.error).toMatch(/1 times.*max 0/);
+				// a, b — the ceiling refused the first re-entry, verdict-proof.
+				expect(result.stagesCompleted).toBe(2);
+			});
+
+			// `??` passes NaN through; `laps > NaN` is always false, so an
+			// always-"improved" hook (cap waived) under `maxLaps: NaN` would
+			// never halt. Refused pre-flight: no name claim, no header, no rows.
+			it("maxLaps: NaN is refused pre-flight — the ceiling never gets to fail open, nothing is written", async () => {
+				const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+				const workflow = wf(
+					"nan-ceiling",
+					["a", "b", "c"],
+					{ a: { progress: () => "improved" } },
+					{ b: defineRoute(["a", "c"], () => "a", { readsData: false }) },
+				);
+
+				const result = await runWorkflow(chain.ctx, {
+					workflow,
+					input: "x",
+					name: "nan-run",
+					maxBackwardJumps: 1,
+					maxLaps: Number("garbage"),
+				});
+
+				expect(result).toEqual({
+					stagesCompleted: 0,
+					success: false,
+					error: "maxLaps must be a non-negative integer, got NaN",
+				});
+				// Refused before the name claim and the header write.
+				expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
+			});
+
+			it("maxBackwardJumps: -1 and a fractional maxIterations are refused the same way", async () => {
+				const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+				const workflow = wf("bad-budgets", ["a"]);
+
+				const negative = await runWorkflow(chain.ctx, { workflow, input: "x", maxBackwardJumps: -1 });
+				expect(negative.success).toBe(false);
+				expect(negative.error).toBe("maxBackwardJumps must be a non-negative integer, got -1");
+
+				const fractional = await runWorkflow(chain.ctx, { workflow, input: "x", maxIterations: 2.5 });
+				expect(fractional.success).toBe(false);
+				expect(fractional.error).toBe("maxIterations must be a non-negative integer, got 2.5");
+				expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
+			});
+
+			it("hook-less defaults: the cap (3) trips before the ceiling (8) — cap arm, never the ceiling arm", async () => {
+				for (let i = 1; i <= 4; i++) {
+					writeArtifact(tmpDir, `.rpiv/artifacts/a/a${i}.md`);
+					writeArtifact(tmpDir, `.rpiv/artifacts/b/b${i}.md`);
+				}
+				const steps: Array<{ branch: ReturnType<typeof mockAssistantMessage>[] }> = [];
+				for (let i = 1; i <= 4; i++) {
+					steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/a/a${i}.md`)] });
+					steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/b/b${i}.md`)] });
+				}
+				const chain = createMockSessionChain({ cwd: tmpDir, steps });
+
+				const workflow = wf(
+					"hookless-defaults",
+					["a", "b", "c"],
+					{},
+					{ b: defineRoute(["a", "c"], () => "a", { readsData: false }) },
+				);
+
+				const result = await runWorkflow(chain.ctx, { workflow, input: "x" });
+
+				// Default caps 3/8 on a counted streak: revisits == laps, so the cap
+				// trips at the 4th re-entry (laps 4 ≤ 8 — the ceiling never fires).
+				expect(result.success).toBe(false);
+				expect(result.error).toMatch(/4.*max 3/);
+				expect(result.error).not.toMatch(/ceiling/);
+				expect(result.stagesCompleted).toBe(8);
+			});
+
+			it("both-trip (maxBackwardJumps 10 ≥ maxLaps 8): the ceiling is named, not the cap", async () => {
+				for (let i = 1; i <= 9; i++) {
+					writeArtifact(tmpDir, `.rpiv/artifacts/a/a${i}.md`);
+					writeArtifact(tmpDir, `.rpiv/artifacts/b/b${i}.md`);
+				}
+				const steps: Array<{ branch: ReturnType<typeof mockAssistantMessage>[] }> = [];
+				for (let i = 1; i <= 9; i++) {
+					steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/a/a${i}.md`)] });
+					steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/b/b${i}.md`)] });
+				}
+				const chain = createMockSessionChain({ cwd: tmpDir, steps });
+
+				const workflow = wf(
+					"both-trip",
+					["a", "b", "c"],
+					{},
+					{ b: defineRoute(["a", "c"], () => "a", { readsData: false }) },
+				);
+
+				const result = await runWorkflow(chain.ctx, { workflow, input: "x", maxBackwardJumps: 10, maxLaps: 8 });
+
+				// Hook-less streak: revisits == laps. The 9th re-entry is laps 9 > 8
+				// (ceiling) while revisits 9 ≤ 10 — the ceiling wins the arbitration.
+				expect(result.success).toBe(false);
+				expect(result.error).toMatch(/absolute lap ceiling/);
+				expect(result.error).toMatch(/9.*max 8/);
+				expect(result.stagesCompleted).toBe(18);
+			});
+
+			it("ceiling trip rows: the note names the ceiling + laps arithmetic; trip order is routing-then-failure, one of each", async () => {
+				for (let i = 1; i <= 3; i++) {
+					writeArtifact(tmpDir, `.rpiv/artifacts/a/a${i}.md`);
+					writeArtifact(tmpDir, `.rpiv/artifacts/b/b${i}.md`);
+				}
+				const chain = createMockSessionChain({
+					cwd: tmpDir,
+					steps: [
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b1.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b2.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a3.md")] },
+						{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b3.md")] },
+					],
+				});
+
+				const workflow = wf(
+					"ceiling-rows",
+					["a", "b", "c"],
+					{ a: { progress: () => "improved" } },
+					{ b: defineRoute(["a", "c"], () => "a", { readsData: false }) },
+				);
+
+				const result = await runWorkflow(chain.ctx, {
+					workflow,
+					input: "x",
+					maxBackwardJumps: 1,
+					maxLaps: 2,
+				});
+
+				expect(result.success).toBe(false);
+				const { stages } = readState(tmpDir);
+				const routingRows = stages.filter((s) => s.type === "routing");
+				const failedRows = stages.filter((s) => s.status === "failed");
+				expect(failedRows).toHaveLength(1);
+				// Every b→a row is a re-entry (first visit decides b itself): each
+				// carries the laps arithmetic; the trip row (the last) names the ceiling.
+				expect(routingRows).toHaveLength(3);
+				for (const row of routingRows) expect(row.note).toMatch(/lap \d+\/2/);
+				const trip = routingRows[routingRows.length - 1]!;
+				expect(trip.note).toMatch(/lap 3\/2/);
+				expect(trip.note).toMatch(/ceiling/);
+				// Trip order: the trip's routing row is immediately followed by the
+				// failure row — exactly one of each, failure last.
+				const tripIdx = stages.indexOf(trip);
+				const failureIdx = stages.indexOf(failedRows[0]!);
+				expect(failureIdx).toBe(stages.length - 1);
+				expect(failureIdx).toBe(tripIdx + 1);
+			});
 		});
 	});
 

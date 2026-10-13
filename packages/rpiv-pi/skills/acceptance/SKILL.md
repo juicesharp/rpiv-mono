@@ -71,7 +71,7 @@ An acceptance item is one **observable outcome** the goal asks for — behavior 
 
 Evidence, per item — exactly one of:
 
-- `command` + `expect` — a **read-only, self-contained, repo-root-relative** command expected to exit 0 once the outcome holds (a test invocation, a grep invariant, a `tsc --noEmit`, a file-existence check), with `expect` naming the observable in one line. Ground it in the research/tree so paths and script names are real. It is **future-tense**: it may (and usually will) fail on today's tree — validate runs it after implement.
+- `command` + `expect` — a **read-only, self-contained, repo-root-relative** command expected to exit 0 once the outcome holds (a test invocation, a grep invariant, a `tsc --noEmit`, a file-existence check), with `expect` naming the observable in one line. Ground it in the research/tree so paths and script names are real. It is **future-tense**: it may (and usually will) fail on today's tree — validate runs it after implement. Two limits: the command measures the **outcome itself, never a record of it** (a doc cell, a checkbox, or a table row that says "done" is not evidence the thing happened), and its pass condition must be **reachable by the implementing lanes alone** — a check that can only go green after a person, a paired device, or a network has acted is not a command.
 - `manual` — a one-line human procedure, ONLY when no read-only command can measure the outcome (visual appearance, real-terminal behavior). Prefer a command whenever one exists; a `manual` item is homework validate can record but not discharge.
 
 ## Flow
@@ -82,7 +82,7 @@ Evidence, per item — exactly one of:
 
 1. **Read.** The goal FULLY — it is the sole source of items. The research doc FULLY when given — it is the sole *grounding* for evidence commands (test layouts, script names, conventions). Spot-check any path a command will cite against the real tree.
 2. **Enumerate.** Walk the goal sentence by sentence and extract every explicit ask and explicit constraint as an item (`a1`, `a2`, … in goal order). Ambiguity is resolved toward the goal's own words — restate, don't interpret. Do NOT consult the research for what belongs in the set: a research doc that narrowed the brief must not narrow the inventory.
-3. **Attach evidence.** For each item, derive the strongest read-only command the tree supports and one `expect` line; fall back to `manual` only when nothing runnable can measure it. Never write a command that mutates the tree, reaches the network, or depends on state outside the repo.
+3. **Attach evidence.** For each item, derive the strongest read-only command the tree supports and one `expect` line; fall back to `manual` only when nothing runnable can measure it. Never write a command that mutates the tree, reaches the network, or depends on state outside the repo. Before keeping a command, ask: *could validate's sandbox make this exit 0 with no human in the loop?* If its pass depends on another item's `manual` procedure having been performed, the command is a proxy for that item — drop it; the manual item already carries the ask.
 4. **Write** the inventory in one pass to `.rpiv/artifacts/acceptance/<slug>_<description>.md` (`<description>` a brief kebab-case task summary), `status: ready` directly. Then print the path and `acceptance written: {N} item(s), {M} executable`.
 
 Use this template:
@@ -118,6 +118,7 @@ Derived from the verbatim goal ({goal path}). Items enumerate the goal's explici
 - **Items from the goal ALONE.** Research grounds evidence, never membership — the whole point of this stage is a standard the later narrowing cannot rewrite. If the goal names an ask the research argues against, the item still exists; the PLAN defers it legibly.
 - **The inventory is frozen.** No downstream stage re-emits on the acceptance channel; deferral happens in the plan (visibly, per item id), never by editing this artifact.
 - **Read-only, self-contained commands.** Validate runs them as written after implement — a command that mutates the tree or depends on external state corrupts the very measurement it exists to make.
+- **One observation, one item.** A human-only outcome appears once, as `manual`. Never re-encode its completion as a sibling `command` over its record: validate would gate on a check nothing in the pipeline can satisfy, and the run would stop at the last stage with every machine-verifiable item green.
 - **Future-tense evidence.** Do not run the commands here and do not weaken one because it fails today — failing today is the expected state of a check on unbuilt work.
 - **Non-interactive.** No `ask_user_question`, no subagents. Resolve ambiguity toward the goal's own words; the grade panel adjudicates a genuinely contestable reading.
 - **NEVER edit source files.** This skill produces an inventory document only.

@@ -14,7 +14,7 @@ vi.mock("@earendil-works/pi-tui", async (importOriginal) => {
 // Mock saveVoiceConfig to avoid filesystem writes. Default-return `true` to
 // match the real success path; per-test overrides can return `false` to drive
 // the save-failure notify branch. loadVoiceConfig is mocked too: the shell
-// re-reads it at save time (review I4), so tests control "the file as it is
+// re-reads it at save time, so tests control "the file as it is
 // now" through this mock rather than the constructor snapshot.
 vi.mock("../config/voice-config.js", async (importOriginal) => {
 	const orig = await importOriginal<typeof import("../config/voice-config.js")>();

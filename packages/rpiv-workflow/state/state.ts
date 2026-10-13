@@ -142,6 +142,28 @@ export interface WorkflowStage {
 	 * other row (`undefined` is dropped by `JSON.stringify`).
 	 */
 	collected?: true;
+	/**
+	 * The failed unit's label — present ONLY on a `collected: true` row, where
+	 * `recordUnitHalt` writes it so the resume fold can thread it into the
+	 * rebuilt `failedOutput` sentinel's `dimension` (live sentinel and resume
+	 * twin stay byte-identical). An ADDITIVE optional field in the
+	 * `bashTimeoutStrikes` style: absent ⇒ `JSON.stringify` drops it ⇒
+	 * byte-identical row; the fold's shape-filtered readers ignore it, so no
+	 * `STATE_SCHEMA_VERSION` bump.
+	 */
+	unitLabel?: string;
+	/**
+	 * The failed attempt's 1-based dispatch ordinal — present ONLY on a
+	 * `collected: true` row, where `recordUnitHalt` writes it (threaded from
+	 * the parallel dispatcher's per-attempt count). Consumed by the resume
+	 * fold's budget predicate (`foldFanoutRow` in runner/resume.ts): an
+	 * under-budget ordinal leaves the slot unfilled so the unit re-dispatches
+	 * while `retryHaltedUnits` budget remains; a final-attempt (or absent)
+	 * ordinal folds the sentinel, exactly as before v3. THE schema-v3 delta —
+	 * collected-row fold behavior is version-gated, so v1/v2 trails refuse
+	 * resume rather than mis-replay.
+	 */
+	attemptOrdinal?: number;
 }
 
 /**
@@ -167,13 +189,21 @@ export interface LoopCapRow {
  *
  * v2 = parallel-fanout trails: completion rows are placed by `unitIndex` (not
  * trail order), and a `collected:true` failed row's `errMsg` rebuilds a
- * `failedOutput` sentinel. A v1 trail (sequential fold) — and an absent
- * `v`, which resolves to 1 — is rejected by `reconstructState`'s header version
- * gate with `version-mismatch` ("start a fresh run"): there is no in-place
- * migration (sole consumer rpiv-pi; no back-compat). Tested in
- * `runner/resume.test.ts`.
+ * `failedOutput` sentinel. Still true under v3.
+ *
+ * v3 = budget-aware collected rows: a `collected:true` row carries the failed
+ * attempt's 1-based `attemptOrdinal`, and the resume fold re-dispatches the
+ * unit while `retryHaltedUnits` budget remains (an under-budget collected row
+ * leaves its slot unfilled, exactly like a pending one) instead of folding
+ * its sentinel; the retry budget is fresh per resume invocation (ordinals
+ * restart at 1, bounded only by human-initiated resumes).
+ *
+ * A v1 or v2 trail — and an absent `v`, which resolves to 1 — is rejected by
+ * `reconstructState`'s header version gate with `version-mismatch` ("start a
+ * fresh run"): there is no in-place migration (sole consumer rpiv-pi; no
+ * back-compat). Tested in `runner/resume.test.ts`.
  */
-export const STATE_SCHEMA_VERSION = 2;
+export const STATE_SCHEMA_VERSION = 3;
 
 /** First line of the JSONL file. */
 export interface WorkflowHeader {
@@ -261,6 +291,17 @@ export interface RunRecap {
 	 * carry no reason even on a terminal row.
 	 */
 	failureReason?: string;
+	/**
+	 * Route-note recap: every note-bearing FORWARD routing row's `note`,
+	 * verbatim, in trail order. Stop-row notes are EXCLUDED — the
+	 * completed→stopped refinement renders a stop's note exactly once, as
+	 * `failureReason` (`stopped at <stage>: <note>`); a trail-order echo would
+	 * double-render it. Set only when at least one such row exists; absent
+	 * (never `[]`) otherwise, so note-less and legacy trails project
+	 * byte-identically. Rides EVERY outcome — a failed run may carry earlier-hop
+	 * notes (a gate explained itself before a later stage blew up).
+	 */
+	routingNotes?: string[];
 	/**
 	 * Workflow name (matches `Workflow.name` at run-time) projected from the
 	 * header. `undefined` when the header row is missing or malformed (a

@@ -21,7 +21,7 @@ import {
 	type NextStep,
 	sequentialStrategyOf,
 } from "./loop-kinds.js";
-import type { Output } from "./output.js";
+import { failedOutput, type Output } from "./output.js";
 import { StagePreflightError } from "./stage-errors.js";
 import type { RunContext, RunState } from "./types.js";
 
@@ -177,5 +177,27 @@ describe("fanout cursor vocabulary — filledCount is a count, index stays the p
 		expect(cursor.filledCount).toBe(2); // COUNT of filled slots
 		expect(cursor.index).toBe(0); // POINTER unchanged by the fold (≠ filledCount)
 		expect(pendingFanoutIndices(cursor, 3)).toEqual([1]); // pending derived from slots, not the count
+	});
+
+	it("a failed sentinel folded over a prior round's output overwrites the slot — the stale content is gone, accounting stays correct", () => {
+		const cursor = freshCursor();
+		const state = { named: {}, primaryArtifact: undefined } as RunState;
+		const prior = output();
+		foldFanoutCompletion(state, cursor, def, "fan", 0, 2, prior);
+		expect(cursor.slots?.[0]).toBe(prior);
+		const reason = "grade produced no verdict";
+		const sentinel = failedOutput({ stage: "fan", stageNumber: 1, ts: "t", runId: "r" }, reason, "actionability");
+		foldFanoutCompletion(state, cursor, def, "fan", 0, 2, sentinel);
+		// Latest-wins at the index: the sentinel IS the slot and the channel tail.
+		expect(cursor.slots?.[0]).toBe(sentinel);
+		expect((state.named.fan as Output[])[0]).toBe(sentinel);
+		// Accounting: one filled slot; the failed sentinel is never lastProduce.
+		expect(cursor.filledCount).toBe(1);
+		expect(cursor.lastProduce).toBeUndefined();
+		// A non-failed sibling at a higher index still sources lastProduce.
+		const sibling = output();
+		foldFanoutCompletion(state, cursor, def, "fan", 1, 2, sibling);
+		expect(cursor.filledCount).toBe(2);
+		expect(cursor.lastProduce).toEqual({ output: sibling, artifact: sibling.artifacts[0] });
 	});
 });

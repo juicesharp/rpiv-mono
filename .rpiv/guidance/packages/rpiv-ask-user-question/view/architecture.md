@@ -14,10 +14,12 @@ Orchestration shell above leaf widgets: composes pi-tui primitives into a height
 stateful-view.ts          — StatefulView<P> interface + ActiveView discriminant
 component-binding.ts      — globalBinding / perTabBinding factories → BoundGlobalBinding / BoundPerTabBinding
 props-adapter.ts          — QuestionnairePropsAdapter (fan-out + invalidate())
-tab-components.ts         — TabComponents per-tab bundle record
+tab-components.ts         — TabComponents per-tab bundle record (incl. the `bodyHeights(width) → {current, max}` thunk feeding the dialog's height closures)
 tab-content-strategy.ts   — TabContentStrategy + QuestionTabStrategy / SubmitTabStrategy + OneLineClippedText
-dialog-builder.ts         — DialogView class + hint/heading constants + DialogProps/DialogConfig.
+dialog-builder.ts         — DialogView class + DialogProps/DialogConfig; re-exports the dialog copy by name.
                             Residual height-equalizer computed inline as `spacerRows` in `render()`.
+dialog-copy.ts            — Hint / heading / Submit-tab copy constants. A leaf: imports nothing from `view/`,
+                            so `dialog-builder` ↔ `tab-content-strategy` never form a runtime cycle (#208).
 components/               — Leaf renderers (see .rpiv/guidance/packages/rpiv-ask-user-question/view/components/architecture.md)
 ```
 
@@ -66,23 +68,35 @@ class QuestionTabStrategy implements TabContentStrategy {
     bodyHeight(w, _s) { return this.config.getCurrentBodyHeight(w); }
     // hint via OneLineClippedText (not Text): the collapse affordance would word-wrap and break footerRowCount=2
     footerRows(state) { return [Spacer, OneLineClippedText(hint)]; }
+    // midRows: notes editor while notesVisible; otherwise ONE OneLineClippedText row
+    // "Note for this answer: <first line>[ …]" when selectSavedNote finds a note (#197) — clipped so a long or
+    // multi-line note never crowds the body; mid rows are subtracted from the body allowance (rowsAroundBody)
 }
-// SubmitTabStrategy: footerRowCount = 5; pads missing picker with Spacer rows to preserve count
+// SubmitTabStrategy: footerRowCount = 5; pads missing picker with Spacer rows to preserve count; mounts the
+// shared notes Editor in midRows for the global note (GLOBAL_NOTES_HEADER) + a committed-note review entry
+// gated on !state.notesVisible; per-question review notes use the same `notes.saved_label` as the question tab; the submit hint row adds the global-note key while the editor is closed
 ```
 
 ## DialogView Chrome Order (always)
 top `DynamicBorder` → (if `isMulti`) `tabBar` → `Spacer(1)` → strategy `headingRows` → `bodyComponent` → `Spacer(1)` → `midRows` → bottom `DynamicBorder` → `footerRows` → inline residual `spacerRows`. `maxFooterRowCount` cached at construction as `max(questionStrategy.footerRowCount, submitStrategy?.footerRowCount ?? 0)`. The footer hint interpolates the configured `collapseKey` (`DialogConfig.collapseKey`, construction-time config — not canonical state) into `HINT_PART_COLLAPSE_TEMPLATE` via `{key}`/`KEY_PLACEHOLDER` and omits the collapse part when the key is `"off"`; when `state.collapsed`, the session swaps in `COLLAPSED_HINT_TEMPLATE` interpolated the same way.
 
+## Body Row Allowance (#210)
+Before building the container, `DialogView.render` computes the rows the body may use — budget minus top chrome, rendered heading rows, the body's trailing spacer + mid rows, and bottom chrome — and hands them to the active tab's preview pane (`allotBodyRows` → `PreviewPane.setRowAllowance`; other tabs cleared). A fitted body never exceeds the allowance, so the dialog's own scroll window (shared math in `scroll-window.ts`) only engages for bodies that do not fit themselves (option lists, multi-select) or when the allowance is below `MIN_SCROLL_ROWS_WITH_PINNED_HEADING`.
+
 ## Residual Spacer (inline in `render()`)
 ```ts
 // Emits Math.max(0, ...) blank rows AFTER the footer (no overflow path only).
+// restingMidRows = mid rows while the notes editor is CLOSED (the saved-note row, #197) — absorbed so a
+// noted tab keeps the cross-tab height when the body leaves slack; the open editor still grows the dialog.
+const restingMidRows = state.notesVisible ? 0 : this.rowsAroundBody(strategy, width) - 1;
 const spacerRows = Math.max(0,
     this.config.getBodyHeight(width) + this.maxFooterRowCount
-    - strategy.bodyHeight(width, state) - strategy.footerRowCount);
+    - strategy.bodyHeight(width, state) - strategy.footerRowCount - restingMidRows);
 ```
-Absorbs footer-row-count asymmetry across tabs — total dialog height equals across Question and Submit tabs without inflating natural body height. Computed inline in `DialogView.render` (no separate component); under terminal overflow it is dropped in favour of the 3-region scroll partition.
+Absorbs footer-row-count asymmetry across tabs — total dialog height equals across Question and Submit tabs without inflating natural body height. Computed inline in `DialogView.render` (no separate component); under terminal overflow it is dropped in favour of the 3-region scroll partition. In that partition the heading rows (badge + question, measured in rendered rows) join the fixed top whenever at least `MIN_SCROLL_ROWS_WITH_PINNED_HEADING` (3) body rows remain, so the question never scrolls away; below that the heading scrolls with the body.
 
 ## Architectural Boundaries
+- **No runtime import cycles** — the package graph is async (top-level `await` in `i18n-bridge.ts`), and esbuild's ESM bundle turns any cycle of value imports into two initializers awaiting each other, so the questionnaire never mounts (#208; jiti masks it). Shared values go in a leaf module (e.g. `dialog-copy.ts`); a type-only import back is fine. `import-graph.test.ts` fails on any cycle and names it
 - **Only `PropsAdapter` calls `setProps`** — `DialogView` never writes sibling props; it only reads `liveProps`
 - **`DialogView.invalidate()` is a no-op** — cache busts go through the adapter's registry walk
 - **NO `string.length` width math** — chrome uses `Spacer(n)` + row-counted residual; body height via `render(w).length` or injected `getBodyHeight`/`getCurrentBodyHeight` thunks

@@ -103,8 +103,10 @@ type FsHandle = { kind: "fs"; path: string };
  * whose findings are ALL `advisory` rates `low` — honest (`pass: false`, the
  * findings persist on the trail and downstream readers see them) but
  * deliberately below the gate floor, so a resolver limitation never terminates
- * a loop-less preset. The `score` is the binary verdict scale (100 = clean,
- * 0 = finding; the gate keys off `severity`, never this number).
+ * a loop-less preset. The `score` mirrors that tier (100 = clean,
+ * 0 = at least one BLOCKING finding, `null` = an all-advisory non-pass — an
+ * honest null, never a fake zero; the gate keys off `severity`, never this
+ * number).
  *
  * `extra` lets a caller stamp additional gate-readable fields onto the verdict
  * data (and the persisted JSON, so the trail records them) — currently only
@@ -122,7 +124,7 @@ const writeStructureVerdict = (
 	const data = {
 		dimension: "structure",
 		pass,
-		score: pass ? VERDICT_PASS_SCORE : VERDICT_FAIL_SCORE,
+		score: pass ? VERDICT_PASS_SCORE : blocking ? VERDICT_FAIL_SCORE : null,
 		severity: pass ? "none" : blocking ? "high" : "low",
 		artifact: handleToString(handle),
 		findings,

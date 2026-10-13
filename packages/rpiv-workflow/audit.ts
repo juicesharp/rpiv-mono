@@ -194,6 +194,14 @@ export function recordUnitHalt(ctx: WorkflowHostContext, audit: AuditContext, er
 		errMsg,
 		session: audit.session,
 		...unitRowFields(audit.unit),
+		// The failed unit's label — additive, collected rows only. The resume
+		// fold threads it into the rebuilt sentinel's dimension so the live and
+		// replayed sentinels stay byte-identical (rebuildCollectedSentinel).
+		...(audit.unit ? { unitLabel: audit.unit.label } : {}),
+		// The failed attempt's 1-based ordinal — the resume fold's budget input:
+		// an under-budget collected row leaves its slot unfilled so resume
+		// re-dispatches the unit while `retryHaltedUnits` budget remains.
+		...(audit.attemptOrdinal !== undefined ? { attemptOrdinal: audit.attemptOrdinal } : {}),
 	});
 	recordFailureForensics(ctx, audit, errMsg);
 }

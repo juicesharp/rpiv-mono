@@ -8,7 +8,7 @@ A telemetry pipeline: it subscribes to Pi lifecycle + pi-subagents EventBus even
 
 ## Dependencies
 - **`@earendil-works/pi-coding-agent`** (peer): `ExtensionAPI`, lifecycle events + EventBus
-- **`typebox`** (runtime dep): config schema + EventBus payload validation
+- **`typebox`** (`peerDependencies: "*"`, host-provided): config schema + EventBus payload validation. Pi supplies and aliases it at load time; never a `dependencies` entry (v2.12.0, #282)
 - **`@juicesharp/rpiv-config`** (runtime dep): `loadJsonConfigWithLegacyFallback` reads config XDG-first (`XDG_CONFIG_HOME`) with a one-way fallback to the legacy `~/.config` path when the XDG file is absent; `configPath` remains only for the save path (`saveJsonConfig`)
 - **`@mlflow/core`** (runtime dep): trace/span primitives — loaded lazily, never at extension start
 

@@ -9,11 +9,11 @@ User-invocable AI workflow definitions. Each `SKILL.md` is a structured prompt i
 ## Dependencies
 - **Pi framework**: reads `"skills": ["./skills"]` from `package.json`; injects SKILL.md body as system context on invocation
 - **Sibling plugins**: provide the tools skills call (`ask_user_question`, `todo`, `advisor`, `web_search`/`web_fetch`, the `Agent` dispatcher)
-- **`extensions/rpiv-core/`**: session-time scaffolding, guidance/git-context injection, bundled-agent sync; registers each skill's `contract:` frontmatter into the rpiv-workflow registry (`skill-contracts-source.ts`) and injects the session-start pipeline index (`pipeline-pointer.ts`)
+- **`extensions/rpiv-core/`**: session-time guidance/git-context injection, bundled-agent sync; registers each skill's `contract:` frontmatter into the rpiv-workflow registry (`skill-contracts-source.ts`) and injects the session-start pipeline index (`pipeline-pointer.ts`)
 - **`@juicesharp/rpiv-args`**: substitutes `$N`/`$ARGUMENTS`/`$@`/`${@:N[:L]}` placeholders in skill bodies before they reach the agent loop; on the token path it also emits the raw argument string in a `Skill input:`-labeled trailer after the skill block so supplied input is never misread as empty (issue #89)
 
 ## Consumers
-- **Users**: `/skill:<name>` invokes the matching skill. Most pipeline-stage/fanout skills (20 of 29) declare `disable-model-invocation: true` (`code-review` and `commit` are stage-run yet stay model-visible) — hidden from the model's skill list, they run only on explicit invocation or workflow dispatch; a compact stage-command index injected at session start keeps them discoverable
+- **Users**: `/skill:<name>` invokes the matching skill. Most pipeline-stage/fanout skills declare `disable-model-invocation: true` — hidden from the model's skill list, they run only on explicit invocation or workflow dispatch; the model-visible set is the utility/annotation skills (annotate-guidance, annotate-inline, changelog, code-review, commit, create-handoff, migrate-to-guidance, pr-triage, resume-handoff). A compact stage-command index injected at session start keeps hidden stages discoverable
 - **Workflows**: chain wiring is framework-enforced — each skill's `contract:` produces/consumes block drives contract-driven routing, stage-compatibility validation, and outcome derivation; only human-facing trigger prose ("Always requires a [upstream] artifact") remains in `description`
 
 ## Module Structure
@@ -23,10 +23,11 @@ User-invocable AI workflow definitions. Each `SKILL.md` is a structured prompt i
                                     that downstream agents grep for. Read at runtime, never inlined.
 <skill-name>/examples/            — Optional. Few-shot reference outputs. Cited by relative path with a
                                     "What makes this example good" annotation block.
-<skill-name>/_helpers/            — Optional. Skill-private Node helpers (code-review's review-range.mjs, pr-triage's pr-fetch.mjs).
+<skill-name>/_helpers/            — Optional. Skill-private Node helpers (code-review's review-range.mjs,
+                                    pr-triage's pr-fetch.mjs, elaborate's validate-workflow-invariant.mjs).
 _shared/                          — Cross-skill Node helpers (now, git-changes, git-context, changelog-bootstrap,
-                                    list-recent, slice-overlap, stitch-elaborations — that last run by the workflow
-                                    host to fold per-phase elaborations back into the plan). Never inlined.
+                                    list-recent, slice-overlap, stitch-elaborations, reconcile-lint — the last two
+                                    also run by the workflow host). Never inlined.
 ```
 
 ## SKILL.md Frontmatter Schema
@@ -38,7 +39,7 @@ description: "What it does. Use when [trigger]."
 argument-hint: "[what the user passes]"
 allowed-tools: Bash(git *), Read, Glob, Grep   # restricts the tool set (may list Agent); omit to inherit everything
 shell-timeout: 10         # seconds, for the body's shell blocks (rpiv-args; default 120s, 0 disables)
-disable-model-invocation: true   # the norm (20/29) — most pipeline-stage/fanout skills; code-review, commit, and utility skills omit it
+disable-model-invocation: true   # the norm for pipeline-stage/fanout skills; utility skills omit it
 contract:                 # every skill declares one; produces/consumes drive routing + stage-compat validation
   produces: { kind: produces, meta: { artifactKind: slices }, data: { …JSON schema… } }
   consumes: { meta: { artifactKind: [research, slices] } }
@@ -72,12 +73,13 @@ Per-agent isolation comes from the agent's own `isolated: true` frontmatter (emp
 - Prompt: "…"
 Wait for ALL agents to complete before proceeding.  ← explicit sync barrier
 
-## Important Notes   ← last section: ALWAYS/NEVER ordering rules and prohibitions
+## Important Notes   ← interactive skills' last section: ALWAYS/NEVER ordering rules and prohibitions
+## Hard rules        ← the fanout family's last section instead (single-pass prohibitions)
 ```
 
 ## Fanout Skill Archetype
 
-The `build` workflow's sliced flow added a second archetype — `design-slice`, `synthesize`, `grade`, `amend`, `elaborate`, plus `implement`'s single-phase fan-out lane. Conventions: single-pass with "No subagents. No self-review. No questions." (a downstream grade panel is the validation), flag-style arguments (`--dimension`, `--designs`, `--slices`, `--slice-verdicts`, `--upstream`), `disable-model-invocation: true`, and machine-consumed artifacts written to `.rpiv/artifacts/verdicts|elaborations|slices/`. Dispatched per-unit by the workflow host — "Use as a fanout unit, not standalone." Bookending the fanout: `slice` produces the map the fanout is cut from and is interactive in fresh mode (`ask_user_question` forks + confirm-before-write; only RE-SLICE mode is non-interactive), and `design-review` runs once as a single fan-in `ask_user_question` checkpoint — neither is dispatched per-unit.
+The `build` workflow's sliced flow runs a second archetype — `design-slice`, `synthesize`, `grade`, `amend`, `elaborate`, plus `implement`'s single-phase fan-out lane. Conventions: single-pass with "No subagents. No self-review. No questions." (a downstream grade panel is the validation), flag-style arguments (`--dimension`, `--designs`, `--slices`, `--slice-verdicts`, `--upstream`), `disable-model-invocation: true`, terminal `## Hard rules` section, and machine-consumed artifacts written to `.rpiv/artifacts/verdicts|elaborations|slices/`. Dispatched per-unit by the workflow host — "Use as a fanout unit, not standalone." Bookending the fanout: `slice` produces the map the fanout is cut from and is interactive in fresh mode (`ask_user_question` forks + confirm-before-write; only RE-SLICE mode is non-interactive), and `design-review` runs once as a single fan-in `ask_user_question` checkpoint — neither is dispatched per-unit.
 
 ## Architectural Boundaries
 - **NO tool logic in SKILL.md** — skills describe workflows; extensions provide tools
@@ -93,7 +95,7 @@ The `build` workflow's sliced flow added a second archetype — `design-slice`, 
 4. Multi-step skills: add a workflow map after the H1; use `## Step N:` headings
 5. For parallel agent steps: append `(parallel agents)` to the heading; close with an explicit sync-barrier line
 6. Developer checkpoints: use `ask_user_question` for 2-4 concrete options; `❓ Question:` free-text prefix for open-ended — one question at a time, wait for the answer before asking the next
-7. Prohibitions and ordering rules go in `## Important Notes` as the final section
+7. Prohibitions and ordering rules go in `## Important Notes` (interactive) or `## Hard rules` (fanout) as the final section
 8. If the skill produces structured artifacts consumed downstream, create a `templates/` subfolder and cite it as a runtime read
 9. If output quality benefits from concrete examples, create an `examples/` subfolder and cite each with a "What makes this example good" annotation block
 10. Pipeline skills: declare a `contract:` block (produces/consumes) and `disable-model-invocation: true`; make the upstream artifact path the `argument-hint`

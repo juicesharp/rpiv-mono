@@ -2,11 +2,12 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, type Editor, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { COLLAPSE_KEY_OFF, formatKeySpecForDisplay } from "../config.js";
 import { t } from "../state/i18n-bridge.js";
+import { selectSavedNote } from "../state/selectors/derivations.js";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
 import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.js";
+import type { DialogState } from "./dialog-builder.js";
 import {
-	type DialogState,
 	HINT_PART_CANCEL,
 	HINT_PART_CLEAR,
 	HINT_PART_COLLAPSE_TEMPLATE,
@@ -20,7 +21,7 @@ import {
 	KEY_PLACEHOLDER,
 	READY_PROMPT,
 	REVIEW_HEADING,
-} from "./dialog-builder.js";
+} from "./dialog-copy.js";
 import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
 
@@ -28,6 +29,8 @@ const NOTES_HEADER = "Notes:";
 const GLOBAL_NOTES_HEADER = "Global note:";
 const REVIEW_GLOBAL_HINT = "n to add a note";
 const REVIEW_NOTE_LABEL = "Note";
+/** Label for a question's saved note — the question tab's resting row and the review entry (#197). */
+const SAVED_NOTE_LABEL = "Note for this answer:";
 
 /**
  * Single-row, width-clipped chrome cell. The footer row count is invariant
@@ -128,12 +131,22 @@ export class QuestionTabStrategy implements TabContentStrategy {
 	}
 
 	midRows(state: DialogState): Component[] {
-		if (!state.notesVisible) return [];
-		return [
-			new Text(this.config.theme.fg("muted", t("notes.header", NOTES_HEADER)), 1, 0),
-			this.config.notesInput,
-			new Spacer(1),
-		];
+		if (state.notesVisible) {
+			return [
+				new Text(this.config.theme.fg("muted", t("notes.header", NOTES_HEADER)), 1, 0),
+				this.config.notesInput,
+				new Spacer(1),
+			];
+		}
+		// A saved note stays visible once its editor closes (#197): one clipped row, so a long
+		// or multi-line note cannot crowd the options — `n` reopens it in full. Mid rows are
+		// subtracted from the body allowance (`DialogView.rowsAroundBody`), so the row is
+		// height-safe.
+		const note = selectSavedNote(state.notesByTab, state.answers, state.currentTab);
+		if (note === undefined) return [];
+		const [firstLine = "", ...rest] = note.split("\n");
+		const text = `${t("notes.saved_label", SAVED_NOTE_LABEL)} ${firstLine}${rest.length > 0 ? " …" : ""}`;
+		return [new OneLineClippedText(this.config.theme.fg("dim", text), 1)];
 	}
 
 	footerRows(state: DialogState): Component[] {
@@ -193,7 +206,13 @@ export class SubmitTabStrategy implements TabContentStrategy {
 				new Text(`   ${this.config.theme.fg("muted", "→")} ${this.config.theme.fg("text", answerText)}`, 1, 0),
 			);
 			if (a.notes && a.notes.length > 0) {
-				c.addChild(new Text(this.config.theme.fg("dim", `     notes: ${a.notes}`), 1, 0));
+				c.addChild(
+					new Text(
+						this.config.theme.fg("dim", `     ${t("notes.saved_label", SAVED_NOTE_LABEL)} ${a.notes}`),
+						1,
+						0,
+					),
+				);
 			}
 		}
 		// Committed global note (#182) as a review entry — pressing `n` gets visible
@@ -243,7 +262,9 @@ export class SubmitTabStrategy implements TabContentStrategy {
 						"warning",
 						`${t("review.incomplete", INCOMPLETE_WARNING_PREFIX)} ${missing.join(", ")}`,
 					);
-		const out: Component[] = [new Spacer(1), new Text(promptText, 1, 0)];
+		// One row, never wrapped: `footerRowCount` counts it as one, and a wrapped prompt
+		// (long list of unanswered headers) would desync the chrome's row math (#261).
+		const out: Component[] = [new Spacer(1), new OneLineClippedText(promptText, 1)];
 		if (this.config.submitPicker) {
 			out.push(this.config.submitPicker);
 		} else {

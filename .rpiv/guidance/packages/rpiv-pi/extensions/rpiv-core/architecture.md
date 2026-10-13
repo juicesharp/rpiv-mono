@@ -1,49 +1,87 @@
 # rpiv-core Extension
 
 ## Monorepo Context
-Lives inside `packages/rpiv-pi/`. Sibling tool source is at `../../../rpiv-<name>/`; this extension never statically value-imports them from the entry graph — `siblings.ts` regex-detects them in `~/.pi/agent/settings.json`. Adding a new sibling requires a `siblings.ts` entry plus a `peerDependencies` line in `rpiv-pi/package.json` pinned to `"*"`. Version changes flow through `node scripts/release.mjs` at monorepo root.
+Lives inside `packages/rpiv-pi/`. Sibling tool source is at `../../../rpiv-<name>/`; this extension never statically value-imports them from the entry graph — `siblings.ts` regex-detects them in `~/.pi/agent/settings.json` OR in the source paths of what is loaded (#216). Adding a new sibling requires a `siblings.ts` entry plus a `peerDependencies` line in `rpiv-pi/package.json` pinned to `"*"` (the registry also covers pinned third-party runtime deps — e.g. `@tintinweb/pi-subagents`, the Agent dispatcher rpiv-pi needs installed, with a fork-detection regex; its unscoped legacy name rides `LEGACY_SIBLINGS` and is pruned on upgrade). Version changes flow through `node scripts/release.mjs` at monorepo root.
 
 ## Responsibility
-Pi runtime orchestrator and detached-execution launcher/observer host. Owns zero tools. Wires session lifecycle hooks (guidance injection, git-context injection, pipeline-stage index, bundled-agent sync) and registers the rpiv-* slash commands plus the non-prefixed `/lanes`. Every `/wf` stage runs in an isolated child session spawned via the Pi SDK (`sdk-workflow-host.ts`, bounded parallel fan-out); the interactive session stays a launcher/observer with an always-on lane dock, lane browser/console, and a question-lifecycle → Warp bridge. Also hosts the model-management layer (`models.json` validation, `/rpiv-models` picker, `/skill:` override bracket) and contributes the four built-in `/wf` workflows (build / vet / polish / ship) + skill contracts into the `@juicesharp/rpiv-workflow` sibling via guarded dynamic imports. Pipeline-stage skills carry `disable-model-invocation` — gated to explicit `/skill:<name>` or workflow dispatch, with a compact stage index injected at session start (`pipeline-pointer.ts`). All tool surfaces live in sibling plugins listed in `siblings.ts`; all workflow intelligence lives in `skills/`.
+Pi runtime orchestrator and detached-execution launcher/observer host. Owns zero tools. Wires session lifecycle hooks (guidance injection, git-context injection, pipeline-stage index, bundled-agent sync) and registers the rpiv-* slash commands plus the non-prefixed `/lanes`. Every `/wf` stage runs in an isolated child session spawned via the Pi SDK (`sdk-workflow-host.ts`, bounded parallel fan-out, subagent token accounting); the interactive session stays a launcher/observer with an always-on lane dock, lane browser/console, and a question-lifecycle → Warp bridge. Also hosts the model-management layer (`models.json` validation, `/rpiv-models` picker, `/skill:` override bracket) and contributes the four built-in `/wf` workflows (build / vet / polish / ship) + skill contracts into the `@juicesharp/rpiv-workflow` sibling via guarded dynamic imports. Pipeline-stage skills carry `disable-model-invocation` — gated to explicit `/skill:<name>` or workflow dispatch, with a compact stage index injected at session start (`pipeline-pointer.ts`). All tool surfaces live in sibling plugins listed in `siblings.ts`; all workflow intelligence lives in `skills/`.
 
 ## Dependencies
 - **`@earendil-works/pi-coding-agent`**: `ExtensionAPI`, event-type guards, Pi SDK session machinery (`createAgentSession` — `sdk-workflow-host.ts` only). **`@earendil-works/pi-tui`**: static in the lane-*/picker UI modules. **`@earendil-works/pi-ai`** (peer): `Model` types + value imports (`getSupportedThinkingLevels` in `rpiv-models/items.ts`).
 - **`@juicesharp/rpiv-config`** (dependency): static value imports — `configPath` + `loadJsonConfigWithLegacyFallback` + `validateConfig` in `models-config.ts`; `parseModelKey` in `session-capture.ts` + `sdk-workflow-host.ts`; `loadJsonConfigWithLegacyFallback` + `modelKey` + `saveJsonConfig` in `rpiv-models/`.
-- **`typebox`** (dependency `^1.1.24`): `Type`/`Static` schema for `models.json` in `models-config.ts`.
-- **`@juicesharp/rpiv-workflow`** (peer): guarded dynamic `import(...)` of `/startup` in `register-built-in-workflows.ts`, `workflow-execution-host.ts`, `lane-progress.ts`, `outcome-derivation.ts`, `skill-contracts-source.ts`; of `/registration` in `models-config-sources.ts`; of `/runner` in `lane-switcher.ts` (rerun-failed-run callback). Degrades silently when absent (isModuleNotFound guard). Off-entry-graph modules statically value-import the peer — `built-in-workflows.ts` (`/registration`), `built-ins/shared.ts` (`/registration` + `/runner`), `artifact-collector.ts` (`/registration`) — safe only because they are reached solely via those guarded dynamic imports; `skill-contracts-source.ts` sits on the entry graph and imports `/registration` types only.
+- **`typebox`** (`peerDependencies: "*"`, host-provided): `Type`/`Static` schema for `models.json` in `models-config.ts`. Pi supplies and aliases it at load time; never a `dependencies` entry (v2.12.0, #282).
+- **`@juicesharp/rpiv-workflow`** (peer): guarded dynamic `import(...)` of `/startup` in `register-built-in-workflows.ts`, `workflow-execution-host.ts`, `lane-progress.ts`, `outcome-derivation.ts` (itself reached dynamically from `skill-contracts-source.ts`, keeping artifact-collector's static edge off the entry graph), `skill-contracts-source.ts`; of `/registration` in `models-config-sources.ts`; of `/runner` in `lane-switcher.ts` (rerun-failed-run callback). Degrades silently when absent (isModuleNotFound guard). Off-entry-graph modules statically value-import the peer — `built-in-workflows.ts` (the composition barrel), its `workflows/*.ts` modules, `artifact-collector.ts`, and the whole `built-ins/` cluster (`/registration` + `/runner`; see `.rpiv/guidance/packages/rpiv-pi/extensions/rpiv-core/built-ins/architecture.md`) — safe only because they are reached solely via those guarded dynamic imports; `skill-contracts-source.ts` sits on the entry graph and imports `/registration` types only.
 - **`@juicesharp/rpiv-warp`** (opt-in — in neither `SIBLINGS` nor `peerDependencies`): guarded dynamic import in `workflow-question-warp-bridge.ts` for the per-run Blocked badge.
 - Node built-ins: `node:fs`, `node:path`, `node:url`, `node:os`, `node:child_process`.
-- External processes: `git` (via `pi.exec`), `pi` CLI (via `spawn` for the installer).
+- External processes: `git` (via `pi.exec`), `pi` CLI (via `spawn` for the installer), `node` (the build workflow's code-splice stage shells out to `skills/_shared/stitch-elaborations.mjs` via `execFileSync`).
 
-Sibling *presence detection* stays filesystem-based (regex over settings); two siblings load at runtime — `rpiv-workflow` and the opt-in `rpiv-warp` — always through guarded optional dynamic import. `sibling-import-graph.test.ts` enforces that no file statically reachable from `index.ts` value-imports a sibling.
+Sibling *presence detection* is settings ∪ loaded: `package-checks.ts` unions the settings regex with a runtime snapshot (`loaded-siblings.ts` `readLoadedSiblingSources(pi)` — `sourceInfo.path` of every tool and `source: "extension"` command, plus `marker` slots on `globalThis` for siblings with neither, today only rpiv-args) taken ONCE per pass (session_start maintenance, `/rpiv-setup`, `/rpiv-update-agents`) and threaded into the banner, the installer and both agents-sync gates. Omitting the snapshot is exactly the settings-only rule, so the union can only find MORE siblings (kits, `pi install -l`, `pi -e` — #216); two siblings load at runtime — `rpiv-workflow` and the opt-in `rpiv-warp` — always through guarded optional dynamic import. `sibling-import-graph.test.ts` enforces that no file statically reachable from `index.ts` value-imports a sibling.
 
 ## Consumers
 - **Pi extension host**: loads via `package.json` `"pi": { "extensions": ["./extensions"] }`; calls `default export(pi: ExtensionAPI)` at session start — and again inside every detached child session, which is why registration must be root-gated + idempotent
 
 ## Module Structure
 ```
-index.ts                — Composer; no inline handlers, but encodes ordering invariants: session-capture before skill-bracket; rpiv-workflow-dependent registrars chained strictly in sequence inside an async IIFE (jiti half-initialized-barrel race); provider/bridge hooks wired to the root launcher's session_start, not called directly.
-session-hooks.ts        — Lifecycle wiring + guidance.ts / git-context.ts / agents.ts / pipeline-pointer.ts engines; compaction only marks the exact SessionManager and defers one merged context block to its next before_agent_start (never sendMessage inside session_compact).
-sdk-workflow-host.ts    — Sole Pi-SDK importer: child AgentSession per stage/fanout unit, bounded parallel, deferring lane-relay UI.
-run-lane-registry.ts    — Process-global in-memory run/lane/question state; seeds pending fan-out unit lanes at fanout onLoopStart (seedPendingUnits).
-session-capture.ts      — session_start capture of modelRegistry/uiContext/model, borrowed for per-child model resolution (replaced model-override's global pi.setModel flip).
-lane-*.ts (14 modules)  — Lane UI: belowEditor dock (+dock-editor), /lanes switcher, self-windowing console, transcript replay live + disk-jsonl (lane-transcript*, lane-tool-defs renderer cache), progress/usage/streaming/failure, shared lane-list renderer, deferring relay-ui.
-question-lifecycle.ts   — workflow-question lifecycle events from the registry via a Symbol.for global slot; workflow-question-warp-bridge.ts consumes them.
-*-command.ts / models-* / skill-* — Registrars: setup, update-agents, models-config(+validate,+sources), models-picker, skill-bracket, skill-contracts-source (+outcome-derivation, artifact-collector), register-built-in-workflows (+built-in-workflows).
-rpiv-models/            — Nested subdir for the /rpiv-models cascade picker: command.ts, index.ts, items.ts, overrides.ts.
-built-ins/              — Extracted built-in-workflows helper clusters (markdown-fence.ts fence-scan, shared.ts structure-verdict + /runner StagePreflightError); barrel index.ts re-imported by built-in-workflows.ts.
-*.ts (utilities)        — Primitive helpers: siblings, package-checks, paths, pi-installer, prune-legacy-siblings, bash-timeout, banner, constants, frontmatter, utils.
+index.ts                — Composer; no inline handlers, but encodes ordering invariants: session-capture before
+                          skill-bracket; rpiv-workflow-dependent registrars (register-built-in-workflows,
+                          skill-contracts-source, registerUserSkillContractsSource) chained strictly in sequence
+                          inside an async IIFE (jiti half-initialized-barrel race).
+session-hooks.ts        — Lifecycle wiring + guidance.ts / git-context.ts / agents-*.ts (barrel) / pipeline-pointer.ts engines;
+                          compaction only marks the exact SessionManager and defers one merged context block to its
+                          next before_agent_start (never sendMessage inside session_compact).
+sdk-workflow-host.ts    — Sole Pi-SDK importer: child AgentSession per stage/fanout unit, bounded parallel,
+                          per-child watchdog with the toolTimeout + resetToolTimeout host-port twins, subagent
+                          usage subscription, deferring lane-relay UI.
+run-lane-registry.ts    — Process-global in-memory run/lane/question state; seeds pending fan-out unit lanes at
+                          fanout onLoopStart (seedPendingUnits).
+session-capture.ts      — session_start capture of modelRegistry/uiContext/model, borrowed for per-child model
+                          resolution (replaced model-override's global pi.setModel flip).
+subagent-usage.ts       — Process-global subagent token accumulator on a Symbol slot; fed by per-child EventBus
+                          subscriptions; rolled into lane rows.
+lane-*.ts (family)      — Lane UI: belowEditor dock (+dock-editor), /lanes switcher, self-windowing console,
+                          transcript replay live + disk-jsonl (lane-transcript*, lane-tool-defs renderer cache),
+                          progress/usage/streaming/failure, shared lane-list renderer, deferring relay-ui.
+                          The console is an editor-slot `ui.custom` (not an overlay): in fullscreen Pi the
+                          viewport consumes PgUp/PgDn before it, so it also pages on `u`/`d` and takes the
+                          wheel via `handleMouse` (Pi offers wheel events to the component under the pointer
+                          first; `{ handled: true }` stops the parent scroll) — #173.
+question-lifecycle.ts   — workflow-question lifecycle events from the registry via a Symbol.for global slot;
+                          workflow-question-warp-bridge.ts consumes them.
+*-command.ts / models-* / skill-* — Registrars: setup, update-agents, models-config(+validate,+sources),
+                          models-picker, skill-bracket, skill-contracts-source (+outcome-derivation,
+                          artifact-collector), register-built-in-workflows (+built-in-workflows).
+agent-enablement.ts     — Pure sibling-tool enablement map driving conditional frontmatter injection in
+                          agents-inject.ts (currently empty).
+agents-*.ts (family)    — Bundled-agent sync subsystem in five acyclic layers (each imports only layers
+                          above): agents-types.ts (SYNC_OP/CLEANUP_SKIP_REASON pairs, result shapes,
+                          summarizeCleanupSkips — zero imports), agents-allowlist.ts (isManagedAgentName /
+                          safeJoin path-traversal gate), agents-manifest.ts (sha256 manifest read/write,
+                          atomic tmp+rename — owns the inter-process race caveat), agents-inject.ts
+                          (injectModelFrontmatter pure transform), agents-sync.ts (syncBundledAgents /
+                          cleanupPerCwdAgents / isSafeDestructiveOp engine). agents.ts is the ~36-line
+                          public barrel: col-0 re-exports of exactly the pre-split 14-symbol surface,
+                          so ./agents.js consumers and their vi.mock sites stay byte-identical;
+                          internal layer symbols are not re-exported.
+rpiv-models/            — Nested subdir for the /rpiv-models cascade picker: command.ts, index.ts, items.ts,
+                          overrides.ts (+ units tests).
+built-ins/              — Extracted built-in-workflows compute clusters (gates, verdicts, checks, fixtures) —
+                          see .rpiv/guidance/packages/rpiv-pi/extensions/rpiv-core/built-ins/architecture.md
+workflows/             — Per-workflow authoring modules behind the built-ins: shared.ts (cross-workflow
+                          gate + prompt factories) + build.ts / vet.ts / polish.ts / ship.ts (one
+                          defineWorkflow graph each), composed position-pinned by built-in-workflows.ts
+*.ts (utilities)        — Primitive helpers: siblings, package-checks, loaded-siblings, paths, pi-installer, prune-legacy-siblings,
+                          bash-timeout, banner, constants, frontmatter, utils.
 ```
 Pattern: each capability is a source module + co-located `<feature>.test.ts`.
 
 ## Detached Execution (launcher/observer)
-`workflow-execution-host.ts` installs the executor provider on the ROOT launcher's `session_start` — gate: `if (!ctx.hasUI || isLaneRelayUiContext(ctx.ui)) return;` (workflow-execution-host.ts, `registerWorkflowExecutionHostProviderHook`) — so a detached child re-loading rpiv-core can never overwrite the process-global provider box. Per-unit models are resolved through the captured registry and applied at child-session creation, never via a global `pi.setModel()` flip. Each child's `ask_user_question` binds the deferring lane-relay UI: questions queue + badge in the lane dock, and the switcher replays them on switch-in. Child bash commands run under a watchdog (`bash-timeout.ts`): 3-minute default, overridable via `RPIV_BASH_TIMEOUT_MS`, clamped to 5 s–30 min. The watchdog now also exposes a recovery twin on the workflow-execution host port: `resetToolTimeout` (beside `toolTimeout`) calls `watchdog.reset()` so a resumed turn's new bash call re-arms a fresh timer on the same handle, and `readSessionBranch` (backed by `SessionManager.open(file).getBranch()`, fail-soft) feeds `rpiv-workflow`'s death-scene artifact writer the failed session's transcript without a live re-query. Cross-module state lives on `globalThis[Symbol.for("@juicesharp/rpiv-pi:…")]` slots, never module-level variables — `session-capture.ts` and `lane-tool-defs.ts` are the two documented exemptions (deliberately plain module-level state).
+`workflow-execution-host.ts` installs the executor provider on the ROOT launcher's `session_start` — gate: `if (!ctx.hasUI || isLaneRelayUiContext(ctx.ui)) return;` — so a detached child re-loading rpiv-core can never overwrite the process-global provider box. Per-unit models are resolved through the captured registry and applied at child-session creation, never via a global `pi.setModel()` flip. Each child's `ask_user_question` binds the deferring lane-relay UI: questions queue + badge in the lane dock, and the switcher replays them on switch-in. Child bash commands run under a watchdog (`bash-timeout.ts`): 3-minute default, overridable via `RPIV_BASH_TIMEOUT_MS`, clamped to 5 s–30 min. The watchdog's host-port twins live in `sdk-workflow-host.ts`: `toolTimeout: () => watchdog.timedOut()` and `resetToolTimeout: () => watchdog.reset()` (a resumed turn's new bash call re-arms a fresh timer on the same handle); `readSessionBranch` (backed by `SessionManager.open(file).getBranch()`, fail-soft) is wired in `workflow-execution-host.ts` and feeds `rpiv-workflow`'s death-scene artifact writer the failed session's transcript without a live re-query. Per-run concurrency is config-driven (`maxConcurrency`, default 6); a focus-gated Ctrl-C tap aborts the active run. Cross-module state lives on `globalThis[Symbol.for("@juicesharp/rpiv-pi:…")]` slots, never module-level variables — `session-capture.ts` and `lane-tool-defs.ts` are the two documented exemptions (deliberately plain module-level state).
 
 ## Architectural Boundaries
-- **Editing `built-in-workflows.ts` requires the workflow-invariant check**: after any change to it, run `node packages/rpiv-pi/skills/elaborate/_helpers/validate-workflow-invariant.mjs` — it re-derives the live built-in workflows + skill contracts and surfaces `route-reads-unvalidated-data` (and other) validation issues before they ship. This is the project-specific invariant check the `elaborate`/`implement` self-check protocol asks the guidance to name.
+- **Editing `built-in-workflows.ts` or any `workflows/*.ts` module requires the workflow-invariant check**: after any change to them, run `node packages/rpiv-pi/skills/elaborate/_helpers/validate-workflow-invariant.mjs` — it re-derives the live built-in workflows + skill contracts and surfaces `route-reads-unvalidated-data` (and other) validation issues before they ship. This is the project-specific invariant check the `elaborate`/`implement` self-check protocol asks the guidance to name.
 - **NO business logic in the composer**: orchestration only — every capability owns its own registrar module
 - **NO `ExtensionAPI` in pure-utility modules**: helpers (sibling registry, package checks, agent sync, installer, legacy pruner) take primitives only; the guidance engine takes `pi` explicitly
-- **Sibling imports are guarded + optional only**: presence detection stays filesystem-based (regex over `~/.pi/agent/settings.json`). No file statically reachable from `index.ts` may value-import a sibling — enforced by `sibling-import-graph.test.ts`; runtime loads (`rpiv-workflow`, opt-in `rpiv-warp`) are guarded dynamic imports that degrade silently when absent
+- **Sibling imports are guarded + optional only**: presence detection is settings ∪ loaded (never an import — `sourceInfo` paths and `globalThis` marker slots). No file statically reachable from `index.ts` may value-import a sibling — enforced by `sibling-import-graph.test.ts`; runtime loads (`rpiv-workflow`, opt-in `rpiv-warp`) are guarded dynamic imports that degrade silently when absent
 - **Hooks owning process-global state are root-gated + idempotent**: registered on the root launcher's `session_start`, skipped for detached children, safe under `/reload` — never in a module-load IIFE
 - **NO tools registered here**: rpiv-core is a pure orchestrator — new tools belong in sibling plugins (registration pattern: `.rpiv/guidance/packages/rpiv-advisor/architecture.md`)
 
@@ -51,7 +89,7 @@ Pattern: each capability is a source module + co-located `<feature>.test.ts`.
 ## Adding a New Tool
 New tools do not belong in rpiv-core. Add the tool to a sibling plugin instead:
 1. Add it to an existing sibling or create a new sibling plugin (see `.rpiv/guidance/architecture.md`)
-2. Add one entry to `SIBLINGS` in `siblings.ts` — presence detection, missing-plugin warning, and `/rpiv-setup` all pick it up automatically
+2. Add one entry to `SIBLINGS` in `siblings.ts` — presence detection, missing-plugin warning, and `/rpiv-setup` all pick it up automatically (a sibling with no tool or extension command must also set a `marker` slot on load and name it in its entry, as rpiv-args does)
 3. Pin the package in `rpiv-pi/package.json` `peerDependencies` as `"*"`
 </important>
 
@@ -66,7 +104,7 @@ New tools do not belong in rpiv-core. Add the tool to a sibling plugin instead:
 
 <important if="you are adding a new session lifecycle hook to this extension">
 ## Adding a Session Hook
-1. Add the `pi.on("event_name", async (event, ctx) => { … })` line inside the owning registrar — `session-hooks.ts` for injection-style hooks, otherwise the feature's own module (seven registrars currently subscribe `session_start`)
+1. Add the `pi.on("event_name", async (event, ctx) => { … })` line inside the owning registrar — `session-hooks.ts` for injection-style hooks, otherwise the feature's own module (multiple registrars subscribe `session_start`: session-hooks, session-capture, lane-switcher, lane-progress, models-config-validate, workflow-execution-host, the question warp bridge)
 2. Extract the handler body into a named helper in the same file — `pi.on` lines are pure wiring
 3. Events used here: `session_start`, `session_compact`, `session_shutdown`, `tool_call`, `before_agent_start` (session-hooks); `input` + `agent_end` (skill-bracket). rpiv-core has no tool state to reconstruct, so branch-replay events are not subscribed
 4. If the hook owns process-global state, root-gate it (`!ctx.hasUI || isLaneRelayUiContext(ctx.ui)` → return) and make it idempotent — every detached child re-loads rpiv-core

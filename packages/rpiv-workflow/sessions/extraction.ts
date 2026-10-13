@@ -138,6 +138,7 @@ function buildCollectCtx(
 		branchOffset,
 		snapshot: s.snapshot,
 		skill: s.skill,
+		...(s.unit?.label !== undefined ? { unitLabel: s.unit.label } : {}),
 	};
 }
 

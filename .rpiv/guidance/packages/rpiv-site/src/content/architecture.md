@@ -86,8 +86,8 @@ related: { upstream: [discover], downstream: [design, plan, blueprint, explore] 
 ## Adding a Visitor-Copy Entry
 1. Create `src/content/<collection>/<slug>.md` with frontmatter `{ slug, tagline }` plus any structured doc fields (purpose/when_to_use/…); body optional
 2. `slug` MUST match the upstream `name` frontmatter field exactly — the join in `src/lib/` will silently drop unmatched entries
-3. Skills usually need no `src/lib` edit — the reference index renders via `getAllSkills()` and the landing catalog is the hardcoded build/vet/polish/ship `WORKFLOWS` in `src/lib/workflows.ts`; of the flow tables in `src/lib/skills.ts`, only `PIPELINE` still has a consumer (`Colophon.astro`) — `SECONDARY` / `CODE_REVIEW_FLOW` are consumer-less
-4. Agents MUST be added to `TIER_BY_NAME` in `src/lib/agents.ts` — `getStaticPaths` filters `agentSpecs` against it and `getAgent` throws otherwise; tiers now include `verifier` (slice-verifier / artifact-code-reviewer / artifact-coverage-reviewer), made visible with the three-pipeline release after previously being kept invisible per FRD Non-Goals
+3. Skills usually need no `src/lib` edit — the reference index renders via `getAllSkills()` (spec fallback covers skills without visitor copy) and the landing catalog is the hardcoded build/vet/polish/ship `WORKFLOWS` in `src/lib/workflows.ts`; of the flow tables in `src/lib/skills.ts`, only `PIPELINE` still has a consumer (`Colophon.astro`) — `SECONDARY` / `CODE_REVIEW_FLOW` are consumer-less
+4. Agents MUST be added to `TIER_BY_NAME` in `src/lib/agents.ts` — `getStaticPaths` filters `agentSpecs` against it and `getAgent` throws otherwise; tiers include `verifier` (the artifact reviewers + slice-verifier)
 5. No site code edit needed for the entry itself — Astro picks up new `.md` files in collection folders automatically
 </important>
 

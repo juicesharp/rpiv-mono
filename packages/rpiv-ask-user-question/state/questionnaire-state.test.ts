@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { QuestionAnswer, QuestionData } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
-import { selectActivePreviewPaneIndex, selectConfirmedIndicator } from "./selectors/derivations.js";
+import { selectActivePreviewPaneIndex, selectConfirmedIndicator, selectSavedNote } from "./selectors/derivations.js";
 import { selectActiveView } from "./selectors/focus.js";
 
 function q(over: Partial<QuestionData> = {}): QuestionData {
@@ -106,5 +106,31 @@ describe("selectConfirmedIndicator — kind matrix", () => {
 			[0, { questionIndex: 0, question: "q", kind: "custom", answer: "Hello" }],
 		]);
 		expect(selectConfirmedIndicator(questions, 0, answers, items)).toEqual({ index: 1, labelOverride: "Hello" });
+	});
+});
+
+describe("selectSavedNote (#197)", () => {
+	const answered = new Map([
+		[0, { questionIndex: 0, question: "Q", kind: "option" as const, answer: "A", notes: "on answer" }],
+	]);
+
+	it("prefers the in-flight side-band over the answer's mirror", () => {
+		expect(selectSavedNote(new Map([[0, "in flight"]]), answered, 0)).toBe("in flight");
+	});
+
+	it("falls back to the answer's note", () => {
+		expect(selectSavedNote(new Map(), answered, 0)).toBe("on answer");
+	});
+
+	it("a note saved before answering lives only in the side-band", () => {
+		expect(selectSavedNote(new Map([[1, "early note"]]), new Map(), 1)).toBe("early note");
+	});
+
+	it("a cleared side-band note hides the answer's stale mirror", () => {
+		expect(selectSavedNote(new Map([[0, ""]]), answered, 0)).toBeUndefined();
+	});
+
+	it("is undefined when the tab has no note", () => {
+		expect(selectSavedNote(new Map(), new Map(), 0)).toBeUndefined();
 	});
 });

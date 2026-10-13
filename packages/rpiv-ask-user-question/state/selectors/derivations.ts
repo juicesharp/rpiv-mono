@@ -38,3 +38,18 @@ export function selectActivePreviewPaneIndex(currentTab: number, totalQuestions:
 	if (totalQuestions <= 0) return 0;
 	return Math.min(currentTab, totalQuestions - 1);
 }
+
+/**
+ * The committed note for a question tab, or `undefined` when it has none. Same precedence as
+ * the reducer's editor seeding (`notesValueFor`): the in-flight side-band (`notesByTab`) is
+ * authoritative — a note saved before the question is answered lives only there, and a
+ * present empty string means the note was cleared — with `answer.notes` as the mirror.
+ */
+export function selectSavedNote(
+	notesByTab: ReadonlyMap<number, string>,
+	answers: ReadonlyMap<number, QuestionAnswer>,
+	tab: number,
+): string | undefined {
+	const note = notesByTab.get(tab) ?? answers.get(tab)?.notes;
+	return note && note.length > 0 ? note : undefined;
+}

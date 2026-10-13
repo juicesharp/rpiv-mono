@@ -18,7 +18,22 @@ const ctxOf = (branch: BranchEntry[]) => ({
 	skill: "test",
 });
 
+const toolUse = (name: string, path: string): BranchEntry => ({
+	type: "message",
+	message: { role: "assistant", content: [{ type: "tool_use", name, input: { path } }] as never },
+});
+
 describe("directoryPathCollector", () => {
+	it("forwards match to the tool-arg fallback: a filtered-out read contributes nothing, a write still hits", async () => {
+		const read = ctxOf([toolUse("read", "docs/adr/0001-old.md")]);
+		const write = ctxOf([toolUse("write", "docs/adr/0002-new.md")]);
+		const unfiltered = directoryPathCollector({ dir: "docs/adr", ext: "md" });
+		const filtered = directoryPathCollector({ dir: "docs/adr", ext: "md", match: (tc) => tc.name === "write" });
+		expect((await unfiltered.collect(read)).kind).toBe("ok");
+		expect((await filtered.collect(read)).kind).toBe("fatal");
+		expect((await filtered.collect(write)).kind).toBe("ok");
+	});
+
 	it("throws when dir is missing or empty", () => {
 		// @ts-expect-error — intentional misuse
 		expect(() => directoryPathCollector({})).toThrow(/dir.*required/);

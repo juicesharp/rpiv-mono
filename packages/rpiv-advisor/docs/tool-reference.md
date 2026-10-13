@@ -32,8 +32,9 @@ Each call assembles the request in this order:
    non-user tails accept the payload.
 
 The reviewer is invoked with the advisor system prompt, `tools: []`, and the
-configured reasoning effort. It never calls tools and never writes to your
-transcript — its answer comes back only as the tool result the executor reads.
+configured reasoning effort. The executor's tool declarations are removed from
+the copied context, so the reviewer has no tools to call. It never calls tools
+and never writes to your transcript — its answer comes back only as the tool result the executor reads.
 The default prompt guidelines direct the executor to restate the advisor's key
 guidance in its next visible reply, so the guidance is not left only in a
 collapsed tool card.

@@ -1,5 +1,7 @@
 /**
- * /rpiv-setup — installs any SIBLINGS not present in the active Pi settings file
+ * /rpiv-setup — installs any SIBLINGS neither declared in the active Pi settings
+ * file nor already loaded (bundled in another package, a project install — #216:
+ * installing those again makes both copies register the same tools)
  * and prunes deprecated entries (e.g. the unscoped `npm:pi-subagents` from
  * the rpiv-pi 0.12.x → 0.14.0 line). Both mutations are previewed in the
  * confirmation dialog and only executed after the user agrees.
@@ -9,6 +11,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readLoadedSiblingSources } from "./loaded-siblings.js";
 import { findMissingSiblings } from "./package-checks.js";
 import { spawnPiInstall } from "./pi-installer.js";
 import { findLegacySiblings, pruneLegacySiblings } from "./prune-legacy-siblings.js";
@@ -56,17 +59,21 @@ function buildConfirmBody(missing: SiblingPlugin[], legacyEntries: string[]): st
 export function registerSetupCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("rpiv-setup", {
 		description: "Install rpiv-pi's sibling extension plugins",
-		handler: handleSetupCommand,
+		handler: (args, ctx) => handleSetupCommand(args, ctx, pi),
 	});
 }
 
-async function handleSetupCommand(_args: string, ctx: { hasUI: boolean; ui: UI }): Promise<void> {
+async function handleSetupCommand(
+	_args: string,
+	ctx: { hasUI: boolean; ui: UI },
+	pi: Pick<ExtensionAPI, "getAllTools" | "getCommands">,
+): Promise<void> {
 	if (!ctx.hasUI) {
 		ctx.ui.notify(MSG_INTERACTIVE_ONLY, "error");
 		return;
 	}
 
-	const missing = findMissingSiblings();
+	const missing = findMissingSiblings(readLoadedSiblingSources(pi));
 	const legacyEntries = findLegacySiblings();
 	if (missing.length === 0 && legacyEntries.length === 0) {
 		ctx.ui.notify(MSG_NOTHING_TO_DO, "info");

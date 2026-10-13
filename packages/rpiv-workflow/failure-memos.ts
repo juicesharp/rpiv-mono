@@ -41,9 +41,18 @@ export const MAX_FAILURE_MEMO_ERR_LEN = 500;
  * only for a loop-unit failure (the unit's stable audit id).
  */
 export function appendFailureMemo(state: RunState, audit: AuditContext, errMsg: string): void {
+	pushFailureMemo(state, { stage: audit.unit?.parent ?? audit.stageName, unitId: audit.unit?.id }, errMsg);
+}
+
+/**
+ * Push a memo by machine identity — the resume fold's entry: a skipped
+ * under-budget collected row's `errMsg` re-enters the ledger here so the
+ * re-dispatched unit's prompt carries it exactly as the live retry's does.
+ */
+export function pushFailureMemo(state: RunState, id: { stage: string; unitId?: string }, errMsg: string): void {
 	const memo: FailureMemo = {
-		stage: audit.unit?.parent ?? audit.stageName,
-		...(audit.unit?.id ? { unitId: audit.unit.id } : {}),
+		stage: id.stage,
+		...(id.unitId ? { unitId: id.unitId } : {}),
 		errMsg: truncateErr(errMsg),
 		ts: nowIso(),
 	};

@@ -3,6 +3,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { createMockCtx, createMockPi, makeTheme } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { __resetState, registerTodoTool, setActiveRenderSession, type TaskDetails, TOOL_NAME } from "./todo.js";
+import { STATE_ENTRY_TYPE } from "./tool/types.js";
 
 const theme = makeTheme() as unknown as Theme;
 
@@ -64,6 +65,34 @@ describe("registerTodoTool — execute mutates module state", () => {
 		const d = r?.details as TaskDetails;
 		expect(d.tasks).toEqual([]);
 		expect(d.nextId).toBe(1);
+	});
+});
+
+describe("registerTodoTool — execute persists a state entry for every state change", () => {
+	it("appends the call's details snapshot as a state entry on create / update / delete / clear", async () => {
+		const { tool, captured } = setup();
+		const results = [
+			await call(tool, { action: "create", subject: "a" }),
+			await call(tool, { action: "update", id: 1, status: "in_progress" }),
+			await call(tool, { action: "delete", id: 1 }),
+			await call(tool, { action: "clear" }),
+		];
+		expect(captured.entries.map((e) => e.customType)).toEqual(Array(4).fill(STATE_ENTRY_TYPE));
+		expect(captured.entries.map((e) => e.data)).toEqual(results.map((r) => r?.details));
+		const cleared = captured.entries.at(-1)?.data as TaskDetails;
+		expect(cleared.tasks).toEqual([]);
+		expect(cleared.nextId).toBe(1);
+	});
+
+	it("appends nothing for reads, failures, or a no-effect update", async () => {
+		const { tool, captured } = setup();
+		await call(tool, { action: "create", subject: "a" });
+		captured.entries.length = 0;
+		await call(tool, { action: "list" });
+		await call(tool, { action: "get", id: 1 });
+		await call(tool, { action: "update", id: 99, status: "completed" });
+		await call(tool, { action: "update", id: 1, status: "pending" });
+		expect(captured.entries).toEqual([]);
 	});
 });
 

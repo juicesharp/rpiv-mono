@@ -44,7 +44,15 @@
  */
 
 import type { ExtensionUIContext, KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Key, matchesKey, type TUI, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+	type Component,
+	Key,
+	matchesKey,
+	type TUI,
+	type TuiMouseEvent,
+	type TuiMouseEventResult,
+	truncateToWidth,
+} from "@earendil-works/pi-tui";
 import {
 	computeLaneLayout,
 	FALLBACK_ROWS,
@@ -80,8 +88,8 @@ const MAX_HEIGHT_RATIO = 0.9;
  *  collapse the surface below the chrome it must always show (live-output border + a minimal
  *  transcript band + the lane block). */
 const MIN_SURFACE_ROWS = 8;
-/** The PageUp/PageDown transcript-scroll page size. (The armed band reclaims the full surface
- *  up to `maxRows − chrome`, so this no longer floors the transcript region.) */
+/** The PageUp/PageDown (and `u`/`d`) transcript-scroll page size. (The armed band reclaims the
+ *  full surface up to `maxRows − chrome`, so this no longer floors the transcript region.) */
 const TRANSCRIPT_MIN = 4;
 
 /** The (runId, unitIndex) a display row addresses — a lane (parent) row resolves the
@@ -113,15 +121,24 @@ function isTerminalFailure(status: LaneStatus | undefined): boolean {
 }
 
 /**
+ * Marks `terminal.rows` as an allocation rather than the screen height, so
+ * rpiv-ask-user-question skips its inline editor-slot cap (70% of the terminal) and uses
+ * the whole band. A registry symbol keeps this free of an import from that package.
+ */
+const HOST_ALLOCATED_ROWS = Symbol.for("rpiv-ask-user-question:host-allocated-rows");
+
+/**
  * A TUI proxy that reports a capped `terminal.rows` (the embedded questionnaire's
  * allocated band) while forwarding everything else — requestRender, columns, cursor.
  * DialogView reads getTerminalRows() → tui.terminal.rows at render time, so this makes
- * the questionnaire self-window to its band with no ask-user-question change.
+ * the questionnaire self-window to its band; `HOST_ALLOCATED_ROWS` tells it the rows are
+ * already budgeted.
  */
 export function cappedTui(real: TUI, rows: () => number): TUI {
 	const terminal = new Proxy(real.terminal as object, {
 		get(t, p) {
 			if (p === "rows") return Math.max(1, rows());
+			if (p === HOST_ALLOCATED_ROWS) return true;
 			const v = Reflect.get(t, p, t);
 			return typeof v === "function" ? v.bind(t) : v;
 		},
@@ -432,7 +449,7 @@ export class LaneConsole implements Component {
 		return truncateToWidth(
 			this.theme.fg(
 				"dim",
-				`↑/↓ lanes · ${answer}PgUp/PgDn scroll · ${toggle} · ${stages} · ${rerun}x stop · ↑/←/esc back`,
+				`↑/↓ lanes · ${answer}u/d scroll · ${toggle} · ${stages} · ${rerun}x stop · ↑/←/esc back`,
 			),
 			width,
 			"…",
@@ -488,6 +505,17 @@ export class LaneConsole implements Component {
 			this.scroll(-TRANSCRIPT_MIN);
 			return;
 		}
+		// u/d page the transcript too: Pi's fullscreen viewport consumes PageUp/PageDown before an
+		// editor-slot component sees them (only a focused overlay gets them), but plain letters
+		// reach us, like t/s/x/r (#173). Lane focus only — in question focus letters are typed.
+		if (data === "u") {
+			this.scroll(TRANSCRIPT_MIN);
+			return;
+		}
+		if (data === "d") {
+			this.scroll(-TRANSCRIPT_MIN);
+			return;
+		}
 		// ⏎/→ arm the selected unit's queued question (inert → hot). Inert when nothing is
 		// queued — the transcript is already shown, so there is no separate "open" verb.
 		if (matchesKey(data, Key.enter) || matchesKey(data, Key.right)) {
@@ -534,6 +562,19 @@ export class LaneConsole implements Component {
 		}
 	}
 
+	/**
+	 * Mouse wheel scrolls the selected unit's transcript, in either focus (#173). Pi's fullscreen
+	 * screen offers a wheel event to the component under the pointer before scrolling the parent
+	 * transcript, and `handled` stops that fallback. `wheelDelta` is in lines (negative = up) and
+	 * already carries Pi's wheel acceleration. Hosts without component mouse dispatch (regular
+	 * mode, Pi < 0.87) never call this, so nothing changes there.
+	 */
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "wheel" || !event.wheelDelta) return undefined;
+		this.scroll(-event.wheelDelta);
+		return { handled: true };
+	}
+
 	/** Move the spine selection (clamped) and reconcile via sync() — the single seam that
 	 *  re-targets the transcript and mounts the newly-selected unit's question. */
 	private move(delta: number): void {
@@ -545,7 +586,7 @@ export class LaneConsole implements Component {
 		this.sync(); // retarget + question-reconcile; retarget forces the reflow repaint
 	}
 
-	/** The single follow/anchor chokepoint (both focus branches dispatch PageUp/PageDown here).
+	/** The single follow/anchor chokepoint (PageUp/PageDown in both focuses, `u`/`d`, the wheel).
 	 *  PageUp (delta>0) freezes on a stable anchor; PageDown (delta<0) walks it toward the tail
 	 *  and auto-resumes follow when it lands there. `cur` is read from the state this call just
 	 *  mutated, so rapid chained PageUp/PageDown accumulate correctly. */

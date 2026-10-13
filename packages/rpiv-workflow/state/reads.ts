@@ -265,6 +265,8 @@ function recapOutcomeOf(last: WorkflowStage): RunRecap["outcome"] {
  * routing row as the trail's tail: static string edges never audit, a natural
  * chain end appends its terminal stage row after any routing row, and a resume
  * appends new stage rows behind a prior stop. Fail-soft via `readParsedRows`.
+ * The stop row this returns is EXCLUDED from `summarizeRun`'s `routingNotes` —
+ * the stopped refinement renders its note once, as `failureReason`.
  */
 function trailingRoutingStop(cwd: string, runId: string): RoutingDecision | undefined {
 	const rows = readParsedRows(cwd, runId);
@@ -288,7 +290,11 @@ function trailingRoutingStop(cwd: string, runId: string): RoutingDecision | unde
  * note-less trail still names WHERE the run stopped. The refinement only
  * applies over a completed last stage row: a failed/aborted/cancelled tail
  * keeps its own outcome + errMsg (and by write order such a tail follows any
- * routing row anyway).
+ * routing row anyway). The recap also carries `routingNotes` — every
+ * note-bearing FORWARD routing row, verbatim in trail order (stop-row notes
+ * excluded; the stopped refinement renders those once as `failureReason`).
+ * Set only when non-empty, on EVERY outcome — a failed run may carry
+ * earlier-hop notes (a gate explained itself before a later stage blew up).
  */
 export function summarizeRun(cwd: string, runId: string): RunRecap | undefined {
 	const stages = readAllStages(cwd, runId);
@@ -302,6 +308,13 @@ export function summarizeRun(cwd: string, runId: string): RunRecap | undefined {
 		workflow: header?.workflow,
 	};
 	if (outcome !== "completed" && last.errMsg !== undefined) recap.failureReason = last.errMsg;
+	// Route-note recap — rides EVERY outcome. Forward rows only; a stop row's
+	// note renders once, below, as the stopped-refinement failureReason — never
+	// twice. Set only when non-empty (absent, never []).
+	const routingNotes = readRoutingDecisions(cwd, runId).flatMap((r) =>
+		r.note !== undefined && r.decision !== ROUTED_STOP ? [r.note] : [],
+	);
+	if (routingNotes.length > 0) recap.routingNotes = routingNotes;
 	if (outcome === "completed") {
 		const stop = trailingRoutingStop(cwd, runId);
 		if (stop) {

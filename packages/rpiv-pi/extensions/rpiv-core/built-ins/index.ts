@@ -1,9 +1,13 @@
 /**
- * Barrel for the extracted built-in-workflows leaf clusters. The monolith
- * `../built-in-workflows.ts` imports its relocated helpers from here. Each
- * re-export targets a `.js` specifier (Node16 ESM, source stays `.ts`).
+ * Barrel for the extracted built-in-workflows leaf clusters. The
+ * per-workflow modules (`../workflows/*.ts`, composed by the
+ * `../built-in-workflows.ts` barrel) import their relocated helpers from
+ * here. Each re-export targets a `.js` specifier (Node16 ESM, source stays
+ * `.ts`).
  */
 
+export { designOutcome, designParser, designStructure } from "./design.js";
+export { elaborationOutcome, elaborationParser, elaborationStructure } from "./elaboration.js";
 export {
 	allDimensionsPass,
 	anchorNitsOnly,
@@ -13,13 +17,26 @@ export {
 	latestArtifactPath,
 	latestVerdictPerDimension,
 	PLAN_DIMENSIONS,
+	panelProgress,
+	panelRoster,
 	planAuthoredRisks,
 	planGatePasses,
+	progressFromRoundCounts,
+	RISK_DIMENSION,
 	rulingEffectivePass,
+	type SeedOnlyVerdict,
 	SHIP_DIMENSIONS,
+	SLICE_DIMENSIONS,
+	seedLiftStuck,
+	seedOnlyCiteFail,
+	seedOnlyFindings,
 	shipGatePasses,
+	shipRoster,
 	sliceGatePasses,
 	subplanGatePasses,
+	unitFailedDimensions,
+	type VerdictRecord,
+	verdictBlocks,
 	verdictRiskRulings,
 } from "./gates.js";
 export {
@@ -31,10 +48,14 @@ export {
 export {
 	CODE_CONFIRM_FANOUT,
 	CODE_DIMENSION_FANOUT,
+	CODE_PANEL_PROGRESS,
 	PLAN_CONFIRM_FANOUT,
 	PLAN_DIMENSION_FANOUT,
+	PLAN_PANEL_PROGRESS,
 	SHIP_DIMENSION_FANOUT,
+	SHIP_PANEL_PROGRESS,
 	SLICE_DIMENSION_FANOUT,
+	SLICE_PANEL_PROGRESS,
 	shipVerdictOutcome,
 } from "./grade-panel.js";
 export {
@@ -43,9 +64,11 @@ export {
 	FENCE_LINE_RE,
 	fencedSpans,
 	forEachLineOutsideFences,
+	openFenceLine,
 } from "./markdown-fence.js";
 export { planCitationCheck } from "./plan-cite.js";
 export {
+	ELABORATE_PHASE_FANOUT,
 	FRONTMATTER_PHASE_FANOUT,
 	IMPLEMENT_DAG_FANOUT,
 	IMPLEMENT_PLANS_FANOUT,
@@ -71,5 +94,6 @@ export {
 	VERDICT_PASS_SCORE,
 	writeStructureVerdict,
 } from "./shared.js";
-export { sliceStructureCheck, subplanCoverageCheck } from "./slice-checks.js";
+export { sliceSeedLift, sliceStructureCheck, subplanCoverageCheck } from "./slice-checks.js";
 export { SLICE_DESIGN_FANOUT, SYNTH_CLUSTER_FANOUT } from "./slices.js";
+export { verdictOutcome } from "./verdict-outcome.js";

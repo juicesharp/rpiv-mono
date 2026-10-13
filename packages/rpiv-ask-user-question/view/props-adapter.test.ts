@@ -112,6 +112,7 @@ describe("QuestionnairePropsAdapter.apply", () => {
 		});
 		expect(tabsByIndex[0]!.preview.setProps).toHaveBeenLastCalledWith({
 			notesVisible: false,
+			hasNote: false,
 			selectedIndex: 1,
 			focused: true,
 			inputMode: false,

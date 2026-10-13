@@ -2,7 +2,7 @@
  * Session lifecycle wiring for rpiv-core.
  *
  * Each handler body is a named helper; pi.on(...) lines are pure wiring.
- * Ordering and invariants preserved verbatim from the pre-refactor index.ts.
+ * Handler order is deliberate — preserve it.
  */
 
 import {
@@ -29,7 +29,8 @@ import {
 	takeGitContextIfChanged,
 } from "./git-context.js";
 import { clearInjectionState, handleToolCallGuidance, injectRootGuidance, takeRootGuidance } from "./guidance.js";
-import { findMissingSiblings } from "./package-checks.js";
+import { readLoadedSiblingSources } from "./loaded-siblings.js";
+import { findMissingSiblings, type LoadedSiblingSources } from "./package-checks.js";
 import { injectPipelinePointer, PIPELINE_POINTER } from "./pipeline-pointer.js";
 import { isStaleCtxError } from "./utils.js";
 
@@ -137,14 +138,18 @@ async function onSessionStart(
 	if (startupMaintenanceDone) return;
 	startupMaintenanceDone = true;
 
-	const cleanup = cleanupPerCwdAgents(ctx.cwd);
-	const agents = syncBundledAgents(false);
+	// One loaded-siblings snapshot for the whole maintenance pass (#216): every
+	// extension has registered by session_start, and cleanup, sync and the banner
+	// must agree on which siblings are present.
+	const loaded = readLoadedSiblingSources(pi);
+	const cleanup = cleanupPerCwdAgents(ctx.cwd, loaded);
+	const agents = syncBundledAgents(false, loaded);
 	// Banner only when a UI is bound; the filesystem work above runs regardless,
 	// so a headless first session still installs agents.
 	if (ctx.hasUI) {
 		notifyCleanup(ctx.ui, cleanup);
 		notifyAgentSyncDrift(ctx.ui, agents);
-		warnMissingSiblings(ctx.ui);
+		warnMissingSiblings(ctx.ui, loaded);
 	}
 }
 
@@ -262,8 +267,8 @@ function notifyCleanup(ui: UI, result: CleanupResult): void {
 	}
 }
 
-function warnMissingSiblings(ui: UI): void {
-	const missing = findMissingSiblings();
+function warnMissingSiblings(ui: UI, loaded: LoadedSiblingSources): void {
+	const missing = findMissingSiblings(loaded);
 	if (missing.length === 0) return;
 	// Leading newline so Pi's "Warning: " severity prefix sits on its own
 	// line; every box row then gets Pi's 1-space continuation indent

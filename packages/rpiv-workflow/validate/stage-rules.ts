@@ -54,6 +54,7 @@ export function checkStageSemantics(w: Workflow, r: IssueReporter): void {
 		checkVerifyInvariants(stage, name, report);
 		checkPromptInvariants(stage, name === w.start, report);
 		checkInheritsArtifactsKind(stage, report);
+		checkProgressShape(stage, report);
 		checkScriptStageInvariants(stage, report);
 	}
 }
@@ -84,6 +85,9 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	}
 	if (isInvalidDepArtifactFlag(loop)) {
 		report("loop-dep-flag-invalid", { depArtifactFlag: loop.depArtifactFlag });
+	}
+	if (isInvalidRetryHaltedUnits(loop)) {
+		report("loop-retry-halted-units-invalid", { retryHaltedUnits: loop.retryHaltedUnits });
 	}
 	// Pull loops + assess run the stage's outcome collector per unit.
 	if ((loop.kind === "iterate" || loop.kind === "assess") && stage.kind !== "produces") {
@@ -145,6 +149,17 @@ const isInvalidDepArtifactFlag = (loop: LoopDef): loop is FanoutLoop & { depArti
 	loop.kind === "fanout" &&
 	loop.depArtifactFlag !== undefined &&
 	(typeof loop.depArtifactFlag !== "string" || loop.depArtifactFlag.trim().length === 0);
+
+/**
+ * A fanout's `retryHaltedUnits` budget is present and out of range — not an
+ * integer or below 1. The type guard narrows to `FanoutLoop &
+ * { retryHaltedUnits: number }` so the report call reads the field without a
+ * cast or non-null assertion.
+ */
+const isInvalidRetryHaltedUnits = (loop: LoopDef): loop is FanoutLoop & { retryHaltedUnits: number } =>
+	loop.kind === "fanout" &&
+	loop.retryHaltedUnits !== undefined &&
+	(!Number.isInteger(loop.retryHaltedUnits) || loop.retryHaltedUnits < 1);
 
 /**
  * A stable named slot: iterate and assess always (every unit/round runs the
@@ -359,6 +374,21 @@ function checkPromptInvariants(stage: StageDef, isStart: boolean, report: Report
 function checkInheritsArtifactsKind(stage: StageDef, report: ReportFn): void {
 	if (stage.inheritsArtifacts === false && stage.kind === "produces") {
 		report("inherits-artifacts-on-produces");
+	}
+}
+
+/**
+ * `progress` is the optional backward-jump waiver hook, declared on
+ * `StageDefBase` so every dispatch arm carries it. Present ⇒ must be a
+ * function — the guard awaits it per decision-edge re-entry. An absent
+ * hook is valid (every re-entry counts). No exclusion rules: `progress`
+ * composes with `loop` / `verify` / `reads` by design, so this is purely a
+ * shape check (mirrors the `readsData` lint posture: jiti erases the TS
+ * type, the load gate catches a hand-rolled literal).
+ */
+function checkProgressShape(stage: StageDef, report: ReportFn): void {
+	if (stage.progress !== undefined && typeof stage.progress !== "function") {
+		report("progress-not-function");
 	}
 }
 

@@ -2,9 +2,8 @@ import type { Task } from "../tool/types.js";
 import { EMPTY_STATE, type TaskState } from "./state.js";
 
 /**
- * Per-session live state. Pre-refactor this was a single scalar `let state`
- * cell; it is now a Map partitioned by session id so a detached/child session
- * (distinct sid) can never read or clobber another session's tasks.
+ * Per-session live state: a Map partitioned by session id, so a detached/child
+ * session (distinct sid) can never read or clobber another session's tasks.
  *
  * The Map is the single mutation seam — only `commitState` / `replaceState` /
  * `evictSession` write it; the reducer (`state/state-reducer.ts`) stays pure.
@@ -24,7 +23,7 @@ let activeRenderSession = "";
  * Session-id extractor. Structural ctx type (no Pi-runtime import) —
  * mirrors `replay.ts`'s ctx shape so `state/` stays Pi-import-free. Returns
  * `… ?? ""` so an unknown/empty session resolves to "" rather than undefined
- * (keeps the key a plain string for callers and the Phase 2 sid-gate).
+ * (keeps the key a plain string for callers and the `index.ts` sid-gate).
  */
 export function sid(ctx: { sessionManager: { getSessionId(): string } }): string {
 	return ctx.sessionManager.getSessionId() ?? "";
@@ -99,8 +98,8 @@ export function setActiveRenderSession(sessionId: string): void {
 /**
  * Reads the foreground render pointer — the sid the `index.ts` sid-gate compares
  * against, and the slot `getRenderState()` resolves to. Distinct from
- * `setActiveRenderSession` (the writer): Slice 1 only ever *set* the pointer;
- * Slice 2's gate must also *read* it, and foreground teardown must *clear* it.
+ * `setActiveRenderSession` (the writer): the gate *reads* this pointer, and
+ * foreground teardown must *clear* it.
  */
 export function getActiveRenderSession(): string {
 	return activeRenderSession;

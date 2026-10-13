@@ -5,7 +5,74 @@ All notable changes to `@juicesharp/rpiv-ask-user-question` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.13.8] - 2026-10-12
+
+## [2.13.7] - 2026-10-12
+
+### Fixed
+- A saved note no longer disappears when its editor closes. The question shows it as `Note for this answer: …` (one row; `n` reopens the full note), the preview hint changes to "Note saved: press n to edit", and the Submit-tab review uses the same label instead of a dim `notes:` line. Both strings are translated in every locale (#197).
+
+## [2.13.6] - 2026-10-12
+
+### Fixed
+- Multi-select questions submit checked options and `Type something.` text together. Both `Enter` in the input and `Next` return one `kind: "multi"` answer with the checked labels in `selected` and the custom text in `answer`; previously one path dropped the checks and the other dropped the text. The custom row shows `[✔]` while it has text. In RPC hosts, `1,3; custom answer` returns both (#188, #196).
+
+## [2.13.5] - 2026-10-12
+
+## [2.13.4] - 2026-10-11
+
+### Changed
+
+- A partial submit now tells the model which questions were left blank: the envelope gains an `unanswered: "<question>", …` segment after the answers (before any global note), and `details.unanswered` lists their indexes. Previously a skipped question simply had no segment, so the model could read "You can now continue with the user's answers in mind" as everything settled. Fully answered results are byte-identical (#291).
+
+### Fixed
+
+- RPC hosts (VS Code, Zed, T3 Code, pi-web, other ACP clients): a reply typed into the option picker instead of picking an option is now the user's own answer. It was read as a dismissal (the model got "declined"), and a reply starting with a digit, like "2 but change the title", was read as option 2 with the rest dropped (#299).
+- RPC hosts: cancelling the "Type your answer" box now returns to the options instead of cancelling the whole questionnaire and losing the answers already given (#142). That box also lists the options with their descriptions, so they can be referred to while typing (#194).
+- Tool calls whose `questions` (or its items, or their `options`) arrive JSON-encoded as strings, as some vLLM/LiteLLM-served models intermittently emit, are now decoded before Pi validates them instead of failing with `questions.0: must be object` (#244).
+
+## [2.13.3] - 2026-10-11
+
+### Fixed
+
+- The questionnaire no longer hangs when the extension is loaded from an esbuild ESM bundle: `view/dialog-builder.ts` and `view/tab-content-strategy.ts` imported each other at runtime, which jiti tolerates but esbuild turns into two async initializers awaiting each other (#208). The shared dialog copy moved to `view/dialog-copy.ts`; `dialog-builder.ts` re-exports it, so importers are unchanged. A test now fails on any runtime import cycle in the package.
+
+## [2.13.2] - 2026-10-11
+
+### Fixed
+
+- Long option previews fit the space the questionnaire has instead of being cut off by its scroll window (#210). Since 2.13 caps the dialog at 70% of the terminal, a short terminal used to show a preview box with its bottom border and "N lines hidden" note cut off, or, when the preview sits below the options on a narrow terminal, no preview at all. The preview box now shrinks to the rows available but always closes and counts the hidden lines, the options scroll around the focused one when they don't fit, and the preview of the focused option stays in view.
+
+## [2.13.1] - 2026-10-11
+
+### Fixed
+
+- When a dialog is taller than its space, it no longer draws its bottom border and key hints twice. This happened when only the padding that keeps every tab the same height overflowed; the padding is now trimmed to fit instead (#260).
+- The ↑/↓ scroll markers no longer replace the focused option's row when the visible window is small (#261).
+- On the Submit tab, a long "Answer remaining questions" warning stays on one row instead of wrapping and pushing the bottom border out of view (#261).
+
+## [2.13.0] - 2026-10-11
+
+### Changed
+
+- The questionnaire now opens inline: in Pi's editor area below the transcript, where Pi's own prompts appear, instead of as a focused overlay over it. In fullscreen mode `PageUp`/`PageDown` and the mouse wheel keep scrolling the transcript while a question is open (#253), and the dialog no longer covers the message it asks about. It takes at most 70% of the terminal height (at least 12 rows) and scrolls within it. A second questionnaire opened while an inline one is showing, or a question arriving while another overlay such as `/btw` is open, opens as an overlay on top instead, so the question on screen is the one receiving keys.
+- When a dialog is taller than the space it has, the header and question stay pinned while the options scroll, so the question being answered never scrolls out of view.
+
+### Fixed
+
+- A question that opened on top of `/btw` (or another overlay) is no longer hidden by `Ctrl+]`. Pi closes overlays from the top of its stack, so closing `/btw` removed the hidden question instead: `/btw` stayed on screen with `Esc` doing nothing, and the question never resolved, leaving the agent waiting. Collapse now shrinks such a question to its one-line row, keeping `/btw` readable behind it.
+
+## [2.12.0] - 2026-09-30
+
+### Fixed
+
+- **`typebox` is declared as a `peerDependencies: "*"` entry, no longer a `dependencies` entry.** Pi provides `typebox` to extensions and aliases the bare specifier to its own bundled copy at load time, so the copy this manifest installed was dead weight at best and a second live instance at worst. Pi 0.99.1 warns at every startup about the old shape ("Host-provided extension packages must be declared in peerDependencies with a \"*\" range, not dependencies: typebox"); this clears it once the release is installed. Contributed in #282; reported in #266, #268, #272 and #277.
+
+## [2.11.0] - 2026-09-21
+
+## [2.10.1] - 2026-09-13
+
+## [2.10.0] - 2026-09-12
 
 ### Fixed
 

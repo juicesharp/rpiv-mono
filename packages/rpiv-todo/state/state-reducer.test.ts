@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Task } from "../tool/types.js";
 import { isTransitionValid } from "./invariants.js";
 import type { TaskState } from "./state.js";
-import { applyTaskMutation } from "./state-reducer.js";
+import { applyTaskMutation, changesState } from "./state-reducer.js";
 
 const emptyState = (): TaskState => ({ tasks: [], nextId: 1 });
 
@@ -193,6 +193,37 @@ describe("applyTaskMutation — list/get/delete/clear", () => {
 		const state = stateWith(task({ id: 1, subject: "alpha" }));
 		const result = applyTaskMutation(state, "get", { id: 1 });
 		expect(result.op).toEqual({ kind: "get", task: state.tasks[0] });
+	});
+});
+
+describe("changesState — which results persist a replay snapshot", () => {
+	const pending = (id: number, subject = "t"): Task => ({ id, subject, status: "pending" });
+
+	it.each([
+		["create", () => applyTaskMutation(emptyState(), "create", { subject: "a" })],
+		["delete", () => applyTaskMutation(stateWith(pending(1)), "delete", { id: 1 })],
+		["clear", () => applyTaskMutation(stateWith(pending(1)), "clear", {})],
+		[
+			"an effective update",
+			() => applyTaskMutation(stateWith(pending(1)), "update", { id: 1, status: "in_progress" }),
+		],
+	])("is true for %s", (_label, run) => {
+		expect(changesState(run().op)).toBe(true);
+	});
+
+	it.each([
+		["list", "list", () => applyTaskMutation(stateWith(pending(1)), "list", {})],
+		["get", "get", () => applyTaskMutation(stateWith(pending(1)), "get", { id: 1 })],
+		[
+			"a no-effect update",
+			"update",
+			() => applyTaskMutation(stateWith(pending(1)), "update", { id: 1, status: "pending" }),
+		],
+		["an error", "error", () => applyTaskMutation(emptyState(), "update", { id: 99, status: "completed" })],
+	])("is false for %s", (_label, kind, run) => {
+		const { op } = run();
+		expect(op.kind).toBe(kind);
+		expect(changesState(op)).toBe(false);
 	});
 });
 

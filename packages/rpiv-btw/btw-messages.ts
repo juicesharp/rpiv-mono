@@ -3,7 +3,7 @@
  *
  * Owns the `BtwTurn` interface and the `userMessageText` / `assistantMessageText`
  * message-text extractors, moved here from `btw.ts` to sever the sole runtime
- * VALUE back-edge `btw-ui.ts → btw.ts` (the cluster-2 cycle-break, L1-06).
+ * VALUE back-edge `btw-ui.ts → btw.ts`.
  *
  * This module imports ONLY `type { AssistantMessage, UserMessage }` from
  * `@earendil-works/pi-ai` — it has NO `./btw.js` import, so the leaf introduces

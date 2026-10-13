@@ -160,7 +160,7 @@ export function outputMeta(args: {
 /** The data shape of a failed-unit sentinel — collect-all fanout places one of
  *  these in a unit's declared slot when the unit halts (the run survives). */
 export const FAILED_OUTPUT_KIND = "failed";
-export type FailedOutput = Output<"failed", { reason: string }>;
+export type FailedOutput = Output<"failed", { reason: string; dimension?: string }>;
 
 /**
  * A failed unit's contribution to a collect-all fanout. A real `Output` with NO
@@ -168,9 +168,28 @@ export type FailedOutput = Output<"failed", { reason: string }>;
  * `fanin` reader contributes no args for it (the `.filter(Boolean)` convention
  * needs no widening); `advanceCursor` advances the index without making it the
  * "last" produce; and the resume fold replays it like any produce row.
+ *
+ * `dimension` — the failed unit's label (grade panels label each dimension unit
+ * with the dimension it grades). A DIMENSION-BEARING sentinel blocks its
+ * dimension at every gate fold: the fold registers a latest-map entry for any
+ * verdict whose `data.dimension` is a string, and a sentinel carries neither
+ * `pass` nor `severity`, so its entry reads blocking. A dimensionless sentinel
+ * (the pre-dimension shape, retained for unlabeled fanout wirings) is SKIPPED
+ * by the fold — absence is not failure — which is exactly how a dead grade
+ * unit once erased the stale round-1 fail its slot held and let the gate pass
+ * with four surviving dimensions. The key is OMITTED (not `undefined`-valued)
+ * when no dimension is given, so a dimensionless sentinel stays byte-identical
+ * to the prior on-disk shape.
  */
-export function failedOutput(meta: OutputMeta, reason: string): FailedOutput {
-	return finalizeOutput({ kind: FAILED_OUTPUT_KIND, artifacts: [], data: { reason } }, meta);
+export function failedOutput(meta: OutputMeta, reason: string, dimension?: string): FailedOutput {
+	return finalizeOutput(
+		{
+			kind: FAILED_OUTPUT_KIND,
+			artifacts: [],
+			data: { reason, ...(dimension !== undefined ? { dimension } : {}) },
+		},
+		meta,
+	);
 }
 
 export const isFailedOutput = (o: Output): o is FailedOutput => o.kind === FAILED_OUTPUT_KIND;

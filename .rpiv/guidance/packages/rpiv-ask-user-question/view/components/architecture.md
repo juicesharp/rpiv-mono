@@ -86,6 +86,7 @@ export function renderInlineInputRow(opts: RenderInlineInputOptions): string[] {
 
 ## Architectural Boundaries
 - **NO width math via `string.length`** — always `visibleWidth` / `wrapTextWithAnsi` / `truncateToWidth`
+- **The view never sees `\r`** — line terminators normalize once at tool entry (`tool/normalize-params.ts`, #192); pi-tui ≥0.84 splits `wrapTextWithAnsi` on `\r`, so a lone CR reaching the view would fragment option rows
 - **NO keystroke handling inside components** — `handleInput` is intentionally empty (`wrapping-select.ts`); the container routes keys
 - **NO setProps from outside the adapter** — bindings are the only `setProps` callers
 - **NO ad-hoc raw ANSI** — styling flows through `theme.fg/bold/bg` or injected `WrappingSelectTheme` callbacks; sole exception is the SGR 7/27 reverse-video cursor in `inline-input.ts`

@@ -86,28 +86,28 @@ describe("PreviewBlockRenderer — preview gating", () => {
 describe("PreviewBlockRenderer.renderBlock", () => {
 	it("emits bordered box + blank + affordance when focused on preview-bearing option", () => {
 		const r = new PreviewBlockRenderer({ question: previewQuestion, theme, markdownTheme });
-		const lines = r.renderBlock(60, 0, "side-by-side", true, false);
+		const lines = r.renderBlock(60, 0, "side-by-side", "add");
 		expect(lines.some((l) => l.startsWith("┌"))).toBe(true);
 		expect(lines.some((l) => l.startsWith("└"))).toBe(true);
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(true);
 	});
 
-	it("hides affordance when notesVisible=true (notes mode active)", () => {
+	it('hides affordance for "none" (notes editor open)', () => {
 		const r = new PreviewBlockRenderer({ question: previewQuestion, theme, markdownTheme });
-		const lines = r.renderBlock(60, 0, "side-by-side", true, true);
+		const lines = r.renderBlock(60, 0, "side-by-side", "none");
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
 	});
 
-	it("hides affordance when focused=false (cursor elsewhere)", () => {
+	it('hides affordance for "none" (pane not focused)', () => {
 		const r = new PreviewBlockRenderer({ question: previewQuestion, theme, markdownTheme });
-		const lines = r.renderBlock(60, 0, "side-by-side", false, false);
+		const lines = r.renderBlock(60, 0, "side-by-side", "none");
 		expect(lines.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
 	});
 
 	it("hides affordance when focused option lacks a preview (height contract preserved)", () => {
 		const r = new PreviewBlockRenderer({ question: previewQuestion, theme, markdownTheme });
-		const linesA = r.renderBlock(60, 0, "side-by-side", true, false);
-		const linesB = r.renderBlock(60, 2, "side-by-side", true, false);
+		const linesA = r.renderBlock(60, 0, "side-by-side", "add");
+		const linesB = r.renderBlock(60, 2, "side-by-side", "add");
 		expect(linesA.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(true);
 		expect(linesB.some((l) => l.includes(NOTES_AFFORDANCE_TEXT))).toBe(false);
 		expect(linesA.length).toBe(linesB.length);
@@ -119,7 +119,7 @@ describe("PreviewBlockRenderer.blockHeight", () => {
 		const r = new PreviewBlockRenderer({ question: previewQuestion, theme, markdownTheme });
 		for (const idx of [0, 1, 2]) {
 			for (const mode of ["side-by-side", "stacked"] as const) {
-				expect(r.blockHeight(60, idx, mode)).toBe(r.renderBlock(60, idx, mode, true, false).length);
+				expect(r.blockHeight(60, idx, mode)).toBe(r.renderBlock(60, idx, mode, "add").length);
 			}
 		}
 	});
@@ -128,20 +128,20 @@ describe("PreviewBlockRenderer.blockHeight", () => {
 describe("PreviewBlockRenderer — cache lifecycle", () => {
 	it("creates one Markdown per option lazily; revisit hits cache", () => {
 		const r = new PreviewBlockRenderer({ question: previewQuestion, theme, markdownTheme });
-		r.renderBlock(60, 0, "side-by-side", true, false);
+		r.renderBlock(60, 0, "side-by-side", "add");
 		expect(markdownConstructed).toBe(1);
-		r.renderBlock(60, 1, "side-by-side", true, false);
+		r.renderBlock(60, 1, "side-by-side", "add");
 		expect(markdownConstructed).toBe(2);
-		r.renderBlock(60, 0, "side-by-side", true, false);
+		r.renderBlock(60, 0, "side-by-side", "add");
 		expect(markdownConstructed).toBe(2);
 	});
 
 	it("invalidate() does NOT delete instances; subsequent renders re-use cache", () => {
 		const r = new PreviewBlockRenderer({ question: previewQuestion, theme, markdownTheme });
-		r.renderBlock(60, 0, "side-by-side", true, false);
+		r.renderBlock(60, 0, "side-by-side", "add");
 		expect(markdownConstructed).toBe(1);
 		r.invalidate();
-		r.renderBlock(60, 0, "side-by-side", true, false);
+		r.renderBlock(60, 0, "side-by-side", "add");
 		expect(markdownConstructed).toBe(1);
 	});
 });

@@ -20,7 +20,7 @@ You surgically fix **one** artifact so it clears the dimensions a grade panel ma
 
 - **Verdicts** — every flag whose name ends in `-verdicts` (e.g. `--research-verdicts`, `--plan-verdicts`), repeatable. Each value is a verdict JSON path.
 - **Citation floors** — every flag whose name ends in `-cite-check` (e.g. `--plan-cite-check`, `--code-cite-check`), repeatable. Each value is a cite-check verdict JSON path.
-- **Lineage sources** — the read-only context flags `--goal`, `--research`, and `--subplans` (repeatable; build's fix arms only). `--goal` is the verbatim brief, `--research` the architecture/precedent findings, `--subplans` the per-cluster sub-plans. They are context, never the artifact to re-emit.
+- **Lineage sources** — the read-only context flags `--goal`, `--research`, `--acceptance`, and `--subplans` (repeatable; build's fix arms only). `--goal` is the verbatim brief, `--research` the architecture/precedent findings, `--acceptance` the frozen inventory, `--subplans` the per-cluster sub-plans. They are context, never the artifact to re-emit.
 - **Artifact** — the single remaining `--<channel>` flag that is **not** a verdicts, citation-floor, or lineage-source flag (i.e. not ending in `-verdicts` or `-cite-check`, and not `--goal`/`--research`/`--subplans`). Its value is the artifact to fix and re-emit; for both build fix arms this resolves to `--plans`.
 
 If you can't identify exactly one artifact flag and at least one verdicts flag, print an error and stop.

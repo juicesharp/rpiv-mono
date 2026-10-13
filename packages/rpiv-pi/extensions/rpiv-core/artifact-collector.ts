@@ -14,11 +14,14 @@
  *     (`research`, `plans`, etc.) — the collector halts the chain if the
  *     agent strayed.
  *
- * Both collectors carry a disk-corroborated basename fallback: when the
- * full-path transcript scan misses (agent mangled the directory prefix in
- * prose), a bare `<file>.md` token from the transcript is accepted iff it
- * resolves to exactly one existing file under `.rpiv/artifacts/` — see the
- * fallback section below.
+ * Both collectors carry two fallbacks behind the spoken-text scan, tried in
+ * order: (1) the tool-argument surface — the `path` argument of a `write`/`edit`
+ * call (the recorded action, for an agent that wrote the file but never
+ * announced it; see the fallback-surface section below); (2) the
+ * disk-corroborated basename fallback — when both scans miss (agent mangled
+ * the directory prefix in prose), a bare `<file>.md` token from the transcript
+ * is accepted iff it resolves to exactly one existing file under
+ * `.rpiv/artifacts/` — see that section below.
  *
  * One parser: `frontmatterParser` parses YAML frontmatter from the
  * primary fs artifact into `Record<string, unknown>` — what
@@ -144,9 +147,29 @@ function withDiskFallback(primary: ArtifactCollector, bucket?: string): Artifact
 	});
 }
 
+// ---------------------------------------------------------------------------
+// Tool-argument fallback surface
+// ---------------------------------------------------------------------------
+//
+// When the spoken announcement misses, the text-scan primitive consults the
+// agent's recorded tool calls. That surface is narrowed HARD here, because a
+// stage's transcript is full of other artifacts' paths in tool arguments: an
+// elaborate lane `read`s sibling elaborations, a grader `bash`-greps the plan,
+// `ls .rpiv/artifacts/<bucket>/` lists every neighbour. Only a FILE-WRITING
+// tool proves the agent produced the path, and only its `path` argument names
+// what it wrote — a `write` call's `content` may quote a sibling's path (a
+// `source:` line, a cross-reference) and must never outrank the destination.
+// Pi's file-writing tools are `write` (`{ path, content }`) and `edit`
+// (`{ path, edits }`); `bash` heredoc writes are deliberately NOT accepted (a
+// `command` string carries arbitrary paths) — for those the disk-corroborated
+// basename fallback below still applies.
+const FILE_WRITING_TOOLS: ReadonlySet<string> = new Set(["write", "edit"]);
+const isFileWrite = (tc: { name: string }): boolean => FILE_WRITING_TOOLS.has(tc.name);
+const TOOL_ARG_FALLBACK = { match: isFileWrite, argKeys: ["path"] as const };
+
 /** Bucket-agnostic — accepts any `.rpiv/artifacts/<bucket>/...md`. */
 export const rpivArtifactCollector: ArtifactCollector = withDiskFallback(
-	transcriptPathCollector({ pattern: RPIV_ARTIFACT_PATTERN }),
+	transcriptPathCollector({ pattern: RPIV_ARTIFACT_PATTERN, ...TOOL_ARG_FALLBACK }),
 );
 
 /** Bucket-narrowed — accepts only `.rpiv/artifacts/<bucket>/...md`. The filename
@@ -155,7 +178,7 @@ export const rpivArtifactCollector: ArtifactCollector = withDiskFallback(
 export function rpivBucketCollector(bucket: string): ArtifactCollector {
 	const escaped = bucket.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const pattern = new RegExp(String.raw`\.rpiv/artifacts/${escaped}/${TEMPERED_SEGMENT}\.md`, "g");
-	return withDiskFallback(transcriptPathCollector({ pattern }), bucket);
+	return withDiskFallback(transcriptPathCollector({ pattern, ...TOOL_ARG_FALLBACK }), bucket);
 }
 
 // ---------------------------------------------------------------------------

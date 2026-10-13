@@ -11,7 +11,10 @@ export const ENVELOPE_SUFFIX = "You can now continue with the user's answers in 
  * so the model sees a single canonical "didn't answer" signal regardless of why.
  * "No segments" means no answers AND no global note — the `global note:` segment is
  * pushed before the zero-segments check, so a note-bearing submit with zero answers
- * still yields the answered envelope.
+ * still yields the answered envelope. A partial submit names the questions left blank
+ * in an `unanswered:` segment (and `details.unanswered`, their indexes) so the model can
+ * tell "not decided yet" from "settled" (#291); it never counts as an answer, and a fully
+ * answered result stays byte-identical.
  */
 export function buildQuestionnaireResponse(result: QuestionnaireResult | null | undefined, params: QuestionParams) {
 	if (!result || result.cancelled) {
@@ -24,19 +27,27 @@ export function buildQuestionnaireResponse(result: QuestionnaireResult | null | 
 		});
 	}
 	const segments: string[] = [];
+	const unanswered: number[] = [];
 	for (let i = 0; i < params.questions.length; i++) {
 		const a = result.answers.find((x) => x.questionIndex === i);
 		if (a) segments.push(buildAnswerSegment(a));
+		else unanswered.push(i);
 	}
-	// Global note rides after the per-question segments: raw multiline echo (no
-	// reformatting), trailing period mirroring `buildAnswerSegment`'s shape.
-	if (result.globalNote && result.globalNote.length > 0) {
-		segments.push(`global note: ${result.globalNote}.`);
-	}
-	if (segments.length === 0) {
+	const hasGlobalNote = result.globalNote !== undefined && result.globalNote.length > 0;
+	if (segments.length === 0 && !hasGlobalNote) {
 		return buildToolResult(DECLINE_MESSAGE, { answers: result.answers, cancelled: true });
 	}
-	return buildToolResult(`${ENVELOPE_PREFIX} ${segments.join(" ")} ${ENVELOPE_SUFFIX}`, result);
+	if (unanswered.length > 0) segments.push(buildUnansweredSegment(unanswered, params));
+	// Global note rides after the per-question segments: raw multiline echo (no
+	// reformatting), trailing period mirroring `buildAnswerSegment`'s shape.
+	if (hasGlobalNote) segments.push(`global note: ${result.globalNote}.`);
+	const details = unanswered.length > 0 ? { ...result, unanswered } : result;
+	return buildToolResult(`${ENVELOPE_PREFIX} ${segments.join(" ")} ${ENVELOPE_SUFFIX}`, details);
+}
+
+/** `unanswered: "<question>", "<question>".` — the questions shown but left blank on a partial submit. */
+export function buildUnansweredSegment(indexes: readonly number[], params: QuestionParams): string {
+	return `unanswered: ${indexes.map((i) => `"${params.questions[i]?.question}"`).join(", ")}.`;
 }
 
 /**

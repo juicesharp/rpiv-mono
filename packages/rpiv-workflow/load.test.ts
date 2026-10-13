@@ -105,12 +105,80 @@ const writeUserPack = (filename: string, body: string): void => {
 // calls inside the fixture strings go through the real validator.
 // Each fixture imports `produces` (aliased) and re-binds it to a helper
 // that wires a noop stub outcome so produces stages pass validation
-// without each fixture restating the collector.
+// without each fixture restating the collector. Fixtures import the
+// DOCUMENTED bare specifier, exactly as overlay authors do: they are
+// written outside any node_modules tree, so this resolves only through
+// the loader's overlay module map (#298).
 const importApi = [
-	`import { defineWorkflow, produces as producesRaw, acts, gate } from "${join(__dirname, "api.ts")}";`,
-	`import { noopCollector } from "${join(__dirname, "outcomes", "index.ts")}";`,
+	`import { defineWorkflow, produces as producesRaw, acts, gate, noopCollector } from "@juicesharp/rpiv-workflow";`,
 	`const produces = (o = {}) => producesRaw({ outcome: { collector: noopCollector }, ...o });`,
 ].join("\n");
+
+// ---------------------------------------------------------------------------
+// Overlay imports (#298) — overlays live outside any node_modules tree, so the
+// documented bare specifiers resolve only through the loader's module map.
+// ---------------------------------------------------------------------------
+
+describe("loadWorkflows — overlay imports resolve without node_modules (#298)", () => {
+	it("a user pack importing the DSL from @juicesharp/rpiv-workflow loads (the issue's repro)", async () => {
+		writeUserPack(
+			"repro.ts",
+			`import { acts, defineWorkflow } from "@juicesharp/rpiv-workflow";
+export default defineWorkflow({
+	name: "repro",
+	start: "hello",
+	stages: { hello: acts.script({ run: () => {} }) },
+	edges: { hello: "stop" },
+});
+`,
+		);
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(loaded.issues).toEqual([]);
+		expect(loaded.workflows.map((w) => w.name)).toContain("repro");
+	});
+
+	it("a project overlay can import typebox the way workflow-authoring.md shows", async () => {
+		writeProjectConfig(
+			TEST_TMP,
+			`${importApi}
+import { typeboxSchema } from "@juicesharp/rpiv-workflow";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+if (!Value.Check(Type.Object({ ok: Type.Boolean() }), { ok: true })) throw new Error("typebox/value mismatch");
+export default [
+	defineWorkflow({
+		name: "typed",
+		start: "plan",
+		stages: { plan: produces({ outputSchema: typeboxSchema(Type.Object({ planPath: Type.String() })) }) },
+		edges: { plan: "stop" },
+	}),
+];
+`,
+		);
+		const loaded = await loadWorkflows(TEST_TMP);
+		expect(loaded.issues).toEqual([]);
+		expect(loaded.workflows.map((w) => w.name)).toContain("typed");
+	});
+
+	it("overlays get the running package, not a second copy, including public subpaths", async () => {
+		writeUserPack(
+			"identity.ts",
+			`import { acts, defineWorkflow } from "@juicesharp/rpiv-workflow";
+import { defineWorkflow as fromRegistration } from "@juicesharp/rpiv-workflow/registration";
+import { registerBuiltIns } from "@juicesharp/rpiv-workflow/startup";
+(globalThis as Record<string, unknown>).__rpiv298 = { defineWorkflow, fromRegistration, registerBuiltIns };
+export default fromRegistration({ name: "identity", start: "x", stages: { x: acts.script({ run: () => {} }) }, edges: { x: "stop" } });
+`,
+		);
+		const loaded = await loadWorkflows(TEST_TMP);
+		const seen = (globalThis as Record<string, unknown>).__rpiv298 as Record<string, unknown>;
+		delete (globalThis as Record<string, unknown>).__rpiv298;
+		expect(loaded.issues).toEqual([]);
+		expect(seen.defineWorkflow).toBe(defineWorkflow);
+		expect(seen.fromRegistration).toBe(defineWorkflow);
+		expect(seen.registerBuiltIns).toBe(registerBuiltIns);
+	});
+});
 
 // ---------------------------------------------------------------------------
 // Baseline — no overlays

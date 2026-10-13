@@ -4,7 +4,7 @@ tagline: Judges one artifact along one named quality dimension and writes a verd
 purpose: |
   Keeps each quality judgment *narrow and honest*: one panel member, one dimension, no fixes. The pipeline dispatches it once per dimension at each gate and folds the verdicts into an advance/loop decision. A grader that drifted outside its dimension, or softened a real blocker, would corrupt the gate itself.
 when_to_use:
-  - Dispatched per dimension by the pipeline's three gates. The gates are slice-grade (`design-readiness`), plan-grade and code-grade (five artifact dimensions each).
+  - Dispatched per dimension by the pipeline's three gates. The gates are slice-grade (`design-readiness`), plan-grade and code-grade (five artifact dimensions each, plus a concurrent `risk-rulings` unit whenever the plan declares `risks:`).
   - You need a machine-readable pass/fail verdict on a research, slices, design, or plan artifact.
   - Not standalone. The pipeline, not the grader, folds per-dimension verdicts into a decision.
   - Prefer the slice-check program for structural invariants (dependency cycles, coverage conservation). Those are verified with 0 LLM calls, not graded.
@@ -12,7 +12,7 @@ inputs:
   - name: --dimension
     required: true
     source: Gate wiring
-    notes: "`completeness`, `correctness`, `actionability`, `architecture-fit`, `pattern-following`, or `design-readiness` (slice maps only)."
+    notes: "`completeness`, `correctness`, `actionability`, `architecture-fit`, `pattern-following`, `risk-rulings` (plans declaring `risks:` only — rules every flag, nothing else), or `design-readiness` (slice maps only)."
   - name: --artifact
     required: true
     source: The artifact channel under review
@@ -31,14 +31,14 @@ inputs:
 outputs:
   - artifact: Verdict
     path: .rpiv/artifacts/verdicts/
-    format: "JSON: { dimension, pass, score, severity, graded_at, artifact, findings[], feedback } — plus `risk_rulings[]` on a `correctness` verdict when the artifact declares `risks:`, and `finding_rulings[]` when `--prior` was given"
+    format: "JSON: { dimension, pass, score, severity, graded_at, artifact, findings[], feedback } — plus `risk_rulings[]` on a `risk-rulings` verdict (one entry per declared flag), and `finding_rulings[]` when `--prior` was given"
 key_steps:
   - title: Validate the flags, bail on a dispatch error
     rationale: A missing or unrecognized flag is a wiring problem, not a failing grade. Emitting a verdict for a misdispatch would poison the gate's fold.
   - title: Read fully, then select the single rubric row
     rationale: Every other dimension is another panel member's job; staying inside the assigned row is what stops findings from double-counting across the panel.
   - title: Spot-check the live codebase where the rubric demands it
-    rationale: "`correctness`, `architecture-fit`, `pattern-following`, and `design-readiness` claims can only be falsified against real code. Grading the artifact's prose alone would judge fluency, not truth."
+    rationale: "`correctness`, `risk-rulings`, `architecture-fit`, `pattern-following`, and `design-readiness` claims can only be falsified against real code. Grading the artifact's prose alone would judge fluency, not truth."
   - title: Rate severity honestly
     rationale: Severity is gate-load-bearing (only a `medium`+ finding blocks, even on `pass:false`). Soft-rating a real blocker ships a defect, and inflating a cosmetic nit stalls the loop.
   - title: Write feedback as a surgical instruction set on fail

@@ -780,6 +780,72 @@ describe("validateWorkflow — script stage invariants", () => {
 	});
 });
 
+describe("validateWorkflow — progress hook shape", () => {
+	const wf = (stage: StageDef): Workflow => ({
+		name: "progressed",
+		start: "s",
+		stages: { s: stage },
+		edges: { s: "stop" },
+	});
+
+	it("errors when `progress` is present but not a function (assert on code, never message text)", () => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: STUB_ARTIFACT_OUTCOME,
+				progress: "improved" as unknown as StageDef["progress"],
+			}),
+		);
+		expect(e.some((i) => i.code === "progress-not-function")).toBe(true);
+	});
+
+	it("accepts a function-valued `progress` with zero other issues", () => {
+		const w = wf({
+			kind: "produces",
+			sessionPolicy: "fresh",
+			outcome: STUB_ARTIFACT_OUTCOME,
+			progress: () => "improved",
+		});
+		expect(errors(w)).toEqual([]);
+		expect(warnings(w)).toEqual([]);
+	});
+
+	it("composes with a loop (iterate) — no exclusion issue fires", () => {
+		const w = wf({
+			kind: "produces",
+			sessionPolicy: "fresh",
+			outcome: { name: "out", collector: noopCollector },
+			loop: iterate({ next: () => null }),
+			progress: () => "unchanged",
+		});
+		expect(errors(w)).toEqual([]);
+	});
+
+	it("composes with verify + reads — no exclusion issue fires", () => {
+		const w: Workflow = {
+			name: "progressed-verify",
+			start: "up",
+			stages: {
+				up: { kind: "produces", sessionPolicy: "fresh", outcome: { name: "design", collector: noopCollector } },
+				s: {
+					kind: "produces",
+					sessionPolicy: "fresh",
+					outcome: { name: "impl", collector: noopCollector },
+					verify: verify({
+						judge: judge({ skill: "grade", outcome: { name: "verdict", collector: noopCollector } }),
+						done: () => true,
+					}),
+					reads: ["design"],
+					progress: () => "unknown",
+				},
+			},
+			edges: { up: "s", s: "stop" },
+		};
+		expect(errors(w)).toEqual([]);
+	});
+});
+
 describe("validateWorkflow — iterate loop invariants", () => {
 	const iter = iterate({ next: () => null });
 	const namedOutcome = { name: "plans", collector: noopCollector };
@@ -993,6 +1059,32 @@ describe("validateWorkflow — assess loop invariants", () => {
 			} as StageDef),
 		);
 		expect(e.some((i) => i.code === "loop-dep-flag-invalid")).toBe(false);
+	});
+
+	it.each([0, -1, 1.5])("rejects fanout retryHaltedUnits: %s (must be an integer >= 1)", (retryHaltedUnits) => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: { name: "x", collector: noopCollector },
+				loop: { ...fanout({ units: () => [] }), retryHaltedUnits },
+			} as StageDef),
+		);
+		expect(
+			e.some((i) => i.code === "loop-retry-halted-units-invalid" && i.params.retryHaltedUnits === retryHaltedUnits),
+		).toBe(true);
+	});
+
+	it("accepts fanout retryHaltedUnits: 1", () => {
+		const e = errors(
+			wf({
+				kind: "produces",
+				sessionPolicy: "fresh",
+				outcome: { name: "x", collector: noopCollector },
+				loop: { ...fanout({ units: () => [] }), retryHaltedUnits: 1 },
+			} as StageDef),
+		);
+		expect(e.some((i) => i.code === "loop-retry-halted-units-invalid")).toBe(false);
 	});
 
 	it("accepts loop.max: 1 and an omitted max", () => {

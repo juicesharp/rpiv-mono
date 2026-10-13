@@ -6,7 +6,18 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { fanin, readName, readsAll, type StageRead } from "./stage-def.js";
+import type { RunView } from "./output.js";
+import {
+	acts,
+	fanin,
+	PROGRESS_VALUES,
+	type ProgressValue,
+	produces,
+	readName,
+	readsAll,
+	type StageDef,
+	type StageRead,
+} from "./stage-def.js";
 
 describe("fanin()", () => {
 	it("builds an all-entries read spec", () => {
@@ -51,5 +62,39 @@ describe("readsAll()", () => {
 
 	it("is false for a spec with no all flag", () => {
 		expect(readsAll({ name: "plans" })).toBe(false);
+	});
+});
+
+describe("progress hook surface", () => {
+	const hook: (state: RunView) => ProgressValue = () => "improved";
+	const outcome = { collector: { collect: () => ({ kind: "ok" as const, artifacts: [] }) } };
+
+	it("PROGRESS_VALUES enumerates the four verdicts in waives/counts order", () => {
+		expect([...PROGRESS_VALUES]).toEqual(["improved", "unchanged", "regressed", "unknown"]);
+	});
+
+	it("produces({...}) accepts and passes through `progress` (Partial-override path)", () => {
+		const def = produces({ outcome, progress: hook });
+		expect(def.progress).toBe(hook);
+	});
+
+	it("produces.script({...}) accepts and passes through `progress`", () => {
+		const def = produces.script({ run: () => ({ kind: "x", artifacts: [], data: {} }), progress: hook });
+		expect(def.progress).toBe(hook);
+	});
+
+	it("produces.prompt({...}) accepts and passes through `progress`", () => {
+		const def = produces.prompt({ prompt: "go", outcome, progress: hook });
+		expect(def.progress).toBe(hook);
+	});
+
+	it("acts.script({...}) accepts and passes through `progress`", () => {
+		const def = acts.script({ run: () => {}, progress: hook });
+		expect(def.progress).toBe(hook);
+	});
+
+	it("the hook types as `(state: RunView) => ProgressValue` on a StageDef literal", () => {
+		const def: StageDef = { kind: "side-effect", sessionPolicy: "fresh", progress: hook };
+		expect(def.progress).toBe(hook);
 	});
 });

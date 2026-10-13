@@ -130,7 +130,7 @@ const applyReconciliationDirectives = (
  * commands as an agent, with a real shell and the judgment to tell a legitimate
  * post-rename mismatch from actual plan-vs-tree drift.
  *
- * The route is `reconcileGate` (built-in-workflows.ts) — pass ⇒ validate; fail ⇒
+ * The route is `reconcileGate` (workflows/shared.ts) — pass ⇒ validate; fail ⇒
  * the `reconcile-fix` arm (`/skill:amend` over the plan's directives from this
  * verdict — every reconcile failure class is a plan-TEXT defect, so the plan
  * reviser has authority over all of them; amend never edits directive targets,

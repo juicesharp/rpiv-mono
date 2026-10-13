@@ -342,7 +342,7 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 		],
 	};
 
-	it("Space toggles items, then DOWN to Next + Enter confirms selected labels", async () => {
+	it("commits checked options and custom text together through Next", async () => {
 		const tool = register();
 		const { custom } = driveCustom((c) => {
 			c.handleInput(KEY.SPACE); // toggle Frontend ON
@@ -350,6 +350,7 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 			c.handleInput(KEY.SPACE); // toggle Backend ON
 			c.handleInput(KEY.DOWN); // → DevOps (not toggled)
 			c.handleInput(KEY.DOWN); // → "Type something." row
+			for (const char of "GraphQL") c.handleInput(char);
 			c.handleInput(KEY.DOWN); // → Next sentinel
 			c.handleInput(KEY.ENTER); // commit + advance (single question → submit)
 		});
@@ -358,7 +359,7 @@ describe("ask_user_question — multi-select flow (single question)", () => {
 			| ToolResult
 			| undefined;
 		expect(r?.details.cancelled).toBe(false);
-		expect(r?.details.answers[0].answer).toBeNull();
+		expect(r?.details.answers[0].answer).toBe("GraphQL");
 		expect(r?.details.answers[0].selected).toEqual(["Frontend", "Backend"]);
 	});
 
@@ -745,7 +746,7 @@ describe("ask_user_question — MAX_QUESTIONS (4 questions) complete flow", () =
 		expect(r?.details.answers).toHaveLength(4);
 		const labels = r?.details.answers.map((a: QuestionAnswer) => a.answer);
 		expect(labels).toEqual(["A", "B", "C", "D"]);
-		// Phase 3 envelope: single CC-style sentence chain.
+		// Envelope: single CC-style sentence chain.
 		expect(r?.content[0].text).toContain('"Q1?"="A".');
 		expect(r?.content[0].text).toContain('"Q4?"="D".');
 		expect(r?.content[0].text).toMatch(/^User has answered your questions:/);

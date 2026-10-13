@@ -109,9 +109,12 @@ function buildRun(opts: {
 		state,
 		visited: new Set<string>(),
 		revisits: new Map<string, number>(),
+		progressTrail: new Map(),
+		laps: new Map<string, number>(),
 		skillContracts: opts.skillContracts as RunContext["skillContracts"],
 		worktreeDigest: opts.worktreeDigest,
 		maxBackwardJumps: 1,
+		maxLaps: 1,
 		maxIterations: 1,
 		trigger: {
 			kind: "command",

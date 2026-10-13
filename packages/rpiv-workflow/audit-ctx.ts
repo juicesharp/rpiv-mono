@@ -50,6 +50,13 @@ export type AuditContext = Pick<
 	session: SessionRef | null;
 	isScript?: boolean;
 	unit?: UnitRef;
+	/**
+	 * The failed attempt's 1-based dispatch ordinal — present only for fanout
+	 * unit sessions (threaded by `dispatchUnitDetached` through
+	 * `buildUnitSession`); `auditFor` projects it onto the collected halt row
+	 * (`recordUnitHalt`) for the resume fold's budget predicate.
+	 */
+	attemptOrdinal?: number;
 };
 
 /**

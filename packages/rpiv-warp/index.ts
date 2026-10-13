@@ -144,11 +144,13 @@ function readBranch(ctx: ExtensionContext): SessionEntry[] {
 	return ctx.sessionManager.getBranch() as SessionEntry[];
 }
 
-// Mirror Pi's startup tab title `<mascot> - <repo>`. We only own the first
-// character (the spinner glyph during animation); push/pop restores Pi's
-// mascot verbatim on stop.
+// Mirror Pi's own tab title: `<mascot> - <repo>`, or `<mascot> - <session> - <repo>`
+// once the session is named. We replace the mascot while retaining the complete
+// title structure; push/pop restores Pi's mascot verbatim on stop.
 function titleSuffix(ctx: ExtensionContext): string {
-	return ` - ${basename(ctx.cwd)}`;
+	const project = basename(ctx.cwd);
+	const sessionName = ctx.sessionManager.getSessionName()?.trim();
+	return sessionName ? ` - ${sessionName} - ${project}` : ` - ${project}`;
 }
 
 export default function (pi: ExtensionAPI): void {

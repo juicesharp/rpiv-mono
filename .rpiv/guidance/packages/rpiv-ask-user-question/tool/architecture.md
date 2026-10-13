@@ -4,12 +4,12 @@
 The LLM tool contract surface: TypeBox parameter schemas, pure runtime parameter validation, the canonical `{ content, details }` result envelope builder, and the per-answer scalar formatter that bridges runtime state into the LLM-visible text channel.
 
 ## Dependencies
-- **`typebox`** (regular dep, moved out of peers — installers that skip peer deps must still get it): `Type` builder + `Static` type extraction
+- **`typebox`** (`peerDependencies: "*"`, host-provided): `Type` builder + `Static` type extraction. Pi supplies and aliases `typebox` at load time, so it is never a `dependencies` entry — an installed copy is the duplicate runtime module the loader maps away (v2.12.0, #282)
 - **`../state/row-intent.js`**: `LABELS_BY_KIND` / `ROW_INTENT_META` — the ONLY outbound state dep in this layer (the `i18n-bridge` dep left with the chat escape hatch; the tool layer is now fully i18n-free)
 
 ## Inbound / Outbound
 - **Imported by** `ask-user-question.ts` (the tool registrar): `QuestionParamsSchema`, `validateQuestionnaire`, `buildQuestionnaireResponse`, `buildToolResult`
-- **Imported by** `rpc-fallback.ts` (RPC/ACP native-dialog walker): `QuestionAnswer`/`QuestionData`/`QuestionnaireResult`/`QuestionParams` types only — its results are funneled through the shared `buildQuestionnaireResponse` envelope (`ask-user-question.ts:197, 311`)
+- **Imported by** `rpc-fallback.ts` (RPC/ACP native-dialog walker): `QuestionAnswer`/`QuestionData`/`QuestionnaireResult`/`QuestionParams` types only — its results are funneled through the shared `buildQuestionnaireResponse` envelope (`ask-user-question.ts:67, 243` — `runRpcPath` / `resolveUndefinedResult`)
 - **`validate-questionnaire.ts`** imports purely from `./types.js` — no state/view reach
 - **`normalize-params.ts`** imports types only from `./types.js`; `ask-user-question.ts` calls `normalizeQuestionParams` on the raw params before `validateQuestionnaire`, so the reserved/duplicate guards, both render paths, the envelope echo, and the prompt event all see the same CR-free text
 - **`response-envelope.ts`** imports `formatAnswerScalar` from `./format-answer.js` + types from `./types.js`
@@ -52,7 +52,11 @@ Tool-result envelope MUST be built only through this helper — no inline `{ con
 ```ts
 export function formatAnswerScalar(a: QuestionAnswer, _variant: FormatAnswerVariant): string {
     switch (a.kind) {
-        case "multi":  return a.selected && a.selected.length > 0 ? a.selected.join(", ") : NO_INPUT_PLACEHOLDER;
+        case "multi": {
+            const values = [...(a.selected ?? [])];
+            if (a.answer && a.answer.length > 0) values.push(a.answer); // custom text rides last (#188)
+            return values.length > 0 ? values.join(", ") : NO_INPUT_PLACEHOLDER;
+        }
         case "custom": return a.answer && a.answer.length > 0 ? a.answer : NO_INPUT_PLACEHOLDER;
         case "option": return a.answer ?? NO_INPUT_PLACEHOLDER;
     }

@@ -2,7 +2,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
-	ExtensionContext,
+	ExtensionToolContext,
 	ExtensionUIContext,
 	RegisteredCommand,
 	SessionEntry,
@@ -49,6 +49,8 @@ export interface CapturedPi {
 	eventsEmitted: Map<string, unknown[]>;
 	activeTools: string[];
 	allTools: ToolInfo[];
+	/** Custom entries appended via `pi.appendEntry(customType, data)`, in call order. */
+	entries: Array<{ customType: string; data: unknown }>;
 }
 
 export interface MockPi {
@@ -82,6 +84,7 @@ export function createMockPi(options: CreateMockPiOptions = {}): MockPi {
 		eventsEmitted: new Map(),
 		activeTools: [],
 		allTools: [],
+		entries: [],
 	};
 
 	const { skills, ...overrides } = options;
@@ -113,6 +116,9 @@ export function createMockPi(options: CreateMockPiOptions = {}): MockPi {
 			const list = captured.events.get(event) ?? [];
 			list.push(handler);
 			captured.events.set(event, list);
+		}),
+		appendEntry: vi.fn((customType: string, data?: unknown) => {
+			captured.entries.push({ customType, data });
 		}),
 		sendMessage: vi.fn(async () => {}),
 		sendUserMessage: vi.fn((_content: unknown, _options?: unknown) => {
@@ -179,13 +185,20 @@ export function createMockUI(
 	} as unknown as MockUI;
 }
 
-export function createMockSessionManager(branch: SessionEntry[] = [], sessionId = "test-session") {
+export function createMockSessionManager(
+	branch: SessionEntry[] = [],
+	sessionId = "test-session",
+	sessionName?: string,
+) {
 	return {
 		getBranch: vi.fn(() => branch),
 		getEntries: vi.fn(() => branch),
 		getLeafId: vi.fn(() => (branch.length ? branch[branch.length - 1].id : null)),
 		getSessionFile: vi.fn(() => "/tmp/test-session.jsonl"),
 		getSessionId: vi.fn(() => sessionId),
+		// Pi reports an UNNAMED session as `undefined`, so the default mirrors a
+		// session the user never renamed.
+		getSessionName: vi.fn(() => sessionName),
 	};
 }
 
@@ -210,6 +223,8 @@ export interface MockCtxOptions {
 	maxConcurrency?: number;
 	/** Session id the ctx advertises via `sessionManager.getSessionId()`. Defaults to "test-session". */
 	sessionId?: string;
+	/** Display name the ctx advertises via `sessionManager.getSessionName()`. Omitted = unnamed session. */
+	sessionName?: string;
 	/**
 	 * Session id a `spawnChild`-minted child ctx advertises. Defaults to
 	 * `${sessionId}-child` so parent/child isolation is exercised, not masked.
@@ -217,17 +232,20 @@ export interface MockCtxOptions {
 	childSessionId?: string;
 }
 
-export function createMockCtx(opts: MockCtxOptions = {}): ExtensionContext {
+/** A tool `execute()` ctx (Pi ≥ 1.1: `ExtensionToolContext`), which also satisfies `ExtensionContext`. */
+export function createMockCtx(opts: MockCtxOptions = {}): ExtensionToolContext {
 	return {
 		hasUI: opts.hasUI ?? false,
 		mode: opts.mode,
 		cwd: opts.cwd ?? "/tmp/test-cwd",
 		model: opts.model,
 		ui: createMockUI(opts.ui),
-		sessionManager: createMockSessionManager(opts.branch ?? [], opts.sessionId),
+		sessionManager: createMockSessionManager(opts.branch ?? [], opts.sessionId, opts.sessionName),
 		modelRegistry: createMockModelRegistry(opts.models ?? []),
 		isIdle: vi.fn(() => true),
-	} as unknown as ExtensionContext;
+		tools: [],
+		executeTool: vi.fn(),
+	} as unknown as ExtensionToolContext;
 }
 
 /**

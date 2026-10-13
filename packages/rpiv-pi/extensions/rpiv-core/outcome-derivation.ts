@@ -4,7 +4,8 @@
  * Maps `produces.meta.artifactKind` from the skill contract registry to a
  * bucket name via `BUCKET_BY_KIND`, then auto-wires `rpivBucketOutcome(bucket)`
  * onto `produces` stages that lack an explicit `outcome`. Eliminates the 19
- * manual `rpivBucketOutcome(...)` restatements in `built-in-workflows.ts`.
+ * manual `rpivBucketOutcome(...)` restatements in the workflow modules
+ * (`workflows/*.ts`).
  *
  * Registered via `registerOutcomeDeriver` (from `@juicesharp/rpiv-workflow/startup`)
  * so the loader invokes it after `buildEffectiveContracts` and before the

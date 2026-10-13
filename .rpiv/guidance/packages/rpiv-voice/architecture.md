@@ -11,13 +11,13 @@ Registers a single `/voice` slash command: captures mic audio via `decibri`, run
 - **`@earendil-works/pi-tui`** (peer): `Container`, width-correct helpers, key matching
 - **`@juicesharp/rpiv-i18n`** (optional peer): dynamic-imported in `index.ts` + `state/i18n-bridge.ts`; package runs standalone if absent
 - **`@juicesharp/rpiv-config`** (runtime): `configPath`, `loadJsonConfigWithLegacyFallback`, `saveJsonConfig` — sole importer is `config/voice-config.ts`
-- **`sherpa-onnx-node`** (runtime): Whisper int8 ONNX recognizer; no upstream `.d.ts` (`audio/sherpa-onnx-node.d.ts` is an ambient mirror)
+- **`sherpa-onnx-node`** (`^1.13.0`, CJS, no upstream `.d.ts` — `audio/sherpa-onnx-node.d.ts` is an ambient mirror): Whisper int8 ONNX recognizer
 - **`decibri`** (runtime): EventEmitter-shaped mic with built-in Silero VAD
 
 ## Module Structure
 ```
 .                  — Pi entry (index.ts): top-level await registers locales from dir, default export wires registerVoiceCommand(pi)
-audio/             — Mic capture + STT + model installer + hallucination filter + error log (only native/ML layer)
+audio/             — Mic capture + STT + model installer + hallucination filter + error/diagnostic log (only native/ML layer)
 command/           — /voice orchestrator: voice-command (preflight→pipeline→paste), splash-runner, pipeline-runner (mic→STT loop)
 config/            — Persisted user-config (0600, XDG read + one-way legacy fallback); no cache — every load re-reads disk; `__resetState` test hook
 state/             — Canonical VoiceState + pure reducer + key-router + voice-session shell + i18n-bridge. selectors/ is a sub-layer
@@ -46,18 +46,19 @@ export default function (pi: ExtensionAPI): void {
 1. `pi.registerCommand("voice", { handler: (_args, ctx) => handleVoiceCommand(ctx) })`
 2. `runPreflight` → `runWithSplash` mounts `SplashView` while downloading the model, booting STT engine, opening mic
 3. `runDictationSession` opens `ctx.ui.custom`, constructs `VoiceSession` (owns state + reducer), and starts `startDictationPipeline`
-4. Mic events (`data`/`silence`/`end`/`error`) → `session.dispatchAction({ kind: "audio_chunk" | "audio_partial_transcript_set" | "audio_transcript_appended" })`
+4. Mic events (`data`/`speech`/`silence`/`close`/`end`/`error`) → `session.dispatchAction({ kind: "audio_chunk" | "audio_partial_transcript_set" | "audio_transcript_appended" })`
 5. On commit: `done(VoiceResult)` resolves; caller checks `result.intent === "commit"` and `ctx.ui.pasteToEditor(text)`
 
 ## Module-Level State
-`config/voice-config.ts` declares a `globalThis[Symbol.for("rpiv-voice")]` key with an exported `__resetState` wired into `test/setup.ts` `beforeEach` — but nothing ever writes to that cell; it is reset scaffolding, **not a config cache**. There is no cache at all: `loadVoiceConfig()` re-reads disk on every call. `VoiceSession` is **not** a module singleton — one per `/voice` invocation; the only real module-level state is the i18n-bridge's scope impl (intentionally not reset — no test relevance). Reads go through `loadJsonConfigWithLegacyFallback("rpiv-voice", "voice.json")` — `XDG_CONFIG_HOME` preferred, the legacy location read only when the XDG file is absent; writes are XDG-only via `configPath` (`config/voice-config.ts:44-49`).
+`config/voice-config.ts` declares a `globalThis[Symbol.for("rpiv-voice")]` key with an exported `__resetState` wired into `test/setup.ts` `beforeEach` — but nothing ever writes to that cell; it is reset scaffolding, **not a config cache**. There is no cache at all: `loadVoiceConfig()` re-reads disk on every call. `VoiceSession` is **not** a module singleton — one per `/voice` invocation; the only real module-level state is the i18n-bridge's scope impl (intentionally not reset — no test relevance). Reads go through `loadJsonConfigWithLegacyFallback("rpiv-voice", "voice.json")` — `XDG_CONFIG_HOME` preferred, the legacy location read only when the XDG file is absent; writes are XDG-only via `configPath` (`config/voice-config.ts:84-89`).
 
 ## Architectural Boundaries
 - **`audio/` never reads canonical state** — pipeline-runner pushes deps in via `setPaused`/`setHallucinationFilterEnabled` setters
-- **i18n at render time, never module top-level** — `t(key, fallback)` is invoked inside `description`/render paths (`i18n-bridge.ts:17-19`)
+- **i18n at render time, never module top-level** — `t(key, fallback)` is invoked inside `description`/render paths (`i18n-bridge.ts:38-52`)
 - **All SDK imports are soft** — every cross-package consumer wraps `await import("@juicesharp/rpiv-…")` in try/catch
 - **PreflightStage tagging** — `PreflightError` throws carry a `PreflightStage` string-literal union; user-facing messages branch on stage, with a generic fallback for non-`PreflightError` throws
 - **No invariants.ts / replay.ts** — voice is overlay-scoped, not persisted; no post-compaction reconstruction
+- **Config JSON-only keys round-trip** — `numThreads` (and any future non-draft key) is not part of `SettingsDraft`; the reducer re-reads persisted config at save time (`readPersistedConfig`) and `DRAFT_OWNED_CONFIG_KEYS` carries the draft-owned keys across the merge (`__proto__` skipped)
 
 <important if="you are adding a new voice command or screen">
 ## Adding a Command / Screen

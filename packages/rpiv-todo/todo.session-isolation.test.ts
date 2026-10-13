@@ -118,7 +118,7 @@ describe("rpiv-todo — per-session todo store isolation (Phase 1 baseline)", ()
 
 		// Creator-ownership: the render slot is still the parent's. The first UI
 		// session claims the pointer before lazy overlay loading, and a child cannot
-		// re-set it. NOTE: full child-rebind prevention is Phase 2.
+		// re-set it.
 		expect(getRenderState().tasks.map((t) => t.subject)).toEqual(["parent-task"]);
 		// Sanity: the child's task DID land in its own slot.
 		expect(getState("child").tasks.map((t) => t.subject)).toEqual(["child-task"]);
@@ -153,7 +153,7 @@ describe("rpiv-todo — foreground overlay policy (Slice 2)", () => {
 	const CHILD = "child-session";
 	const WIDGET_KEY = "rpiv-todos";
 
-	function widgetSpy(ctx: ReturnType<typeof createMockCtx>) {
+	function widgetSpy(ctx: Pick<ReturnType<typeof createMockCtx>, "ui">) {
 		return ctx.ui.setWidget as unknown as ReturnType<typeof vi.fn>;
 	}
 

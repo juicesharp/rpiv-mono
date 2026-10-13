@@ -7,7 +7,7 @@
  * surface — it mirrors `packages/rpiv-ask-user-question/ask-user-question.ts`
  * which keeps the tool registration at the package root.
  *
- * Public re-exports below preserve the pre-refactor import surface so that
+ * Public re-exports below preserve the package-root import surface so that
  * `index.ts`, `todo-overlay.ts`, and the global `test/setup.ts` `beforeEach`
  * continue to import from `./todo.js`.
  */
@@ -17,13 +17,14 @@ import { loadConfig, validateGuidanceFields } from "./config.js";
 import { formatStatusLabel, t } from "./state/i18n-bridge.js";
 import { TODO_CLEAR_ENTRY_TYPE } from "./state/replay.js";
 import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.js";
-import { applyTaskMutation } from "./state/state-reducer.js";
+import { applyTaskMutation, changesState } from "./state/state-reducer.js";
 import { commitState, getRenderState, getState, sid } from "./state/store.js";
 import { buildToolResult } from "./tool/response-envelope.js";
 import {
 	COMMAND_NAME,
 	ERR_REQUIRES_INTERACTIVE,
 	MSG_NO_TODOS,
+	STATE_ENTRY_TYPE,
 	type TaskMutationParams,
 	TOOL_LABEL,
 	TOOL_NAME,
@@ -38,7 +39,7 @@ const SECTION_IN_PROGRESS = "── In Progress ──";
 const SECTION_COMPLETED = "── Completed ──";
 
 // ---------------------------------------------------------------------------
-// Public re-exports — pre-refactor consumers (overlay, tests, index.ts) keep
+// Public re-exports — existing consumers (overlay, tests, index.ts) keep
 // importing from `./todo.js`. New code may opt into deeper imports.
 // ---------------------------------------------------------------------------
 
@@ -79,7 +80,13 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const result = applyTaskMutation(getState(sid(ctx)), params.action, params as TaskMutationParams);
 			commitState(sid(ctx), result.state);
-			return buildToolResult(params.action, params as TaskMutationParams, result.state, result.op);
+			const toolResult = buildToolResult(params.action, params as TaskMutationParams, result.state, result.op);
+			// Persist the snapshot as a custom entry on the calling session's branch, however the
+			// tool was reached: a call made through another tool (`ctx.executeTool`, e.g. codemode)
+			// never lands as a standalone `toolResult`, so its `details` alone would not survive
+			// replay. Pi's own codemode persists its `store()` the same way.
+			if (changesState(result.op)) pi.appendEntry(STATE_ENTRY_TYPE, toolResult.details);
+			return toolResult;
 		},
 
 		// renderCall reflects the FOREGROUND slot, not the calling session's. Pi's

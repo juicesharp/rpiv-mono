@@ -1,0 +1,10 @@
+{
+  "_meta": {"run_id":"2026-06-29_08-35-51-caf9","workflow":"carve","source":".rpiv/workflows/runs/2026-06-29_08-35-51-caf9.jsonl:32-63","purpose":"Second no-hook elaborate halt, same shape as 65fc: every re-entry counts, halt at re-entry 3 with max 2, older message form. Together the two fixtures pin that a progress hook must never be declared on a non-panel destination like elaborate — counting is the correct semantics there.","excerpt_rule":"Minimal: only the routing rows into `elaborate` (the first is the first visit; the rest are re-entries) and the halt row. Every other row dropped — the no-hook guard path consumes no channel state.","channel_rule":"Routing-only excerpt — no stage rows, no channels.","trim_rule":"Routing rows keep type/fromStage/decision verbatim; the halt row is normalized to the new kind {type:halt,stage,errMsg} with errMsg verbatim.","row_format":"compact one-row-per-line JSON (each rows[] element on a single line)"},
+  "rows": [
+    {"type":"routing","fromStage":"plan-gate","decision":"elaborate"},
+    {"type":"routing","fromStage":"stitch-gate","decision":"elaborate"},
+    {"type":"routing","fromStage":"stitch-gate","decision":"elaborate"},
+    {"type":"routing","fromStage":"stitch-gate","decision":"elaborate"},
+    {"type":"halt","stage":"elaborate","errMsg":"Backward-jump limit exceeded: 3 backward jumps (max 2)"}
+  ]
+}

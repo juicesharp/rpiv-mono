@@ -58,7 +58,7 @@ type are likewise dropped back to their default without a warning.
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| `collapseKey` | Key that collapses and expands the dialog overlay. | `"ctrl+]"` |
+| `collapseKey` | Key that collapses and expands the dialog. | `"ctrl+]"` |
 | `guidance.description` | Full text of the tool description the model sees. Replaces the built-in default entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line snippet describing the tool in the system prompt. | built-in snippet |
 | `guidance.promptGuidelines` | List of usage guidelines given to the model. | 4 built-in guidelines |

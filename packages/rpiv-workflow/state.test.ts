@@ -842,6 +842,133 @@ describe("summarizeRun", () => {
 		} satisfies RunRecap);
 	});
 
+	it("projects note-bearing FORWARD routing rows onto routingNotes in trail order", () => {
+		// Two gates explained themselves mid-run (the pass-through floors); both
+		// notes ride the recap verbatim, in the order they were decided — on EVERY
+		// outcome (completed here; a failed tail would keep them too).
+		const runId = "routing-notes-forward";
+		appendHeader(tmpDir, { runId, workflow: "build", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 4,
+			stage: "implement-scope-check",
+			status: "completed",
+			ts: "t1",
+		});
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 4,
+			fromStage: "implement-scope-check",
+			decision: "reconcile",
+			note: "pass-through: implement-scope-check defers to validate",
+			ts: "t2",
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 5,
+			stage: "validate",
+			skill: "validate",
+			status: "completed",
+			ts: "t3",
+		});
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 5,
+			fromStage: "validate",
+			decision: "commit",
+			note: "second hop note",
+			ts: "t4",
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 6,
+			stage: "commit",
+			skill: "commit",
+			status: "completed",
+			ts: "t5",
+		});
+		expect(summarizeRun(tmpDir, runId)?.routingNotes).toEqual([
+			"pass-through: implement-scope-check defers to validate",
+			"second hop note",
+		]);
+	});
+
+	it("excludes the stop row's note from routingNotes (the stopped refinement owns its single rendering)", () => {
+		// A forward note-bearing row PLUS a trailing stop row: routingNotes carries
+		// ONLY the forward note — the stop's note renders once, as failureReason.
+		const runId = "routing-notes-stop-excluded";
+		appendHeader(tmpDir, { runId, workflow: "build", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 4,
+			stage: "implement-scope-check",
+			status: "completed",
+			ts: "t1",
+		});
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 4,
+			fromStage: "implement-scope-check",
+			decision: "reconcile",
+			note: "pass-through: implement-scope-check defers to validate",
+			ts: "t2",
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 5,
+			stage: "grade (plans-dim-completeness)",
+			skill: "grade",
+			status: "completed",
+			ts: "t3",
+		});
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 5,
+			fromStage: "grade",
+			decision: "stop",
+			note: "completeness failed (medium)",
+			ts: "t4",
+		});
+		const recap = summarizeRun(tmpDir, runId);
+		expect(recap?.outcome).toBe("stopped");
+		expect(recap?.failureReason).toBe("stopped at grade: completeness failed (medium)");
+		expect(recap?.routingNotes).toEqual(["pass-through: implement-scope-check defers to validate"]);
+	});
+
+	it("routingNotes is absent (never []) when no forward row carries a note", () => {
+		// A note-less forward row contributes nothing — the projected recap stays
+		// byte-identical to the pre-§1.5 shape (no routingNotes key at all).
+		const runId = "routing-notes-none";
+		appendHeader(tmpDir, { runId, workflow: "ship", input: "x", ts: "2026" });
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 4,
+			stage: "plan-cite-check",
+			status: "completed",
+			ts: "t1",
+		});
+		appendRoutingDecision(tmpDir, runId, {
+			type: "routing",
+			fromStageIndex: 4,
+			fromStage: "plan-cite-check",
+			decision: "grade",
+			ts: "t2",
+		});
+		appendStage(tmpDir, runId, {
+			session: null,
+			stageNumber: 5,
+			stage: "commit",
+			skill: "commit",
+			status: "completed",
+			ts: "t3",
+		});
+		expect(summarizeRun(tmpDir, runId)).toEqual({
+			outcome: "completed",
+			artifacts: [],
+			workflow: "ship",
+		} satisfies RunRecap);
+	});
+
 	it("a failed stage row after routing rows keeps outcome 'failed' (refinement never touches a non-completed tail)", () => {
 		const runId = "failed-after-routing";
 		appendHeader(tmpDir, { runId, workflow: "ship", input: "x", ts: "2026" });

@@ -1,11 +1,12 @@
 /**
  * The four built-in pipelines rpiv-pi registers into rpiv-workflow's
- * `built-in` layer (see packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts)
- * — build/vet/polish/ship mirrored here. This is a
+ * `built-in` layer (see packages/rpiv-pi/extensions/rpiv-core/workflows/ —
+ * build/vet/polish/ship per-workflow modules, composed by the
+ * built-in-workflows.ts barrel) mirrored here. This is a
  * hand-maintained presentation mirror: the landing renders a curated stage
  * *spine* per pipeline, not the full edge graph.
  *
- * Keep in sync when built-in-workflows.ts changes. `stageCount` is the true
+ * Keep in sync when the per-workflow modules (workflows/*.ts) change. `stageCount` is the true
  * `Object.keys(stages).length`; `stages` is the spine drawn on the rail. vet,
  * polish, and ship are small enough to draw stage-for-stage; `build` folds its 32
  * runtime stages into seven acts:

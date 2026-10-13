@@ -1,6 +1,65 @@
 # @juicesharp/rpiv-workflow
 
-## [Unreleased]
+## [2.13.8] - 2026-10-12
+
+## [2.13.7] - 2026-10-12
+
+## [2.13.6] - 2026-10-12
+
+### Fixed
+
+- **Overlay files can import the authoring DSL and `typebox` in a standard Pi install.** `config.ts` and `packs/*.ts` overlays are loaded by rpiv-workflow's own jiti, outside Pi's extension module mapping, so `import … from "@juicesharp/rpiv-workflow"` failed with `Cannot find module`, and so did `typebox`, which Pi provides to extensions rather than installing. It only worked when another package happened to leave a physical `typebox` in `node_modules`. The overlay loader now maps `@juicesharp/rpiv-workflow` (and `/registration`, `/startup`, `/runner`) to the running package and `typebox` (`/value`, `/compile`) to the copy Pi supplies, the same way Pi's loader does for extensions. ([#298](https://github.com/juicesharp/rpiv-mono/issues/298))
+
+## [2.13.5] - 2026-10-12
+
+## [2.13.4] - 2026-10-11
+
+## [2.13.3] - 2026-10-11
+
+## [2.13.2] - 2026-10-11
+
+## [2.13.1] - 2026-10-11
+
+## [2.13.0] - 2026-10-11
+
+### Fixed
+
+- **A budget-exhausted gate halt no longer tells the user to resume.** `FAIL_GATE_STOP` previously printed "fix and resume with `/wf @<runId>`" for every gate stop. That is correct for a `match`-no-fallback stop (resume re-grades the repaired tree and routes onward), but wrong for a meta unit-graph exhaustion halt: the round/generation counters are derived from the persisted trail and nothing in the resume path resets them, so `/wf @<id>` re-reads the spent budget and re-decides the identical stop — an observed "cannot restart" dead end. `FAIL_GATE_STOP` now recognizes the exhaustion vocabulary (`N/M rounds spent`, `the same failures survived a correction`, `<unit> FATAL — …`, `integrity stop`) and, for those, points at a fresh run instead of resume and drops the "matched no branch" phrasing (wrong for a halt that routed to `stop` deliberately). `match`-no-fallback stops keep the resume remedy unchanged.
+
+## [2.12.0] - 2026-09-30
+
+### Fixed
+
+- **`typebox` is declared as a `peerDependencies: "*"` entry, no longer a `dependencies` entry.** Pi provides `typebox` to extensions and aliases the bare specifier to its own bundled copy at load time, so the copy this manifest installed was dead weight at best and a second live instance at worst. Pi 0.99.1 warns at every startup about the old shape ("Host-provided extension packages must be declared in peerDependencies with a \"*\" range, not dependencies: typebox"); this clears it once the release is installed. Contributed in #282; reported in #266, #268, #272 and #277.
+
+## [2.11.0] - 2026-09-21
+
+## [2.10.1] - 2026-09-13
+
+## [2.10.0] - 2026-09-12
+
+### Fixed
+
+- **The tool-argument fallback now reads the branch shape Pi actually emits.** `iterToolUses` (the walker behind `textScanCollector`/`transcriptPathCollector`'s fallback and `toolCallCollector`) recognised only `{ type: "tool_use", input }` — the Anthropic wire spelling — while `@earendil-works/pi-ai` emits `{ type: "toolCall", arguments }` and every persisted session carries that shape. In production the fallback therefore never fired and `toolCallCollector` never yielded: a stage that wrote its artifact through the `write` tool but omitted the path from its closing message still fataled with "scanned assistant text and tool-call arguments" (run 2026-09-08_16-29-43-b393, code (phase 7/8) — a complete 68 KB elaboration re-done from scratch). Both spellings are now normalised to `{ name, input }`; the collector fixtures gained the live shape beside the old one.
+- **`/wf <flags> <workflow>` previews that workflow instead of the generic list.** The preview branch re-tested the RAW line against the workflow names, so a bare workflow token beside any flag (`/wf --max-jumps 6 review`, `/wf review --name r1`) fell through to the full listing. `parseArgs` now returns a `preview` kind — decided on the flag-stripped residual: empty ⇒ the listing, exactly one workflow name ⇒ that workflow's details — and a `run` always carries non-empty input; the command layer never re-reads the raw line. A malformed `--name` on a preview still refuses, as before.
+- **A repeated `/wf` flag no longer hijacks workflow resolution.** `/wf --max-jumps 6 --max-jumps 9 research fix X` stripped the first `--max-jumps` and skipped the second, leaving `--max-jumps 9 research fix X` as the residual — `--max-jumps` is not a workflow name, so the whole line (the intended `research` token included) ran as prompt input to the DEFAULT workflow, silently. The flag extractor now consumes a repeated leading/trailing flag (`--name`, `--max-jumps`, `--max-laps`): the first-typed value wins in every slot (occurrences are ranked by their offset in the line, not by extraction order — a trailing run peels from the end and a head flag can mask a leading match for a pass), the rest are stripped, and `/wf` warns once per repeated token. A doubled `--name` follows the same rule (it used to stay in the input as prompt text with the mid-input warning).
+- **`/wf` warns when `--max-jumps` is at or above the lap ceiling.** The ceiling counts every re-entry and is arbitrated first, so a cap at or above it can never trip — `--max-jumps 20` alone still delivered at most 8 re-entries with no hint why. The warning names the effective pair (an absent flag is its default) on both the run and `@resume` arms; the run proceeds, bounded by the ceiling. Raise `--max-laps` beside the cap to widen a run.
+- **Programmatic budget options are validated pre-flight.** `runWorkflow` / `resumeWorkflow` refuse a `maxBackwardJumps`, `maxLaps`, or `maxIterations` that is not a non-negative integer (`NaN`, `Infinity`, a negative, a fraction) with a pre-flight envelope before any row is written — `??` passed `NaN` straight to the ledgers, where `laps > NaN` is always false, so the ceiling documented as "always halts" failed OPEN under an always-`"improved"` hook. `buildRunContext` throws on the same check as the backstop. `validateRunBudgets`, `RunBudgetOptions`, and the three defaults (`MAX_BACKWARD_JUMPS`, `MAX_LAPS`, `MAX_ITERATIONS`) are exported from both the root entry and `/runner`, so an embedder can pre-validate and read the defaults the refusal math uses.
+- **Floated `/wf` runs survive launcher session replacement.** The float settle tails in `command-run.ts` notify via `notifyOrDropIfStale` — the per-package twin of the `isStaleCtxError` guards in rpiv-core, btw and todo — swallowing only the stale-ctx phrase; a genuine error still propagates. Previously the `.catch` tail read `ctx.ui` itself, so a ctx invalidated by `/new`, resume, `/reload`, quit or auto-compaction converted a handled rejection into an uncaughtException that killed pi.
+
+### Added
+
+- **`argKeys` on `textScanCollector` / `transcriptPathCollector`** narrows the tool-argument fallback to named argument keys of a matching call (e.g. `argKeys: ["path"]`), so a `write` call's `content` — which may quote a sibling artifact's path — can never outrank the path it wrote to. Absent ⇒ every string argument is scanned, as before. Validated at construction (non-empty array of strings).
+- **`/wf … --max-laps <n>` sets an absolute per-destination ceiling on decision-edge re-entries (`MAX_LAPS = 8`), on a fresh run and on a resume.** The backward-jump cap is waive-aware — a stage whose `progress` hook keeps reporting `"improved"` re-enters past `--max-jumps` — while the lap ceiling counts every re-entry, waived or counted, so even an all-improving loop halts on the `maxLaps + 1`-th re-entry of one stage. When both limits would trip on the same re-entry, the ceiling is arbitrated first. Like the cap, the ledger is per invocation (a resume starts both re-entry budgets fresh), and the flag is honored in the leading or trailing position like `--max-jumps`/`--name` — in any relative order among them — with a mid-position token staying as input text.
+- **`/wf … --max-jumps <n>` sets the backward-jump cap per run, on a fresh run and on a resume.** The cap (`MAX_BACKWARD_JUMPS = 3` per re-entered stage) was an embedder-only option; a fix loop that converges slowly — a code panel climbing 55 → 70 → 90 → 92 across four rounds with one finding left — hit it one lap short. The budget is per invocation (a resume starts a fresh count), so the flag is for giving a single invocation more room. It is honored in the leading or trailing position like `--name`; a mid-position token stays as input text.
+- **`unitLabel` on the session and disk-first verdict collection.** A session that *is* one loop unit now carries the unit's display label, so a collector can narrow collection to it (the disk-first verdict collector's determined-name tightness); single stages and unlabeled wirings degrade to the loose shapes they accepted before. `retryHaltedUnits` on a collect-all loop re-dispatches a soft-halted unit (a failed sentinel in its slot) up to N more times as a whole attempt — unit start, pre-attempt snapshot, session build, execution — with the attempt-1 failure memo riding the re-dispatch prompt; the fold sees only the final attempt. Inert under `failFast`.
+- **`routingNotes` on the run recap.** The recap carries every note-bearing forward routing row's `note`, verbatim in trail order, on every outcome (set only when non-empty); a stop row's note renders once as the stopped refinement's `failureReason`, never twice. A gate that explained itself before a later stage failed keeps its explanation.
+
+### Changed
+
+- **The resume fold trusts the trail for fanout generations that already closed with every unit done.** A closed, fully-done generation dispatches nothing on resume, yet the fold re-ran its unit source and refused (`ERR_RESUME_LOOP_MISMATCH`) whenever that source read state the run had since moved past — a grade panel's roster consults the basename-keyed prior snapshot, overwritten every fix round, so replaying round 1 read round 4's bytes. The recorded unit tags now stand in for the recompute on such generations; a generation at the trail's tail, one with a pending or hard-failed slot, or one followed by its parent's own halt/abort marker still recomputes, so a mid-flight abort re-dispatches exactly its pending units as before.
+
+- **Run trails move to schema v3 — the resume fold becomes budget-aware over `retryHaltedUnits`.** Collected soft-halt rows now carry the failed attempt's 1-based `attemptOrdinal` (stamped by the parallel dispatcher, written by `recordUnitHalt`), and the resume fold re-dispatches an under-budget halted unit — its slot stays unfilled, exactly like a pending one — instead of folding its sentinel, so a run interrupted inside a unit's retry window picks the retries up on resume instead of permanently collecting the halt. A final-attempt row (ordinal beyond budget, or absent) still folds the sentinel, byte-identical to v2. The retry budget is fresh per resume invocation (ordinals restart at 1, bounded only by human-initiated resumes — the accepted semantics). v1 and v2 trails refuse resume with a version mismatch ("start a fresh run"): there is no in-place migration.
 
 ## [2.9.0] - 2026-09-01
 

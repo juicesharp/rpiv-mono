@@ -15,7 +15,7 @@ import { createMockPi, makeTheme, stubFetch } from "@juicesharp/rpiv-test-utils"
 | --- | --- |
 | `createMockPi` | `(options?: CreateMockPiOptions) => { pi: ExtensionAPI; captured: CapturedPi }` |
 | `createMockUI` | `(overrides?: Partial<ExtensionUIContext>) => MockUI` |
-| `createMockSessionManager` | `(branch?: SessionEntry[], sessionId?: string) => { getBranch, getEntries, getLeafId, getSessionFile, getSessionId }` |
+| `createMockSessionManager` | `(branch?: SessionEntry[], sessionId?: string, sessionName?: string) => { getBranch, getEntries, getLeafId, getSessionFile, getSessionId, getSessionName }` |
 | `createMockModelRegistry` | `(models?: Model<Api>[]) => { find, getAvailable, getApiKeyAndHeaders }` |
 | `createMockCtx` | `(opts?: MockCtxOptions) => ExtensionContext` |
 | `createMockCommandCtx` | `(opts?: MockCtxOptions) => ExtensionCommandContext & WorkflowHostContext` |
@@ -70,6 +70,7 @@ Returns `vi.fn()` spies for the eleven `ExtensionUIContext` members tests actual
 | `ui` | `Partial<ExtensionUIContext>` | `{}` |
 | `maxConcurrency` | `number` | `1` (sequential) |
 | `sessionId` | `string` | `"test-session"` |
+| `sessionName` | `string` | omitted (unnamed session) |
 | `childSessionId` | `string` | `` `${sessionId}-child` `` |
 
 Other ctx stub defaults: `getSessionFile()` → `"/tmp/test-session.jsonl"`, `isIdle()` → `true`,

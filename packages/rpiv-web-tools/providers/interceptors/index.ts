@@ -47,8 +47,8 @@ export function getActiveGitHubInterceptor(): GitHubInterceptor | null {
 }
 
 // Public free-function alias for test cleanup. Resets the active GitHub
-// interceptor (if any) — same behavior the pre-refactor `clearCloneCache`
-// had, just routed through the class instead of module-level state.
+// interceptor (if any),
+// routed through the class rather than module-level state.
 export function clearCloneCache(): void {
 	activeGitHubInterceptor?.reset();
 }

@@ -51,22 +51,22 @@ pick, but Pi needs an active model with working credentials (`/login`).
 - **Nothing leaks into the main chat** — the answer is drawn in an overlay, never
   emitted as an agent message, never written to the transcript, never written to disk.
 - **The side question already knows your work** — it is handed a read-only clone
-  of the current conversation branch, so you do not re-explain context.
+  of the main agent's current context, so you do not re-explain context.
 - **Follow-ups have their own thread** — every `/btw` turn in a session is replayed
   into the next one, so the side conversation remembers itself.
 - **`Esc` cancels only the side question** — cancelling it never interrupts what
   the main session is doing.
 - **Survives `/new`, `/fork`, `/resume`, `/reload`** — history is held in the
   running Pi process and clears when Pi exits.
-- **Correct after compaction** — the context snapshot is rebuilt whenever the
-  conversation is compacted or re-branched, so a later `/btw` never answers off a
-  stale view.
+- **Correct after compaction** — the clone is the compacted context the main
+  agent sees, not the full history, and it is rebuilt whenever the conversation is
+  compacted or re-branched, so a later `/btw` never answers off a stale view.
 - **No tools, plain text** — a side question cannot edit a file or run a command.
 
 ## Reference
 
 - [Context model](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-btw/docs/context-model.md) — exactly what each `/btw` call
-  sends to the model: the branch snapshot and its invalidation rules, session
+  sends to the model: the context snapshot and its invalidation rules, session
   history threading, the cross-session question hint, and the no-pollution
   guarantees.
 - [Architecture](https://github.com/juicesharp/rpiv-mono/blob/main/packages/rpiv-btw/docs/architecture.md) — modules, registered command and

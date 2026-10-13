@@ -11,7 +11,9 @@ import { formatError } from "./internal-utils.js";
 import { renderConfigLayer } from "./layers.js";
 import { findWorkflow, type Issue, loadWorkflows } from "./load/index.js";
 import {
+	MSG_FLAG_REPEATED,
 	MSG_INTERACTIVE_ONLY,
+	MSG_JUMP_CAP_ABOVE_LAP_CEILING,
 	MSG_LOAD_ABORTED,
 	MSG_NAME_FLAG_MID_INPUT,
 	MSG_NAME_IGNORED_ON_RESUME,
@@ -23,6 +25,11 @@ import {
 } from "./messages.js";
 import { formatWorkflowDetails, formatWorkflowList } from "./preview.js";
 import { resumeWorkflowByRunId, runWorkflow } from "./runner/index.js";
+// The warning thresholds come from the constants module DIRECTLY, not the
+// runner barrel: the handler suites mock the barrel wholesale (the float
+// boundary), and a barrel import would let those suites pin a stale 3/8 pair
+// while the real defaults drifted.
+import { MAX_BACKWARD_JUMPS, MAX_LAPS } from "./runner/run-context.js";
 import { flushSkillContractProviders } from "./skill-contracts/index.js";
 import { isValidName } from "./state/index.js";
 
@@ -63,28 +70,51 @@ export async function handleWorkflowCommand(host: WorkflowHost, args: string, ct
 	if (parsed.nameFlagIgnored) {
 		ctx.ui.notify(MSG_NAME_FLAG_MID_INPUT, "warning");
 	}
+	for (const flag of parsed.duplicateFlags ?? []) {
+		// A doubled --name on @resume: the winner is about to be dropped anyway
+		// (MSG_NAME_IGNORED_ON_RESUME below), so "the first value wins" would be
+		// a false promise stacked on the ignore toast — one warning, not two.
+		if (parsed.kind === "resume" && flag === "--name") continue;
+		ctx.ui.notify(MSG_FLAG_REPEATED(flag), "warning");
+	}
+	// The ceiling is arbitrated before the cap and counts every re-entry
+	// (`revisits ≤ laps`), so a cap at or above the ceiling can never trip —
+	// `--max-jumps 20` alone silently delivers MAX_LAPS re-entries. Warn on
+	// the EFFECTIVE pair (a flag absent ⇒ its default) before either arm runs;
+	// the run still proceeds, bounded by the ceiling.
+	const effectiveCap = parsed.maxBackwardJumps ?? MAX_BACKWARD_JUMPS;
+	const effectiveCeiling = parsed.maxLaps ?? MAX_LAPS;
+	if (effectiveCap >= effectiveCeiling) {
+		ctx.ui.notify(MSG_JUMP_CAP_ABOVE_LAP_CEILING(effectiveCap, effectiveCeiling), "warning");
+	}
 
 	if (parsed.kind === "resume") {
 		if (parsed.droppedName !== undefined) {
 			ctx.ui.notify(MSG_NAME_IGNORED_ON_RESUME, "warning");
 		}
-		await handleResume(host, ctx, parsed.ref);
+		await handleResume(host, ctx, parsed.ref, parsed.maxBackwardJumps, parsed.maxLaps);
+		return;
+	}
+
+	// Name validity is checked on run AND preview (a preview with a malformed
+	// --name still refuses, as it always did) — never on resume, where the
+	// name is dropped with its own warning above.
+	if (parsed.name !== undefined && !isValidName(parsed.name)) {
+		ctx.ui.notify(MSG_NAME_INVALID(parsed.name), "error");
+		return;
+	}
+
+	if (parsed.kind === "preview") {
+		// The parser decided list-vs-details on the flag-stripped residual;
+		// re-testing the raw line here would miss `/wf --max-jumps 6 review`.
+		ctx.ui.notify(
+			parsed.workflow !== undefined ? formatWorkflowDetails(loaded, parsed.workflow) : formatWorkflowList(loaded),
+			"info",
+		);
 		return;
 	}
 
 	const { workflow: workflowName, input, name } = parsed;
-
-	if (name !== undefined && !isValidName(name)) {
-		ctx.ui.notify(MSG_NAME_INVALID(name), "error");
-		return;
-	}
-
-	if (!input) {
-		const trimmed = args.trim();
-		const previewing = trimmed.length > 0 && workflowNames.has(trimmed);
-		ctx.ui.notify(previewing ? formatWorkflowDetails(loaded, trimmed) : formatWorkflowList(loaded), "info");
-		return;
-	}
 
 	// Block execution on load errors — running a partially-loaded workflow set
 	// would silently mask the user's intent (e.g. their preferred workflow
@@ -125,6 +155,8 @@ export async function handleWorkflowCommand(host: WorkflowHost, args: string, ct
 		host,
 		trigger: { kind: "command", name: "wf" },
 		name,
+		maxBackwardJumps: parsed.maxBackwardJumps,
+		maxLaps: parsed.maxLaps,
 	})
 		.then((result) => {
 			// Surface pre-flight rejections (collision, etc.) — no runId means no JSONL on disk.
@@ -141,14 +173,20 @@ export async function handleWorkflowCommand(host: WorkflowHost, args: string, ct
 // Resume handler
 // ---------------------------------------------------------------------------
 
-async function handleResume(host: WorkflowHost, ctx: WorkflowHostContext, ref: string): Promise<void> {
+async function handleResume(
+	host: WorkflowHost,
+	ctx: WorkflowHostContext,
+	ref: string,
+	maxBackwardJumps?: number,
+	maxLaps?: number,
+): Promise<void> {
 	if (!ref) {
 		ctx.ui.notify(MSG_RESUME_USAGE, "error");
 		return;
 	}
 	// Float the resume off the prompt — identical shape to the run path,
 	// including the stale-safe settle tails.
-	void resumeWorkflowByRunId(ctx, ref, { host })
+	void resumeWorkflowByRunId(ctx, ref, { host, maxBackwardJumps, maxLaps })
 		.then((result) => {
 			// A failure with no runId is a no-JSONL refusal (run-id didn't resolve,
 			// load error, workflow gone, or an unreconstructable trail) — nothing else

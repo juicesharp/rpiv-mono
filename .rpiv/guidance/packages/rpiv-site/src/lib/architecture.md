@@ -11,7 +11,7 @@ Thin domain-helper layer that wraps Astro content-collections (`agentSpecs`, `ag
 
 ## Module Structure
 ```
-agents.ts / skills.ts — Merge spec + visitor-copy collections; five CapabilityTiers (verifier tier added with the three-pipeline release — 15-agent TIER_BY_NAME allowlist, verifier before external in TIER_ORDER), fallback taglines, flow groupings (PIPELINE/SECONDARY/CODE_REVIEW_FLOW), ARTIFACT_WRITE_SITES, PIPELINE_META
+agents.ts / skills.ts — Merge spec + visitor-copy collections; CapabilityTiers (verifier tier beside locator/analyzer/external/specialist; a TIER_BY_NAME allowlist with one row per shipped agent — `getStaticPaths` filters agentSpecs against it), fallback taglines (skills without visitor copy index via the spec fallback), flow groupings (PIPELINE/SECONDARY/CODE_REVIEW_FLOW), ARTIFACT_WRITE_SITES, PIPELINE_META
 workflows.ts     — Hand-maintained mirror of all four built-in workflows (build/vet/polish/ship — the complete set): module-private WORKFLOWS exposed via getWorkflows(); WorkflowStage flags (fanout/gate/fix/human), backward-edge loops, showcase flag
 counts.ts        — Build-time landing stat counts (SurfaceCounts, getSurfaceCounts) derived from skillSpecs, the TIER_BY_NAME roster via getAgentsByTier, getWorkflows, and SIBLING_NAMES — a stat and the section it links to can never disagree
 posts.ts / docs.ts / reading-time.ts — Published-content filters (single source of truth for "published"), sorted; `reading-time.ts` is a pure `words / 200` estimator (floor=1) extracted so Vitest can test it without `astro:content`
@@ -72,8 +72,8 @@ const tested = rootPkg.devDependencies?.["@earendil-works/pi-coding-agent"];
 ```
 
 ## Workflow Mirror (spine, not full graph)
-- **Keep in sync** with `packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts` — `workflows.ts` is a hand-maintained presentation mirror (all four built-ins — the complete set), never a source import
-- **`stageCount` must equal** the runtime `Object.keys(stages).length`; `stages` is the curated rail spine — `build` folds its runtime stages into seven acts
+- **Keep in sync** with `packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts` — `workflows.ts` is a hand-maintained presentation mirror of all four built-ins (the complete set), never a source import; when the runtime pipeline shape changes, re-sync the spine in the same change
+- **Deliberate folding only** — build folds its runtime stages into a curated act spine; a presentation stage stands for the runtime stages it folds, so never drop a runtime stage silently — fold it or mirror it
 - **Stage flags drive rendering** — `fanout` (stacked node), `gate`/`fix` (quality gate + fix loop), `human` (build's design review); optional `loop` draws the backward arc (vet "↺ until approved", polish "↺ until clean")
 - **`showcase` = runtime default** — the landing showcases `build` (it exercises the most machinery); the runtime default (no config) cascades to it too, as the first registered built-in
 

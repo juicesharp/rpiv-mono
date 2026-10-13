@@ -35,7 +35,7 @@ The browser replays the selected lane's transcript, tool calls included.
 | --- | --- |
 | `↑` / `↓` | Move along the lane spine. `↑` on the top row backs out |
 | `⏎` | Arm the parked question on a flagged lane, inline |
-| `PgUp` / `PgDn` | Scroll the transcript |
+| `u` / `d`, `PgUp` / `PgDn`, mouse wheel | Scroll the transcript |
 | `t` | Expand or collapse tool output |
 | `s` | Show or hide the per-stage token breakdown |
 | `x` | Stop the selected run |
@@ -44,8 +44,14 @@ The browser replays the selected lane's transcript, tool calls included.
 The footer states the live contract:
 
 ```
-↑/↓ lanes · ⏎ answer · PgUp/PgDn scroll · t expand · s stages · x stop · ↑/←/esc back
+↑/↓ lanes · ⏎ answer · u/d scroll · t expand · s stages · x stop · ↑/←/esc back
 ```
+
+In Pi's fullscreen TUI (`--tui-mode fullscreen`), Pi keeps `PgUp`/`PgDn` for its own
+transcript, so page the lane with `u`/`d` instead. The mouse wheel scrolls the lane
+transcript while the pointer is over the browser (Pi 0.87 or newer), including while
+you answer a parked question; over the rest of the screen it scrolls Pi's transcript
+as usual.
 
 ## Parked questions
 

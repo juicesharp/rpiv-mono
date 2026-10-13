@@ -33,6 +33,7 @@ interface VoiceState {
     transcript: string;          // committed final-decode text
     partialTranscript: string;   // rolling re-decode of active utterance; replaced wholesale; cleared on final
     audioLevel: number;          // VU meter
+    numThreads: number;          // session-baked STT thread count — display-only, not part of SettingsDraft
     settingsDraft: { hallucinationFilterEnabled: boolean; equalizerEnabled: boolean };
     settingsFocus: "hallucination" | "equalizer";
 }
@@ -49,7 +50,8 @@ type Effect =
     | { kind: "save_config"; config: VoiceConfig; successMessage?: string }
     | { kind: "done"; result: VoiceResult };
 
-// ApplyContext = { persistedConfig: VoiceConfig }; ApplyResult = { state; effects }.
+// ApplyContext = { readPersistedConfig: () => VoiceConfig } — a RE-READER invoked at save time so
+// JSON-only keys (numThreads) round-trip; ApplyResult = { state; effects }.
 export function reduce(state: VoiceState, action: VoiceAction, ctx: ApplyContext): ApplyResult;
 ```
 
@@ -68,7 +70,7 @@ Intent tables are the single source of truth for per-enum behavior — replaces 
 Translation lookup is **soft-dependency**: the bridge dynamic-imports the i18n SDK at module init; if the SDK is absent, `t(key, fallback)` returns the fallback verbatim. Locale registration is **never** done from this layer — only the namespace constant is exported. `registerLocalesFromDir` lives at the extension entry so the bridge stays free of side effects.
 
 ## VoiceSession Shell
-Owns the state cell, exposes `dispatch(data)` (keystroke) / `dispatchAction(action)` / `tickPulse()` / `component` (bound view tree). On each dispatch: route → reduce → run effects against injected `VoiceSessionDeps` (`pasteToEditor`, `notify`, `abort`, `stopMic`, `setPipelinePaused`, `setHallucinationFilterEnabled`); `save_config` calls `saveVoiceConfig` imported directly, and `done` is a separate `VoiceSessionConfig` callback. One session per `/voice` invocation; **no module singleton**, **no `__resetState`** (instance-scoped).
+Owns the state cell, exposes `dispatch(data)` (keystroke) / `dispatchAction(action)` / `tickPulse()` / `component` (bound view tree). On each dispatch: route → reduce → run effects against injected `VoiceSessionDeps` (`pasteToEditor`, `notify`, `abort`, `stopMic`, `setPipelinePaused`, `setHallucinationFilterEnabled`); `save_config` re-reads persisted config, merges over the draft-owned keys (`DRAFT_OWNED_CONFIG_KEYS`, `__proto__` skipped), and calls `saveVoiceConfig` imported directly; `done` is a separate `VoiceSessionConfig` callback. One session per `/voice` invocation; **no module singleton**, **no `__resetState`** (instance-scoped).
 
 ## Differences vs Sibling State Layers
 - **rpiv-todo/state**: persistent — `replay.ts`, `invariants.ts`, `store.ts` singleton; designed for post-compaction reconstruction

@@ -11,7 +11,7 @@
  * spelled as a module cycle.
  */
 
-import { type EdgeTarget, takeRouteNote } from "../api.js";
+import { type EdgeTarget, PROGRESS_VALUES, type ProgressValue, type StageDef, takeRouteNote } from "../api.js";
 import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.js";
 import { resolveSkill } from "../chain-state.js";
 import { lifecycleCtxFor, skillStageRef } from "../events.js";
@@ -19,12 +19,13 @@ import { nowIso } from "../internal-utils.js";
 import {
 	FAIL_BACKWARD_JUMP_EXHAUSTED,
 	FAIL_GATE_STOP,
+	type FailureText,
 	MSG_CHAIN_ADVANCE_FAILED,
 	MSG_ROUTING_AUDIT_DROPPED,
 } from "../messages.js";
 import { edgeIsDecision, nextStage } from "../routing.js";
 import { appendRoutingDecision } from "../state/index.js";
-import type { RunContext, WorkflowHostContext } from "../types.js";
+import type { RunContext, RunState, WorkflowHostContext } from "../types.js";
 import { type ChainOutcome, finalizeWorkflow, haltChain } from "./failure.js";
 
 /**
@@ -39,8 +40,8 @@ export interface ChainDeps {
 
 /**
  * Decomposed into three helpers — `auditRoutingDecision`,
- * `ensureBackwardJumpGuard`, `haltOnRoutingError` — each owning one
- * structural concern.
+ * `evaluateBackwardJumpGuard` (+ `invokeProgressHook`), `haltOnRoutingError`
+ * — each owning one structural concern.
  */
 export async function advanceChain(
 	hostCtx: WorkflowHostContext,
@@ -76,9 +77,23 @@ export async function advanceChain(
 
 	const nextName = result.stage;
 	if (wasDecision) {
-		auditRoutingDecision(hostCtx, run, idx, currentName, nextName);
-		const guard = await ensureBackwardJumpGuard(hostCtx, run, nextName);
-		if (guard !== "continue") return guard;
+		// Read-and-clear the edge's ROUTE_NOTE BEFORE the guard's await and the
+		// audit write: `takeRouteNote` reads once, and the guard's note (verdict
+		// + budget arithmetic) composes onto the SAME routing row this pick
+		// produces. First-visit rows carry the edge note alone (no guard note);
+		// re-entry rows carry `[edgeNote, guardNote].join("; ")`.
+		const edge = run.workflow.edges[currentName];
+		const edgeNote = typeof edge === "function" ? takeRouteNote(edge) : undefined;
+		const guard = await evaluateBackwardJumpGuard(run, nextName);
+		const note = guard.kind === "re-entry" ? [edgeNote, guard.note].filter(Boolean).join("; ") : edgeNote;
+		auditRoutingDecision(hostCtx, run, idx, currentName, nextName, note);
+		if (guard.kind === "re-entry" && guard.halt) {
+			// Trip order: routing row (with the composed note) FIRST, then
+			// exactly one failure row; `onRoute` fires after neither — the
+			// chain halts here.
+			await recordFatalFailure(hostCtx, auditCtxFor(run, nextName, nextName), failedArgs(guard.halt));
+			return "halted";
+		}
 	}
 
 	// Fire onRoute after the routing decision has been audited (when applicable),
@@ -136,9 +151,58 @@ function auditRoutingDecision(
 }
 
 /**
- * Per-DESTINATION cap on decision-edge retries. Returns `"continue"` when the
- * run may proceed, or the `"halted"` outcome when the cap tripped (and the
- * terminal failure has been recorded).
+ * Pure decision output of the backward-jump guard for one decision-edge
+ * pick. `first-visit` — the destination has not run yet; nothing else
+ * happens (no hook, no ledgers, no note). `re-entry` — the destination was
+ * visited: `note` (verdict + budget arithmetic) rides the routing row, and
+ * `halt` carries the deferred `FailureText` when the cap tripped —
+ * enforcement (the routing row, the failure row) stays in `advanceChain`,
+ * so an additional absolute bound can ride the same deferred-`halt` seam
+ * without touching the caller.
+ */
+export type GuardEvaluation = { kind: "first-visit" } | { kind: "re-entry"; note: string; halt?: FailureText };
+
+/**
+ * Ring depth for `RunContext.progressTrail` — the halt text carries at most
+ * this many most-recent verdicts per destination (oldest dropped beyond).
+ */
+const PROGRESS_TRAIL_DEPTH = 3;
+
+/**
+ * Invoke the re-entered stage's optional `progress` hook — the waiver vote.
+ * Fail-soft by design (the hook is an observation, never a halt surface):
+ * absent hook ⇒ `undefined` (no trail entry, no waiver — every re-entry
+ * counts); a throw ⇒ `"unknown"`; an off-union return (a jiti-loaded
+ * literal erased the `ProgressValue` union) ⇒ `"unknown"` via the one
+ * `PROGRESS_VALUES` membership check.
+ */
+async function invokeProgressHook(stage: StageDef | undefined, state: RunState): Promise<ProgressValue | undefined> {
+	const hook = stage?.progress;
+	if (!hook) return undefined;
+	try {
+		const verdict = await hook(state);
+		return (PROGRESS_VALUES as readonly string[]).includes(verdict) ? verdict : "unknown";
+	} catch {
+		return "unknown";
+	}
+}
+
+/**
+ * Per-DESTINATION re-entry arbitration for decision edges — the pure
+ * decision half (the audit + failure-row effects live in `advanceChain`'s
+ * decision arm). Returns `{ kind: "first-visit" }` or
+ * `{ kind: "re-entry", note, halt? }`: `note` is the guard note composed
+ * into the routing row (verdict + both budgets' arithmetic); `halt` carries
+ * the deferred `FailureText` when a limit tripped. Two ledgers, two
+ * taxonomies: `run.laps` is the ABSOLUTE per-destination count (every
+ * re-entry counts, whatever the `progress` verdict — the `maxLaps + 1`-th
+ * re-entry halts on the ceiling, verdict-proof); `run.revisits` is the
+ * WAIVE-AWARE count (an "improved" verdict waives the re-entry — no
+ * increment, only non-waived re-entries spend the `maxBackwardJumps`
+ * cap). So `revisits ≤ laps` always, and both limits trip on the same
+ * re-entry only when `maxBackwardJumps ≥ maxLaps`. Arbitration is
+ * CEILING-FIRST: the lap compare runs before the improved-waive, so the
+ * absolute bound can never be outlived by a verdict.
  *
  * A "backward jump" is a *decision-edge* resolving to an already-visited
  * stage — i.e. a deliberate retry choice. Deterministic forward edges that
@@ -159,28 +223,78 @@ function auditRoutingDecision(
  * what the old reset-on-escape rule existed to approximate.
  *
  * `state.telemetry.backwardJumps` stays the run-wide cumulative total of
- * counted backward jumps (post-hoc telemetry only — never consulted for the
- * halt decision, never reset).
+ * decision-edge re-entries — waived or counted (post-hoc telemetry only —
+ * never consulted for the halt decision, never reset). The per-destination
+ * verdict ring (`run.progressTrail`) records every hook invocation (absent
+ * hook ⇒ no entry) and rides the halt text.
  *
  * Trip attribution targets `nextName` (the stage the guard refused to
  * re-enter), not the just-completed stage.
  */
-async function ensureBackwardJumpGuard(
-	hostCtx: WorkflowHostContext,
-	run: RunContext,
-	nextName: string,
-): Promise<"continue" | ChainOutcome> {
-	if (!run.visited.has(nextName)) return "continue";
+export async function evaluateBackwardJumpGuard(run: RunContext, nextName: string): Promise<GuardEvaluation> {
+	if (!run.visited.has(nextName)) return { kind: "first-visit" };
+
+	const verdict = await invokeProgressHook(run.workflow.stages[nextName], run.state);
+	run.state.telemetry.backwardJumps++;
+	// Absolute lap ledger — every re-entry counts here, whatever the verdict.
+	const laps = (run.laps.get(nextName) ?? 0) + 1;
+	run.laps.set(nextName, laps);
+	if (verdict !== undefined) {
+		const ring = run.progressTrail.get(nextName) ?? [];
+		ring.push(verdict);
+		if (ring.length > PROGRESS_TRAIL_DEPTH) ring.splice(0, ring.length - PROGRESS_TRAIL_DEPTH);
+		run.progressTrail.set(nextName, ring);
+	}
+	// Guard-note vocabulary: `jump: counted (<verdict>) n/m, lap l/L` /
+	// `jump: waived (improved), n/m, lap l/L` — the verdict parenthetical is
+	// omitted when no hook is declared, and the waived form renders the
+	// verdict itself, never its panel-side derivation (the guard knows the
+	// four-value verdict, nothing more).
+	const verdictSegment = verdict === undefined ? "" : ` (${verdict})`;
+
+	// Ceiling-first arbitration: the lap ceiling is verdict-proof (waived
+	// re-entries count), so it is compared BEFORE the improved-waive — an
+	// all-"improved" trail still halts on the maxLaps+1-th re-entry.
+	if (laps > run.maxLaps) {
+		return {
+			kind: "re-entry",
+			note: `jump: counted${verdictSegment} lap ${laps}/${run.maxLaps}, over the absolute lap ceiling`,
+			halt: FAIL_BACKWARD_JUMP_EXHAUSTED({
+				stage: nextName,
+				limitKind: "ceiling",
+				count: laps,
+				max: run.maxLaps,
+				progress: run.progressTrail.get(nextName) ?? [],
+			}),
+		};
+	}
+
+	if (verdict === "improved") {
+		// Waived: the cap budget is untouched; every other aspect of the
+		// re-entry (routing row, onRoute, re-dispatch) is byte-identical to a
+		// counted re-entry under budget. The lap ledger above still counted it.
+		const count = run.revisits.get(nextName) ?? 0;
+		return {
+			kind: "re-entry",
+			note: `jump: waived (improved), ${count}/${run.maxBackwardJumps}, lap ${laps}/${run.maxLaps}`,
+		};
+	}
+
 	const revisits = (run.revisits.get(nextName) ?? 0) + 1;
 	run.revisits.set(nextName, revisits);
-	run.state.telemetry.backwardJumps++;
-	if (revisits <= run.maxBackwardJumps) return "continue";
-	await recordFatalFailure(
-		hostCtx,
-		auditCtxFor(run, nextName, nextName),
-		failedArgs(FAIL_BACKWARD_JUMP_EXHAUSTED(nextName, revisits, run.maxBackwardJumps)),
-	);
-	return "halted";
+	const note = `jump: counted${verdictSegment} ${revisits}/${run.maxBackwardJumps}, lap ${laps}/${run.maxLaps}`;
+	if (revisits <= run.maxBackwardJumps) return { kind: "re-entry", note };
+	return {
+		kind: "re-entry",
+		note,
+		halt: FAIL_BACKWARD_JUMP_EXHAUSTED({
+			stage: nextName,
+			limitKind: "cap",
+			count: revisits,
+			max: run.maxBackwardJumps,
+			progress: run.progressTrail.get(nextName) ?? [],
+		}),
+	};
 }
 
 /**

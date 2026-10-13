@@ -1,11 +1,14 @@
 /**
  * The lane scope floors: build's latest-plan variant and vet's full-history
  * union variant, sharing one scope-verdict envelope — plus the deterministic
- * `scope-quarantine` remedy arm the untracked-only verdict routes to.
+ * `scope-quarantine` remedy arm the untracked-only verdict routes to. Build
+ * and ship's variant additionally accepts validate-report-named writes on a
+ * validate-fix re-entry (vet's graph has no remediation writer to
+ * discriminate, so its union twin carries no acceptance arm).
  */
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { handleToString, type Output, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
+import { handleToString, type Output, type RunView, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
 import { gitDirtyEntries, goalBaselinePath, readGoalBaseline, scopeExcess } from "./goal-baseline.js";
 import { phaseFiles, planPhaseRecords, withTestTwins } from "./plan-phases.js";
 import {
@@ -96,26 +99,35 @@ type ScopeVerdict = "pass" | "untracked-only" | "excess";
  * NOT round-stamped (unlike grade's timestamped slug): each fix-loop round
  * overwrites the file — the route reads the accumulating channel, and on disk
  * only the latest round's scope verdict matters; round-stamp here if a consumer
- * ever needs the history. Severity mirrors the tier ("medium" untracked-only,
- * "high" tracked excess) for TRAIL LEGIBILITY ONLY — no consumer folds it:
- * routing reads `verdict`, and validate's adjudication reads `findings`.
+ * ever needs the history. Severity mirrors the tier ("low" all-advisory,
+ * "medium" untracked-only, "high" tracked excess) for TRAIL LEGIBILITY ONLY —
+ * no consumer folds it: routing reads `verdict`, and validate's adjudication
+ * reads `findings`. The advisory tier is DORMANT at this writer's call sites
+ * (`scopeFinding` emits no `advisory` key) — the contract is encoded for the
+ * day one is. The optional `acceptance` param stamps `declaredBy`/`accepted`
+ * onto the envelope ONLY when a validate-report acceptance declared them
+ * (key-omission idiom — every uninformed emission omits both, so the persisted
+ * JSON stays byte-identical to the pre-widening shape).
  */
 const writeScopeVerdict = (
 	artifact: FsArtifact,
-	findings: { detail: string; where: string }[],
+	findings: { detail: string; where: string; advisory?: true }[],
 	verdict: ScopeVerdict,
 	cwd: string,
+	acceptance?: { declaredBy: string | null; accepted: string[] },
 ): Omit<Output, "meta"> => {
 	const pass = verdict === "pass";
+	const advisoryOnly = findings.length > 0 && findings.every((f) => f.advisory === true);
 	const data = {
 		dimension: "scope",
 		pass,
 		verdict,
-		score: pass ? VERDICT_PASS_SCORE : VERDICT_FAIL_SCORE,
-		severity: pass ? "none" : verdict === "untracked-only" ? "medium" : "high",
+		score: pass ? VERDICT_PASS_SCORE : advisoryOnly ? null : VERDICT_FAIL_SCORE,
+		severity: pass ? "none" : advisoryOnly ? "low" : verdict === "untracked-only" ? "medium" : "high",
 		artifact: handleToString(artifact.handle),
 		findings,
 		feedback: pass ? "" : findings.map((f) => f.detail).join(" "),
+		...(acceptance?.declaredBy ? { declaredBy: acceptance.declaredBy, accepted: acceptance.accepted } : {}),
 	};
 	const rel = join(VERDICT_DIR, `implement-scope-check__${basename(artifact.handle.path, ".md")}.json`);
 	mkdirSync(join(cwd, VERDICT_DIR), { recursive: true });
@@ -151,6 +163,45 @@ const scopeFinding = (path: string, untracked: boolean): { detail: string; where
 		: `Undeclared write ${path} — a TRACKED file is dirty outside the plan's declared write-set (the union of every phase's 'files:'). The implement lane runs sibling phases concurrently in one tree, so a phase that wrote outside its 'files:' may have stepped on a sibling's in-flight edit — or this is benign churn (a lockfile, a regenerated artifact) a declared phase's own commands produced. A deterministic floor cannot tell these apart, so the finding is recorded for the wiring workflow's adjudicator (build threads it to validate via --scope; vet's review loop sees the whole diff); an out-of-scope write the adjudicator cannot explain blocks. In a loop-less workflow this verdict is terminal.`,
 	where: path,
 });
+
+/**
+ * Validate-report scope acceptance: the `file:` paths the latest validation
+ * report's structured `blockers:` entries name, credited ONLY on a
+ * validate-fix re-entry — the latest `remediation` digest row must EXIST and
+ * STRICTLY postdate the failing report (`meta.ts` strings compare
+ * lexicographically, the ISO-8601 idiom), and the report's `data.blockers`
+ * must be an array. Remediate is the one tree writer a plan cannot declare
+ * (the plan predates the report), so on exactly that hop the floor accepts
+ * the blocker-named writes as declared scope.
+ *
+ * Fail-closed by construction — the first entry (no remediation row), a
+ * quarantine re-entry (no postdating remediation), and a re-validation
+ * report NEWER than the remediation all
+ * refuse. Blocker entries are read literally, never coerced (a non-string
+ * `file` contributes nothing), and accepted paths are repo-relative
+ * forward-slash strings matched VERBATIM against the dirty set — no twin
+ * expansion, no recursion: the engine accepts exactly the strings the report
+ * names, and a drifted spelling simply fails to accept (the path stays a
+ * finding for validate to adjudicate exactly as before). Reads defensively
+ * off `state.named` — the stage's `reads` deliberately omits these channels
+ * (a declared read would halt the first, pre-validate entry).
+ */
+const validateReportAcceptance = (state: RunView): { declaredBy: "validate-report" | null; accepted: string[] } => {
+	const remediationTs = state.named.remediation?.at(-1)?.meta?.ts;
+	const validation = state.named.validation?.at(-1);
+	const validationTs = validation?.meta?.ts;
+	if (typeof remediationTs !== "string" || typeof validationTs !== "string" || remediationTs <= validationTs) {
+		return { declaredBy: null, accepted: [] };
+	}
+	const blockers = (validation?.data as { blockers?: unknown } | undefined)?.blockers;
+	if (!Array.isArray(blockers)) return { declaredBy: null, accepted: [] };
+	const files = new Set<string>();
+	for (const blocker of blockers) {
+		const file = (blocker as { file?: unknown } | null)?.file;
+		if (typeof file === "string") files.add(file);
+	}
+	return { declaredBy: "validate-report", accepted: [...files].sort() };
+};
 
 /**
  * Deterministic lane-level scope floor — the structural backstop beneath the
@@ -189,6 +240,14 @@ const scopeFinding = (path: string, untracked: boolean): { detail: string; where
  * never inferred from severity. `readsData: false` (the route consults the
  * channel, not the projected output), so no schema is declared on the script
  * stage (matching `slice-check`/`plan-cite-check`).
+ *
+ * On a validate-fix re-entry the floor additionally ACCEPTS dirty paths the
+ * latest validation report's `blockers:` entries name (see
+ * `validateReportAcceptance`): remediate is the one tree writer a plan
+ * cannot declare (the plan predates the report), and its digest row
+ * postdating the report witnesses the targeted fix. The accepted paths fold
+ * into `scopeExcess`'s declared argument — a blocker-named dirty path
+ * generates no finding and never rides `--scope` into validate.
  */
 const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> => {
 	const latest = latestFsArtifact(state, "plans");
@@ -212,14 +271,18 @@ const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	const baseline = readGoalBaseline(goalBaselinePath(state), cwd);
 	const entries = gitDirtyEntries(cwd);
 
+	// Validate-report acceptance (fail-closed): on the validate-fix re-entry
+	// the report's blocker-named paths join the declared set; refused ⇒
+	// `accepted` is `[]` ⇒ the union is `declared` verbatim (inert).
+	const acceptance = validateReportAcceptance(state);
 	const excess = scopeExcess(
 		entries.map((e) => e.path),
 		baseline,
-		declared,
+		[...declared, ...acceptance.accepted],
 	);
 	const untracked = new Set(entries.filter((e) => e.xy === "??").map((e) => e.path));
 	const findings = excess.map((path) => scopeFinding(path, untracked.has(path)));
-	return writeScopeVerdict(latest as FsArtifact, findings, foldScopeVerdict(excess, untracked), cwd);
+	return writeScopeVerdict(latest as FsArtifact, findings, foldScopeVerdict(excess, untracked), cwd, acceptance);
 };
 
 /**
@@ -375,4 +438,4 @@ const scopeQuarantine = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> =>
 };
 
 export type { ScopeVerdict };
-export { implementScopeCheck, implementScopeCheckVet, scopeQuarantine };
+export { implementScopeCheck, implementScopeCheckVet, scopeQuarantine, writeScopeVerdict };
