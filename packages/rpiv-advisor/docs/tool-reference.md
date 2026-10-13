@@ -22,10 +22,17 @@ Each call assembles the request in this order:
    do. It is cached and only rebuilt when the registered tool-name set changes;
    the JSON is key-sorted so identical inventories serialise byte-identically
    and stay prompt-cache friendly.
-2. **The conversation branch** — built from Pi's resolved LLM context, not a raw
-   replay of history. Compaction summaries and branch summaries are forwarded as
-   the model actually sees them, so a compacted session sends the summary rather
-   than the pre-compaction detail.
+2. **The conversation branch** — the context the executor's model actually saw,
+   not a raw replay of history. When a compression adapter (billion-context-pi) is
+   installed it is asked over its `billion-context-pi:context-view:v1` channel to
+   re-project the branch as it stands, so an adapter-compressed branch reaches the
+   reviewer compressed. Without one — or on an inactive answer — Pi's resolved LLM
+   context is used instead, which forwards compaction and branch summaries as the
+   model sees them. Either way a compacted session sends the summary rather than
+   the pre-compaction detail. If a wired adapter breaks the hand-off — it answers
+   and then rejects, or returns something unusable — the call fails instead of
+   falling back, because the fallback is exactly the uncompressed context this
+   path exists to replace.
 3. **Tail massaging** — the in-flight `advisor()` tool call is stripped from the
    tail, and a user-role message is guaranteed at the end (falling back to
    `Please advise on the executor's situation above.`) so providers that reject

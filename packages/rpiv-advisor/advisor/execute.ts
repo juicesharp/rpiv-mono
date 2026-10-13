@@ -16,6 +16,7 @@ import {
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { ensureUserTailForAdvisor, stripInflightAdvisorCall, stripToolDeclarations } from "./context.js";
+import { requestContextView } from "./context-view.js";
 import { getInventoryMessage } from "./inventory.js";
 import {
 	ERR_ABORTED_DETAIL,
@@ -26,6 +27,7 @@ import {
 	ERR_NO_MODEL_SELECTED,
 	errCallFailed,
 	errCallThrew,
+	errContextViewBroken,
 	errMisconfigured,
 	errNoApiKey,
 	errNoApiKeyDetail,
@@ -115,15 +117,30 @@ export async function executeAdvisor(
 	}
 
 	// Live-read every call — advisor runs mid-turn so any message_end snapshot
-	// is always one turn stale. buildSessionContext() preserves Pi's resolved
-	// LLM context, including compaction summaries and branch summaries, instead
-	// of replaying raw pre-compaction branch messages. convertToLlm is
+	// is always one turn stale. Prefer the compression adapter's context view:
+	// it re-projects the branch as it stands, so an adapter-compressed branch
+	// reaches the advisor compressed instead of as Pi's raw, uncompressed
+	// entries, and it already carries the in-flight advisor() call this module
+	// strips below. Without an adapter installed — or on an inactive answer
+	// (adapter stood down, session mismatch, nothing to project) — fall back to
+	// buildSessionContext(), which preserves Pi's own resolved LLM context,
+	// including compaction summaries and branch summaries. convertToLlm is
 	// pass-through for user/assistant/toolResult (messages.js:111-114), so
-	// element refs are stable across calls via the session store.
-	const { messages: sessionMessages } = buildSessionContext(
-		ctx.sessionManager.getEntries(),
-		ctx.sessionManager.getLeafId(),
-	);
+	// element refs are stable across calls via the session store, and it is
+	// idempotent over the adapter's already-final projection.
+	//
+	// Absence falls back; a broken hand-off does not. An adapter that answered
+	// and then failed would send the advisor the uncompressed history this path
+	// exists to avoid, so the call errors out instead of reviewing the wrong
+	// context — a wrong review is worse than no review.
+	const view = await requestContextView(pi, ctx);
+	if (view.kind === "broken") {
+		return buildErrorResult(advisorLabel, effort, errContextViewBroken(view.detail), view.detail);
+	}
+	const sessionMessages =
+		view.kind === "available"
+			? view.messages
+			: buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId()).messages;
 	const branchMessages = ensureUserTailForAdvisor(
 		stripInflightAdvisorCall(stripToolDeclarations(convertToLlm(sessionMessages))),
 	);

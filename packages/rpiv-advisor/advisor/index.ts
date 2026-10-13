@@ -15,6 +15,7 @@
  *   policy     — disabledForModels blocklist + blocked predicates
  *   inventory  — globalThis tool-inventory cache + serializer
  *   context    — branch-message massaging
+ *   context-view — the compression adapter's projection, when one is installed
  *   prompt     — system-prompt loader
  *   execute    — the advisor side-call
  *   register   — advisor tool registration
@@ -26,6 +27,7 @@
 export { registerAdvisorCommand } from "./command.js";
 export { loadAdvisorConfig, saveAdvisorConfig } from "./config.js";
 export { ensureUserTailForAdvisor, stripInflightAdvisorCall, stripToolDeclarations } from "./context.js";
+export { CONTEXT_VIEW_CHANNEL, type ContextViewMessages, requestContextView } from "./context-view.js";
 export {
 	registerAdvisorBeforeAgentStart,
 	registerModelSelectHandler,

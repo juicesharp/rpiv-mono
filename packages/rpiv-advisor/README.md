@@ -54,9 +54,12 @@ judgment. To turn it back off, run `/advisor` and choose **No advisor**.
   conversation branch is serialised and forwarded automatically: the task, every
   tool call made, every result seen. That whole branch is billed against the
   reviewer model on every call, so escalations are not free.
-- **The reviewer sees what survived compaction** — the branch is built from Pi's
+- **The reviewer sees what survived compaction** — the branch is the context the
+  executor's model actually saw: with a compression adapter installed
+  (billion-context-pi) the adapter re-projects the branch, otherwise Pi's
   resolved LLM context, so compaction and branch summaries are forwarded instead
-  of a stale raw replay.
+  of a stale raw replay. If a wired adapter breaks the hand-off the escalation
+  fails rather than falling back to the uncompressed history.
 - **Any model can be the reviewer** — every model you're authenticated for is in
   the `/advisor` picker, found by fuzzy-typing. No provider is privileged.
 - **Pick once, it stays picked** — model and effort persist to `advisor.json`
