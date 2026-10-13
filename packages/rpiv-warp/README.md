@@ -32,7 +32,8 @@ tab or another app. You get:
 
 - the tab title animating a braille spinner for as long as the turn runs
 - an OS notification when Pi finishes, naming the project and quoting the reply
-- an OS notification the moment Pi asks a question and blocks on your answer
+- an OS notification the moment Pi blocks on your answer — a question, or a
+  permission prompt for a command it wants to run
 
 Nothing to configure, no key to supply.
 
@@ -46,10 +47,13 @@ Nothing to configure, no key to supply.
   mascot in the tab title for the whole turn (`⠴ - <repo>`, or
   `⠴ - <session> - <repo>` once the session is named, so named tabs stay
   distinguishable while they run), then the original label comes back.
-- **A Blocked badge that never sticks** — an ESC-aborted question is drained at
-  turn end instead of leaving the badge lit.
+- **A Blocked badge that never sticks** — it lights for a blocking tool and for
+  any extension UI prompt raised during a turn (a permission prompt, say), and an
+  ESC-aborted prompt or tool call is drained at turn end instead of leaving the
+  badge lit.
 - **No false idle mid-task** — the running prompt is re-announced every 15
-  seconds while the turn is live.
+  seconds while the turn is live, and paused while a blocking tool or prompt has
+  the badge lit.
 - **Per-run badges for parked workflow questions** — each `/wf` run gets its own
   badge keyed on the run id, so concurrent runs light up and clear independently.
 - **Nothing to pay for where it can't help** — outside Warp or on a known-broken
@@ -70,7 +74,7 @@ Optional. Create `~/.config/rpiv-warp/config.json`:
 
 | Key | What it does | Default |
 | --- | --- | --- |
-| `blockingTools` | Tool names that raise the Blocked badge when called and clear it when they finish. Set to `[]` to turn the badge off entirely. | `["ask_user_question"]` |
+| `blockingTools` | Tool names whose calls raise the Blocked badge and clear it when they finish. It does not control the badge as a whole: any extension UI prompt raised during a turn raises it whatever this list says, so `[]` removes the tool-name raises but leaves the prompt-driven ones in place. | `["ask_user_question"]` |
 | `heartbeatMs` | How often the running prompt is re-announced so Warp doesn't mark the tab idle. Set to `0` to disable. | `15000` |
 
 Both keys are optional, and a missing or malformed file falls back to the

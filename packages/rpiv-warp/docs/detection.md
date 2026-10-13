@@ -63,7 +63,7 @@ gated. Upgrading Warp clears the gate; there is nothing to configure.
 | `/dev/tty` unopenable (cron, no-TTY SSH) | Every write is silently swallowed. The `open`/`write`/`close` cycle is wrapped in a try/catch that never rethrows, so a failed notification cannot reach the agent loop. |
 | Windows | Best-effort. There is no `/dev/tty`, so the same OSC bytes go to `process.stdout` and ConPTY forwards them to Warp. Skipped entirely when `process.stdout.isTTY` is false, so piped or redirected output is never polluted. This path is untested in the wild. |
 | Detached workflow child sessions | The extension is not loaded at all. See below. |
-| `blockingTools` configured empty | The `tool_call` and `tool_execution_end` handlers short-circuit; no Blocked badge, everything else unaffected. |
+| `blockingTools` configured empty | The `tool_call` and `tool_execution_end` handlers short-circuit, so no tool name raises the badge; extension UI prompts still do. Everything else is unaffected. |
 | `heartbeatMs` set to `0` | The heartbeat interval never starts. |
 | Terminal without an xterm title stack | The CSI push/pop sequences are ignored silently; the spinner still animates. |
 
