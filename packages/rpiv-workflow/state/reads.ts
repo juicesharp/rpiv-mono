@@ -1,5 +1,5 @@
 /**
- * Fail-soft JSONL readers. Shape-filtered, never positional — the same
+ * Display reads are fail-soft; resume reads reject malformed JSON. The same
  * file can carry a header, stage rows, and routing rows, and readers
  * pluck whichever rows match their predicate.
  *
@@ -52,7 +52,7 @@ function readJsonlRows<T>(cwd: string, runId: string, match: (row: unknown) => r
 }
 
 /** Every well-formed JSON row, unfiltered — the shared base under `readJsonlRows` + the strict resume reader. */
-function readParsedRows(cwd: string, runId: string): unknown[] {
+function readParsedRows(cwd: string, runId: string, strict = false): unknown[] {
 	let lines: string[];
 	try {
 		const filePath = stateFilePath(cwd, runId);
@@ -61,6 +61,7 @@ function readParsedRows(cwd: string, runId: string): unknown[] {
 		if (!content) return [];
 		lines = content.split("\n");
 	} catch (e) {
+		if (strict) throw e;
 		console.warn(`[rpiv-workflow] workflow state: ${formatError(e)}`);
 		return [];
 	}
@@ -70,6 +71,7 @@ function readParsedRows(cwd: string, runId: string): unknown[] {
 		try {
 			rows.push(JSON.parse(line));
 		} catch (e) {
+			if (strict) throw new Error(`unsafe resume JSONL: ${formatError(e)}`);
 			console.warn(`[rpiv-workflow] workflow state: skipping malformed JSONL row — ${formatError(e)}`);
 		}
 	}
@@ -176,7 +178,13 @@ export function readAllStagesForResume(
 	const rows: WorkflowStage[] = [];
 	const stopBefore = new Map<number, RoutingDecision>();
 	let pendingStop: RoutingDecision | undefined;
-	for (const parsed of readParsedRows(cwd, runId)) {
+	let parsedRows: unknown[];
+	try {
+		parsedRows = readParsedRows(cwd, runId, true);
+	} catch (e) {
+		return { ok: false, detail: `unsafe resume trail: ${formatError(e)}` };
+	}
+	for (const parsed of parsedRows) {
 		if (isWorkflowStage(parsed) && hasValidSessionRef(parsed)) {
 			if (pendingStop) {
 				stopBefore.set(rows.length, pendingStop);

@@ -1354,7 +1354,7 @@ describe("runWorkflow", () => {
 			expect(result.stagesCompleted).toBe(2);
 		});
 
-		it("degrades (no halt) when consumes.data is a non-object (malformed contract)", async () => {
+		it("halts when consumes.data is a non-object (malformed contract)", async () => {
 			writeArtifact(tmpDir, ".rpiv/artifacts/research/r.md", "---\nfoo: 1\n---\n\nContent");
 			writeArtifact(tmpDir, ".rpiv/artifacts/designs/d.md");
 			registerSkillContracts([
@@ -1380,9 +1380,9 @@ describe("runWorkflow", () => {
 				input: "x",
 			});
 
-			// Malformed contract — degrade, not halt
-			expect(result.success).toBe(true);
-			expect(result.stagesCompleted).toBe(2);
+			expect(result.success).toBe(false);
+			expect(result.stagesCompleted).toBe(1);
+			expect(result.error).toMatch(/invalid declared consumes\.data schema/i);
 		});
 
 		it("skips contract check when stage has its own inputSchema (no double validation)", async () => {
