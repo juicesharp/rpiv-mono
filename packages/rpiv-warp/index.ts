@@ -29,6 +29,12 @@ interface PendingBlockingCall {
 }
 
 let pendingQuery = "";
+// True while the in-flight run was started by `pi.sendMessage(..., { triggerTurn: true })`
+// rather than a user prompt. Pi 1.2.0 fires `before_agent_start` for both kinds, so
+// `agent_start` must not announce a user turn for a custom run. Set once per logical run
+// at `before_agent_start`; do NOT clear it on `agent_end`, because retries and pre-settle
+// continuations re-emit `agent_start` without another `before_agent_start`.
+let activeRunIsCustom = false;
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
 let heartbeatMs = DEFAULT_HEARTBEAT_MS;
@@ -40,6 +46,7 @@ const pendingBlockingCalls = new Map<string, PendingBlockingCall>();
 
 export function __resetState(): void {
 	pendingQuery = "";
+	activeRunIsCustom = false;
 	if (idleTimer !== undefined) {
 		clearTimeout(idleTimer);
 		idleTimer = undefined;
@@ -166,12 +173,22 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		pendingQuery = event.prompt ?? "";
+		// Pi 1.2.0 fires this for runs started by `pi.sendMessage(..., { triggerTurn: true })`
+		// too; those carry `messageType: "custom"` and no `prompt`. Only a user run
+		// supplies the query Warp shows, so leave `pendingQuery` untouched for custom runs.
+		if (event.messageType === "custom") {
+			activeRunIsCustom = true;
+			return;
+		}
+		activeRunIsCustom = false;
+		pendingQuery = event.prompt;
 	});
 
 	pi.on("agent_start", async (_event, ctx) => {
-		emit(buildSessionStartPayload(ctx)); // Item 2: defensive re-announce
-		emit(buildPromptSubmitPayload(ctx, pendingQuery));
+		if (!activeRunIsCustom) {
+			emit(buildSessionStartPayload(ctx)); // Item 2: defensive re-announce
+			emit(buildPromptSubmitPayload(ctx, pendingQuery));
+		}
 		startSpinner(titleSuffix(ctx));
 		cancelIdleTimer(); // Item 3: cancel pending idle from previous turn
 		startHeartbeat(ctx, heartbeatMs); // Item 4: heartbeat
@@ -211,6 +228,7 @@ export default function (pi: ExtensionAPI): void {
 		cancelIdleTimer();
 		stopHeartbeat();
 		pendingQuery = "";
+		activeRunIsCustom = false;
 		pendingBlockingCalls.clear();
 		stopSpinner();
 	});
