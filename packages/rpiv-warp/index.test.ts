@@ -52,6 +52,7 @@ beforeEach(() => {
 	(fs.writeSync as unknown as Mock).mockReset();
 	(fs.closeSync as unknown as Mock).mockReset();
 	resetSpinner();
+	__resetState();
 });
 
 describe("registration", () => {
@@ -119,7 +120,7 @@ describe("agent_start handler", () => {
 
 		// Capture query via before_agent_start
 		const beforeStart = captured.events.get("before_agent_start")?.[0];
-		await beforeStart?.({ prompt: "how do I deploy?" } as never, createMockCtx() as never);
+		await beforeStart?.({ messageType: "user", prompt: "how do I deploy?" } as never, createMockCtx() as never);
 
 		const handler = captured.events.get("agent_start")?.[0];
 		await handler?.({} as never, createMockCtx() as never);
@@ -161,6 +162,92 @@ describe("agent_start handler", () => {
 		const promptSubmit = osc777Writes.find((p) => p.event === "prompt_submit");
 		expect(promptSubmit).toBeDefined();
 		expect(promptSubmit!.query).toBe("");
+	});
+
+	it("does NOT emit session_start or prompt_submit for a custom (triggerTurn) run", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		const { pi, captured } = createMockPi();
+		register(pi);
+
+		// Seed a user turn, then start a custom run: Pi 1.2.0 fires
+		// before_agent_start with messageType "custom" and no prompt.
+		const beforeStart = captured.events.get("before_agent_start")?.[0];
+		await beforeStart?.({ messageType: "user", prompt: "first question" } as never, createMockCtx() as never);
+		await beforeStart?.({ messageType: "custom", message: { role: "custom" } } as never, createMockCtx() as never);
+
+		const handler = captured.events.get("agent_start")?.[0];
+		await handler?.({} as never, createMockCtx() as never);
+
+		const osc777Writes = write.mock.calls
+			.filter((c) => String(c[1]).startsWith("\x1b]777;notify;"))
+			.map((c) => {
+				const json = String(c[1])
+					.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
+					.replace(/\x07$/, "");
+				return JSON.parse(json);
+			});
+
+		expect(osc777Writes.find((p) => p.event === "session_start")).toBeUndefined();
+		expect(osc777Writes.find((p) => p.event === "prompt_submit")).toBeUndefined();
+	});
+
+	it("keeps suppressing announcements across a same-run continuation with no new before_agent_start", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		const { pi, captured } = createMockPi();
+		register(pi);
+
+		const beforeStart = captured.events.get("before_agent_start")?.[0];
+		const agentStart = captured.events.get("agent_start")?.[0];
+		const agentEnd = captured.events.get("agent_end")?.[0];
+		await beforeStart?.({ messageType: "custom", message: { role: "custom" } } as never, createMockCtx() as never);
+
+		// First leg of the custom run, then a retry/pre-settle continuation: Pi re-emits
+		// agent_start/agent_end pairs for one logical run without another before_agent_start.
+		await agentStart?.({} as never, createMockCtx() as never);
+		await agentEnd?.({ messages: [] } as never, createMockCtx() as never);
+		write.mockClear();
+		await agentStart?.({} as never, createMockCtx() as never);
+
+		const osc777Writes = write.mock.calls
+			.filter((c) => String(c[1]).startsWith("\x1b]777;notify;"))
+			.map((c) => {
+				const json = String(c[1])
+					.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
+					.replace(/\x07$/, "");
+				return JSON.parse(json);
+			});
+
+		expect(osc777Writes.find((p) => p.event === "session_start")).toBeUndefined();
+		expect(osc777Writes.find((p) => p.event === "prompt_submit")).toBeUndefined();
+	});
+
+	it("emits session_start and prompt_submit again for the next user run after a custom run", async () => {
+		setWorkingWarpEnv();
+		const { write } = primeFs();
+		const { pi, captured } = createMockPi();
+		register(pi);
+
+		const beforeStart = captured.events.get("before_agent_start")?.[0];
+		await beforeStart?.({ messageType: "custom", message: { role: "custom" } } as never, createMockCtx() as never);
+		await beforeStart?.({ messageType: "user", prompt: "second question" } as never, createMockCtx() as never);
+
+		const handler = captured.events.get("agent_start")?.[0];
+		await handler?.({} as never, createMockCtx() as never);
+
+		const osc777Writes = write.mock.calls
+			.filter((c) => String(c[1]).startsWith("\x1b]777;notify;"))
+			.map((c) => {
+				const json = String(c[1])
+					.replace(/^\x1b\]777;notify;warp:\/\/cli-agent;/, "")
+					.replace(/\x07$/, "");
+				return JSON.parse(json);
+			});
+
+		expect(osc777Writes[0].event).toBe("session_start");
+		expect(osc777Writes[1].event).toBe("prompt_submit");
+		expect(osc777Writes[1].query).toBe("second question");
 	});
 });
 

@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Pi 1.2.0 compatibility: `before_agent_start` is now a union on `messageType` and also fires for runs started by `pi.sendMessage(..., { triggerTurn: true })`. The prompt is captured only from a user run (`messageType: "user"`), and a custom run no longer emits the defensive `session_start` + `prompt_submit` that blanked or re-announced the tab's query. The run-kind flag survives `agent_end`, so retry and pre-settle continuations keep the suppression. The package typechecks against `@earendil-works/pi-coding-agent` 1.2.0.
+
 ## [2.13.8] - 2026-10-12
 
 ## [2.13.7] - 2026-10-12
