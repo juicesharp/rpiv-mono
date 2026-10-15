@@ -10,6 +10,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - `npm run export:hosts` renders the skills and subagents for other harnesses into `hosts/`: a Claude Code plugin (`rpiv`, with a marketplace entry at the repo root) and a portable Agent Skills pack for Codex, OpenCode, Factory and similar. The output is committed; `npm run check:hosts` fails CI when it drifts from `skills/` or `agents/`.
 
+### Changed
+- The built-in workflows, skill-contract normalisation and outcome derivation no longer import Pi at runtime, so `rpiv-claude` can load them under Claude Code. `parseFrontmatter` is now local (`frontmatter.ts`, tested against Pi's for identical output), the Pi-free contract helpers moved to `skill-contracts-core.ts` (re-exported from `skill-contracts-source.ts`), and `isModuleNotFound` moved to `module-errors.ts` (re-exported from `utils.ts`). No behaviour change in Pi.
+
 ## [2.13.8] - 2026-10-12
 
 ### Fixed

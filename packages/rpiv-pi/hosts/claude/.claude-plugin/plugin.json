@@ -1,7 +1,7 @@
 {
 	"name": "rpiv",
 	"version": "2.13.8",
-	"description": "The rpiv skill pipeline (discover → research → design → plan → implement → validate → code-review → commit, and more) and the subagents it dispatches, exported from rpiv-pi. The /wf workflow runner stays Pi-only.",
+	"description": "The rpiv skill pipeline (discover → research → design → plan → implement → validate → code-review → commit, and more) and the subagents it dispatches, exported from rpiv-pi. Run /wf workflows on Claude Code with rpiv-claude.",
 	"author": {
 		"name": "juicesharp"
 	},

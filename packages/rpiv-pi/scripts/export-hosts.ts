@@ -32,7 +32,7 @@ export const PLUGIN_NAME = "rpiv";
 /** Publisher of the marketplace in this repo; the plugin's author stays the package author. */
 const MARKETPLACE_OWNER = "ethicalcapital";
 const PLUGIN_DESCRIPTION =
-	"The rpiv skill pipeline (discover → research → design → plan → implement → validate → code-review → commit, and more) and the subagents it dispatches, exported from rpiv-pi. The /wf workflow runner stays Pi-only.";
+	"The rpiv skill pipeline (discover → research → design → plan → implement → validate → code-review → commit, and more) and the subagents it dispatches, exported from rpiv-pi. Run /wf workflows on Claude Code with rpiv-claude.";
 export type HostId = "claude" | "agents";
 export const HOSTS: readonly HostId[] = ["claude", "agents"];
 

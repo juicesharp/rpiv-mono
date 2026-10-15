@@ -4,6 +4,32 @@
  * Pure functions — no ExtensionAPI, no side effects, fail-soft.
  */
 
+import { parse } from "yaml";
+
+// ---------------------------------------------------------------------------
+// YAML frontmatter parse
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a document's YAML frontmatter into an object plus the trimmed body.
+ *
+ * Byte-for-byte the contract of Pi's `parseFrontmatter` (pi-coding-agent
+ * `utils/frontmatter`), kept local so the built-in workflows load under hosts
+ * that are not Pi (the Claude Code runner in rpiv-claude). Strips a BOM,
+ * normalises CRLF/CR, requires a leading `---` and a closing `\n---`; anything
+ * else yields `{ frontmatter: {}, body }`. Invalid YAML throws, as Pi's does.
+ */
+export function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
+	const normalized = (content.startsWith("\uFEFF") ? content.slice(1) : content)
+		.replace(/\r\n/g, "\n")
+		.replace(/\r/g, "\n");
+	if (!normalized.startsWith("---")) return { frontmatter: {}, body: normalized };
+	const endIndex = normalized.indexOf("\n---", 3);
+	if (endIndex === -1) return { frontmatter: {}, body: normalized };
+	const parsed = parse(normalized.slice(4, endIndex));
+	return { frontmatter: (parsed ?? {}) as Record<string, unknown>, body: normalized.slice(endIndex + 4).trim() };
+}
+
 // ---------------------------------------------------------------------------
 // Frontmatter bounds
 // ---------------------------------------------------------------------------

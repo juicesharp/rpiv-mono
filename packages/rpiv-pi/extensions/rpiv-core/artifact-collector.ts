@@ -35,7 +35,6 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import {
 	type ArtifactCollector,
 	type ArtifactParser,
@@ -48,6 +47,7 @@ import {
 	transcriptPathCollector,
 	// Runner-free entry — keeps the ~530ms engine off the startup path.
 } from "@juicesharp/rpiv-workflow/registration";
+import { parseFrontmatter } from "./frontmatter.js";
 
 // ---------------------------------------------------------------------------
 // Collectors — text-scan over assistant transcript

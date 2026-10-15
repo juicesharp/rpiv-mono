@@ -3,8 +3,9 @@
  * latest plan resolves and that each phase body's edit paths are declared in
  * its frontmatter `files:`.
  */
-import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+
 import type { Output, ScriptContext } from "@juicesharp/rpiv-workflow/registration";
+import { parseFrontmatter } from "../frontmatter.js";
 import { verifyCitations } from "./citations.js";
 import { forEachLineOutsideFences } from "./markdown-fence.js";
 import { PLAN_PHASE_RE, phaseFiles } from "./plan-phases.js";

@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/juicesharp/rpiv-mono/branch/main/graph/badge.svg?v=2)](https://codecov.io/gh/juicesharp/rpiv-mono)
 [![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/juicesharp/rpiv-mono/badges/tests.json)](https://github.com/juicesharp/rpiv-mono/actions/workflows/ci.yml)
 
-Fifteen packages in one npm workspace: the **rpiv-pi** pipeline, the [Pi Agent](https://github.com/badlogic/pi-mono) extensions it composes, and the internal packages holding them up. Twelve publish to npm; three never leave the repo. Kept together so orchestration and tool surfaces evolve and ship in lockstep.
+Sixteen packages in one npm workspace: the **rpiv-pi** pipeline, the [Pi Agent](https://github.com/badlogic/pi-mono) extensions it composes, and the internal packages holding them up. Twelve publish to npm; four never leave the repo. Kept together so orchestration and tool surfaces evolve and ship in lockstep.
 
 **Where to start:**
 
@@ -40,12 +40,13 @@ Each one installs on its own with `pi install npm:@juicesharp/rpiv-<name>`, then
 
 ### Everything else in the workspace
 
-Four packages you do not `pi install`. One is on npm as a library; three are `private: true` and resolve only inside a checkout.
+Five packages you do not `pi install`. One is on npm as a library; four are `private: true` and resolve only inside a checkout.
 
 | Package | Role | How you get it |
 | --- | --- | --- |
 | [`rpiv-config`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-config) | Shared XDG-aware JSON config I/O for the siblings | Published as a library: `npm install @juicesharp/rpiv-config`. Not a Pi extension — it registers nothing, and ten siblings already pull it in as a dependency. [npm](https://www.npmjs.com/package/@juicesharp/rpiv-config) |
 | [`rpiv-telemetry`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-telemetry) | MLflow observability — auto-instruments lifecycle + sub-agent activity | **Not published.** Inside this repo Pi loads it through the workspace symlink; elsewhere, point Pi at a checkout: `pi install ./packages/rpiv-telemetry` |
+| [`rpiv-claude`](./packages/rpiv-claude) | `rpiv-wf`: runs `/wf` workflows headless on Claude Code through the Claude Agent SDK | **Not published.** Run from a checkout: `node packages/rpiv-claude/bin/rpiv-wf.mjs run <workflow> "<brief>"` |
 | [`rpiv-site`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-site) | The [rpiv-pi.com](https://rpiv-pi.com) site (static Astro build) | **Not published.** Built from this repo with `npm run build:site`, deployed to GitHub Pages by CI |
 | [`test-utils`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/test-utils) | Shared test fixtures (`@juicesharp/rpiv-test-utils`) | **Not published.** Symlinked by npm workspaces; imported by the test suite only |
 
@@ -62,7 +63,8 @@ What the export changes, and what it cannot carry:
 
 - **Claude Code** keeps `$ARGUMENTS` and ```` ```! ```` context blocks, which rpiv-args already mirrors. It swaps `${SKILL_DIR}` for `${CLAUDE_SKILL_DIR}`, `/skill:x` for `/rpiv:x`, `ask_user_question` for `AskUserQuestion`, Pi tool names for Claude's, and namespaces subagent names. Each skill gets an exact `allowed-tools` grant for the `node` helpers its ```` ```! ```` blocks run, because Claude Code refuses to load a skill whose context commands are not approved.
 - **Agent Skills** frontmatter is cut to `name` and `description`; ```` ```! ```` blocks become "run these commands first" steps, and a preamble tells the model what to do when a harness lacks subagents or a named tool.
-- **Pi-only:** the `/wf` workflow runner, `advisor` (skills already fall back to an inline path when it is absent), per-agent model routing from `models.json`, and the rpiv-pi extension itself.
+- **Workflows on Claude Code:** `/wf` itself is a Pi command, but [`rpiv-claude`](./packages/rpiv-claude) runs the same workflows (built-ins and your packs) headless through the Claude Agent SDK, sharing run state with Pi.
+- **Pi-only:** `advisor` (skills already fall back to an inline path when it is absent), per-agent model routing from `models.json`, the lane console, and the rpiv-pi extension itself.
 - The exporter fails closed: an agent tool with no Claude mapping, a `/skill:` that names no skill, or a positional `$1` (1-based in rpiv-args, 0-based in Claude Code) stops the export.
 
 ## Roadmap

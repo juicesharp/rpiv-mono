@@ -16,6 +16,7 @@ Keeping an experienced driver in the loop while the work moves at LLM speed. Com
 - Session-backed, mid-loop resume
 - Skill-contract architecture (load-time + runtime schema checks)
 - Skills and subagents exported to Claude Code (plugin) and Agent Skills harnesses (`npm run export:hosts`)
+- Non-Pi host: `/wf` workflows run headless on Claude Code via the Claude Agent SDK (`rpiv-claude`)
 - Sibling family — `ask-user-question`, `todo`, `advisor`, `web-tools`, `args`, `i18n`, `btw`, `voice`, `warp`, `telemetry`
 
 ## What's Next
@@ -29,7 +30,6 @@ Keeping an experienced driver in the loop while the work moves at LLM speed. Com
 ## What's Possible
 
 - Telemetry public release
-- Non-Pi host embedding of the `/wf` runner (skills and subagents already export)
 - Ecosystem / extensibility (third-party skill contracts, user workflow packs)
 - Tournament bracket ranking
 - Worktree isolation — parallelize shared-tree stages (`implement`) safely
