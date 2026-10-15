@@ -8,6 +8,7 @@ import {
 	DEFAULT_TOOL_DESCRIPTION,
 	registerAskUserQuestionTool,
 } from "./ask-user-question.js";
+import { MAX_HEADER_LENGTH, MAX_LABEL_LENGTH } from "./tool/types.js";
 
 const TOOL_NAME = "ask_user_question";
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-ask-user-question", "config.json");
@@ -37,6 +38,20 @@ it("describes the all-question custom-answer contract in the registered tool", (
 	const tool = captured.tools.get(TOOL_NAME)!;
 	expect(tool.description).toContain('automatically appended "Type something." row on every question');
 	expect(tool.description).toContain("reserved labels are rejected at runtime");
+});
+
+describe("registerAskUserQuestionTool - parameter limits", () => {
+	it.each(["description", "promptGuidelines"] as const)("states hard limits in %s before a call", (field) => {
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get(TOOL_NAME)!;
+		const text = [tool[field]].flat().join("\n");
+		expect(text).toContain(`questions[].header: maximum ${MAX_HEADER_LENGTH} characters`);
+		expect(text).toContain(`options[].label: maximum ${MAX_LABEL_LENGTH} characters`);
+		expect(text).toContain("including any (Recommended) suffix");
+		expect(text).toContain("Requests that exceed these limits fail validation before the questionnaire opens.");
+		expect(text).toContain("Put the full question in question and option explanations in description.");
+	});
 });
 
 describe("registerAskUserQuestionTool — guidance overrides", () => {
