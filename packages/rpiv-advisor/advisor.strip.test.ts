@@ -2,6 +2,7 @@ import type { Message } from "@earendil-works/pi-ai";
 import { makeAssistantMessage, makeToolResult, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 import { ensureUserTailForAdvisor, stripInflightAdvisorCall } from "./advisor/index.ts";
+import { MSG_ADVISOR_NUDGE } from "./advisor/messages.ts";
 
 describe("stripInflightAdvisorCall", () => {
 	it("returns original array for empty messages", () => {
@@ -107,18 +108,37 @@ describe("ensureUserTailForAdvisor", () => {
 		expect(ensureUserTailForAdvisor(msgs)).toBe(msgs);
 	});
 
-	it("returns original when tail is already user", () => {
+	it("appends a user nudge when tail is already user", () => {
 		const msgs = [makeAssistantMessage({ text: "old" }), makeUserMessage("q")];
-		expect(ensureUserTailForAdvisor(msgs)).toBe(msgs);
+		const out = ensureUserTailForAdvisor(msgs);
+		expect(out).toHaveLength(3);
+		expect(out.slice(0, 2)).toEqual(msgs);
+		expect(out[2]).toMatchObject({ role: "user", content: [{ type: "text", text: MSG_ADVISOR_NUDGE }] });
 	});
 
-	it("returns original when tail is a toolResult", () => {
+	it("appends a user nudge when tail is a toolResult", () => {
 		const msgs: Message[] = [
 			makeUserMessage("q"),
 			makeAssistantMessage({ toolCalls: [{ id: "c1", name: "todo", arguments: {} }] }),
 			makeToolResult({ toolCallId: "c1", toolName: "todo", text: "done" }),
 		];
-		expect(ensureUserTailForAdvisor(msgs)).toBe(msgs);
+		const out = ensureUserTailForAdvisor(msgs);
+		expect(out).toHaveLength(4);
+		expect(out.slice(0, 3)).toEqual(msgs);
+		expect(out[3]).toMatchObject({ role: "user", content: [{ type: "text", text: MSG_ADVISOR_NUDGE }] });
+	});
+
+	it("ends on the nudge when the executor's advisor() call carried no text", () => {
+		const msgs: Message[] = [
+			makeUserMessage("q"),
+			makeAssistantMessage({ toolCalls: [{ id: "c1", name: "todo", arguments: {} }] }),
+			makeToolResult({ toolCallId: "c1", toolName: "todo", text: "done" }),
+			makeAssistantMessage({ toolCalls: [{ id: "c2", name: "advisor", arguments: {} }] }),
+		];
+		const out = ensureUserTailForAdvisor(stripInflightAdvisorCall(msgs));
+		expect(out).toHaveLength(4);
+		expect(out[2].role).toBe("toolResult");
+		expect(out[3]).toMatchObject({ role: "user", content: [{ type: "text", text: MSG_ADVISOR_NUDGE }] });
 	});
 
 	it("appends a user nudge when tail is assistant", () => {

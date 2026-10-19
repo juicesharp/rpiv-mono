@@ -23,15 +23,16 @@ export function stripInflightAdvisorCall(messages: Message[]): Message[] {
 	return [...messages.slice(0, -1), { ...last, content: filtered }];
 }
 
+// Always close the branch with a user-role nudge addressed to the advisor.
 // Some providers (recent Anthropic Claude models) reject payloads ending on an
 // assistant turn ("This model does not support assistant message prefill. The
-// conversation must end with a user message."). After stripInflightAdvisorCall
-// the tail can be assistant (e.g. the executor wrote thinking text before
-// calling advisor). Append a minimal user-role nudge to guarantee user-tail.
+// conversation must end with a user message."). And when the executor called
+// advisor() with no text, stripInflightAdvisorCall drops that whole turn, so the
+// tail is the previous toolResult/user message: without the nudge the advisor
+// model reads the executor's transcript as its own and continues it as the
+// executor (empty reply, or narration like "Calling the advisor:").
 export function ensureUserTailForAdvisor(messages: Message[]): Message[] {
 	if (messages.length === 0) return messages;
-	const last = messages[messages.length - 1];
-	if (last.role !== "assistant") return messages;
 	const nudge: Message = {
 		role: "user",
 		content: [{ type: "text", text: MSG_ADVISOR_NUDGE }],

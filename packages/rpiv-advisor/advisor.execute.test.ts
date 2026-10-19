@@ -36,6 +36,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
 import { registerAdvisorTool, setAdvisorModel } from "./advisor/index.ts";
+import { MSG_ADVISOR_NUDGE } from "./advisor/messages.ts";
 
 function resp(input: { text?: string; stopReason?: "done" | "aborted" | "error" | "toolUse"; errorMessage?: string }) {
 	return {
@@ -177,6 +178,7 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 			{ role: "system", content: "base", timestamp: 1 },
 			{ role: "system", content: "later", timestamp: 2 },
 			user,
+			expect.objectContaining({ role: "user", content: [{ type: "text", text: MSG_ADVISOR_NUDGE }] }),
 		]);
 	});
 

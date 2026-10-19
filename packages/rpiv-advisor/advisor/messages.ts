@@ -30,7 +30,8 @@ export const CHECKMARK = " ✓";
 // Messages (static)
 export const MSG_ADVISOR_DISABLED = "Advisor disabled";
 export const MSG_REQUIRES_INTERACTIVE = "/advisor requires interactive mode";
-export const MSG_ADVISOR_NUDGE = "Please advise on the executor's situation above.";
+export const MSG_ADVISOR_NUDGE =
+	"[Advisor request] You are the advisor, not the executor. The conversation above is the executor's transcript: do not continue it, do not narrate tool calls, and do not answer the user. The executor has just called advisor() and is waiting. Reply now with your plan, correction, or stop signal.";
 export const MSG_EFFORT_NOT_SET = "Effort not set — advisor uses the model default";
 export const MSG_PERSIST_FAILED = "Failed to save advisor selection — selection not persisted";
 

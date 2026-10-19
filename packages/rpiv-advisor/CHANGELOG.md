@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- The advisor no longer continues the executor's transcript instead of advising. When the executor called `advisor()` with no accompanying text, the whole in-flight turn was stripped and the branch ended on a `toolResult` or user message, so no nudge was appended; the advisor model then answered as the executor, returning `Advisor returned no text content` (`stopReason: stop`, 1 output token) or echoing narration such as "Calling the advisor:". The nudge is now always appended, and it states explicitly that the model is the advisor.
+
 ## [2.13.9] - 2026-10-17
 
 ### Changed
