@@ -46,6 +46,18 @@ describe("registerTodoTool — registration shape", () => {
 			expect(raw).toContain(action);
 		}
 	});
+
+	it("describes the required `action` discriminator and leads guidance with a create example", () => {
+		const { tool } = setup();
+		const schema = tool.parameters as { properties?: Record<string, { description?: string }> };
+		const actionDescription = schema.properties?.action?.description;
+		expect(typeof actionDescription).toBe("string");
+		expect(actionDescription).toMatch(/required/i);
+
+		const guidelines = tool.promptGuidelines as string[];
+		expect(guidelines[0]).toContain("action");
+		expect(guidelines[0]).toContain('{"action":"create"');
+	});
 });
 
 describe("registerTodoTool — execute mutates module state", () => {
