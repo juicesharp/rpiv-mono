@@ -55,6 +55,7 @@ export { TOOL_NAME } from "./tool/types.ts";
 
 export const DEFAULT_PROMPT_SNIPPET = "Manage a task list to track multi-step progress";
 export const DEFAULT_PROMPT_GUIDELINES: string[] = [
+	'Every `todo` call must include the required `action` property as its first property — one of create, update, list, get, delete, clear. A call without `action` fails validation before it runs. New task: {"action":"create","subject":"Research existing tool","activeForm":"researching existing tool"} (one call per task).',
 	"Use `todo` for complex work with 3+ steps, when the user gives you a list of tasks, or immediately after receiving new instructions to capture requirements. Skip it for single trivial tasks and purely conversational requests.",
 	"When starting a task from the todo list, mark it in_progress BEFORE beginning work. Mark it completed IMMEDIATELY when done — never batch completions. Exactly one task in_progress at a time.",
 	"Never mark a task completed if tests are failing, the implementation is partial, or you hit unresolved errors — keep it in_progress and create a new task for the blocker instead.",

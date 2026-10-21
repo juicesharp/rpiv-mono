@@ -7,6 +7,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Fewer first-call schema rejections from models that omit `action`.** The
+  `action` parameter now carries an explicit schema description (it was the only
+  field without one), and the built-in prompt guidance gained a first bullet
+  with a literal `create` call example — previously only `update` had a worked
+  example, so a model's first `todo` interaction of a session could emit the
+  task fields alone and fail validation before the extension ran. Guidance
+  overrides that predate this change keep working; re-diff your
+  `promptGuidelines` against the new defaults when convenient.
+
 ## [2.13.9] - 2026-10-17
 
 ### Changed
