@@ -74,6 +74,7 @@ Optional. Create `~/.config/rpiv-todo/config.json` (or
 
 ```json
 {
+  "widget": { "enabled": true },
   "maxWidgetLines": 8,
   "collapseKey": "alt+t"
 }
@@ -81,6 +82,7 @@ Optional. Create `~/.config/rpiv-todo/config.json` (or
 
 | Setting | What it does | Default |
 | --- | --- | --- |
+| `widget.enabled` | Set `false` to hide the persistent panel. The `todo` tool, task persistence and `/todos` remain available. Needs `/reload`. | `true` |
 | `maxWidgetLines` | Content rows the overlay may use, heading included. Minimum `3`. Applies on the next repaint. Pi's tool-output expansion mode shows all tasks. | `12` |
 | `collapseKey` | Key that collapses and expands the panel, in Pi keybinding form (`alt+o`, `ctrl+shift+t`). Set `"off"` to register no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
 | `guidance` | Replaces the built-in instructions the extension gives the model about when and how to use the todo list. Needs `/reload`. | _(built-ins)_ |

@@ -31,6 +31,7 @@ extension only reads it.
 
 ```json
 {
+  "widget": { "enabled": true },
   "maxWidgetLines": 8,
   "collapseKey": "alt+t",
   "guidance": {
@@ -42,6 +43,23 @@ extension only reads it.
   }
 }
 ```
+
+## `widget.enabled`
+
+Default `true`. Set this boolean to `false` to hide the persistent panel above
+the editor:
+
+```json
+{ "widget": { "enabled": false } }
+```
+
+Only the boolean `false` disables the panel. Missing or invalid values keep it
+enabled. The `todo` tool, recorded task state and `/todos` command remain
+available.
+
+The setting is read when the overlay is created and is cached for that instance.
+Run `/reload` after editing it. The collapse shortcut is configured separately
+through `collapseKey`; set that option to `"off"` to disable the binding.
 
 ## `maxWidgetLines`
 

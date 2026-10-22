@@ -3,6 +3,7 @@ import { loadJsonConfigWithLegacyFallback, validateGuidanceFields } from "@juice
 
 interface TodoConfig {
 	guidance?: GuidanceFields;
+	widget?: { enabled?: boolean };
 	maxWidgetLines?: number;
 	/**
 	 * Key spec for the overlay collapse/expand shortcut, in the same format as

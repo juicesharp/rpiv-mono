@@ -14,7 +14,7 @@
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, getMaxWidgetLines, resolveCollapseKey } from "./config.ts";
+import { COLLAPSE_KEY_OFF, getMaxWidgetLines, loadConfig, resolveCollapseKey } from "./config.ts";
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
 import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "./state/selectors.ts";
 import { getRenderState } from "./state/store.ts";
@@ -29,6 +29,8 @@ const OVERLAY_EXPAND_HINT = "{key} to expand";
 const OVERLAY_COLLAPSED = "collapsed";
 
 export class TodoOverlay {
+	private readonly widgetEnabled = loadConfig().widget?.enabled !== false;
+
 	private uiCtx: ExtensionUIContext | undefined;
 	private widgetRegistered = false;
 	private tui: TUI | undefined;
@@ -48,7 +50,8 @@ export class TodoOverlay {
 	}
 
 	update(): void {
-		if (!this.uiCtx) return;
+		if (!this.uiCtx || !this.widgetEnabled) return;
+
 		const snapshot = this.getSnapshot();
 		const visible = this.selectOverlayTasks(snapshot);
 

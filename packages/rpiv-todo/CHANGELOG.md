@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Optional `widget.enabled` setting, default `true`. Set it to `false` to hide the persistent task panel while retaining the `todo` tool, task persistence and `/todos`. Reload after changing the setting.
+
 ## [2.13.9] - 2026-10-17
 
 ### Changed

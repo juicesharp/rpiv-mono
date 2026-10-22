@@ -7,12 +7,16 @@ overflow is trimmed, and which strings localize.
 
 ## When the overlay exists
 
-The widget is mounted above the Pi editor under the key `rpiv-todos`.
+The widget is mounted above the Pi editor under the key `rpiv-todos`. Set
+[`widget.enabled`][widget-enabled] to `false` to hide the panel while keeping
+the `todo` tool, task persistence and `/todos` available.
+
+[widget-enabled]: ./configuration.md#widgetenabled
 
 | Stage | Condition |
 | --- | --- |
 | Created | At the first session start that has a UI. A headless session never creates it. |
-| Registered | Only while at least one overlay-visible task exists. The widget unregisters itself when the list empties, and re-registers when a task reappears. |
+| Registered | Only while the widget is enabled and at least one overlay-visible task exists. The widget unregisters itself when the list empties, and re-registers when a task reappears. |
 | Bound | Only the foreground session's overlay is refreshed. A detached or child session has its own task state and never rebinds or repaints the foreground panel. |
 | Disposed | On the foreground session's shutdown. A child session shutting down leaves the overlay alone. |
 
