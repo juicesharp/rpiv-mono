@@ -2,7 +2,7 @@ import { type Api, getSupportedThinkingLevels, type Model } from "@earendil-work
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./advisor-ui.js", () => ({
+vi.mock("./advisor-ui.ts", () => ({
 	showAdvisorPicker: vi.fn(),
 	showEffortPicker: vi.fn(),
 }));
@@ -18,8 +18,8 @@ import {
 	restoreAdvisorState,
 	setAdvisorModel,
 	setDisabledForModels,
-} from "./advisor/index.js";
-import { showAdvisorPicker, showEffortPicker } from "./advisor-ui.js";
+} from "./advisor/index.ts";
+import { showAdvisorPicker, showEffortPicker } from "./advisor-ui.ts";
 
 const modelA = { provider: "anthropic", id: "opus", name: "Opus" } as unknown as Model<Api>;
 const modelR = {

@@ -16,7 +16,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { FLAG_DEBUG, MSG_TYPE_PIPELINE_INDEX } from "./constants.js";
+import { FLAG_DEBUG, MSG_TYPE_PIPELINE_INDEX } from "./constants.ts";
 
 /**
  * Keep this in sync with the `disable-model-invocation: true` skill set under
@@ -36,7 +36,7 @@ export const PIPELINE_POINTER = [
 	"Other explicit-only commands: /skill:slice, /skill:revise, /skill:elaborate,",
 	"/skill:architecture-review, /skill:frontend-design",
 	"Workflow-internal (dispatched by lanes — never suggest): amend, design-slice,",
-	"design-review, synthesize, grade, remediate, quick-plan",
+	"design-review, synthesize, grade, remediate, quick-plan, acceptance, lens-grade",
 ].join("\n");
 
 export function injectPipelinePointer(pi: ExtensionAPI): void {

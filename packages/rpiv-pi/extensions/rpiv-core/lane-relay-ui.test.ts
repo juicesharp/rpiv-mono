@@ -9,7 +9,7 @@
 
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createLaneRelayUiContext, isLaneRelayUiContext } from "./lane-relay-ui.js";
+import { createLaneRelayUiContext, isLaneRelayUiContext } from "./lane-relay-ui.ts";
 import {
 	__resetRunLaneRegistry,
 	dequeueInput,
@@ -17,7 +17,7 @@ import {
 	getUnit,
 	recordRun,
 	setFocusedRun,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 /** The fan-out unit this relay is bound to — its deferred questions queue onto this
  *  unit's own sub-row and the switcher drains only this queue. */
@@ -216,6 +216,79 @@ describe("lane-relay-ui — brand (child detection)", () => {
 		expect(isLaneRelayUiContext(real)).toBe(false);
 		expect(isLaneRelayUiContext(undefined)).toBe(false);
 		expect(isLaneRelayUiContext({})).toBe(false);
+	});
+});
+
+describe("lane-relay-ui — brand survives a spread copy (pi ≥0.84.4 wrapUIPromptContext)", () => {
+	/**
+	 * Byte-faithful model of pi 0.84.4's wrapUIPromptContext (dist/core/extensions/
+	 * runner.js): a `{...ui}` spread plus closure overrides of the five prompt
+	 * methods, each calling back through the ORIGINAL ui. Upstream #8829 tracks the
+	 * spread's lossiness; this suite pins that the relay stays detectable and
+	 * leak-proof even through that copy.
+	 */
+	function wrapLikePi0844(ui: ExtensionUIContext): ExtensionUIContext {
+		return {
+			...ui,
+			custom: (factory: never, options: never) => ui.custom(factory, options),
+		} as ExtensionUIContext;
+	}
+
+	it("a `{...relay}` spread copy still detects as a relay (the launcher-only gates hold)", () => {
+		recordRun("run-1", "ship");
+		const { real } = makeRealCtx();
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
+
+		expect(isLaneRelayUiContext({ ...relay })).toBe(true);
+		expect(isLaneRelayUiContext(wrapLikePi0844(relay))).toBe(true);
+		// A spread of a PLAIN ctx must not false-positive.
+		expect(isLaneRelayUiContext({ ...(real as object) })).toBe(false);
+	});
+
+	it("the wrapped copy still DEFERS custom into the lane queue (never mounts on the real UI)", async () => {
+		recordRun("run-1", "ship");
+		const { real } = makeRealCtx();
+		const wrapped = wrapLikePi0844(createLaneRelayUiContext(real, "run-1", UNIT));
+
+		const factory = (() => ({})) as never;
+		const result = track(wrapped.custom(factory, undefined as never));
+
+		const pending = getUnit("run-1", UNIT)?.pendingInput;
+		expect(pending).toHaveLength(1);
+		expect(pending?.[0].factory).toBe(factory);
+		await flush();
+		expect(result.settled).toBe(false); // parked, exactly like the un-wrapped relay
+	});
+
+	it("the wrapped copy keeps the focus gate and the ambient-surface suppression", () => {
+		recordRun("run-1", "ship");
+		const ctx = makeRealCtx();
+		const wrapped = wrapLikePi0844(createLaneRelayUiContext(ctx.real, "run-1", UNIT)) as unknown as Record<
+			string,
+			(...a: unknown[]) => unknown
+		>;
+
+		// notify: the spread copied the focus-gated closure — dropped at root.
+		wrapped.notify("Advisor restored", "info");
+		expect(ctx.notify).not.toHaveBeenCalled();
+
+		// Suppressed mutators: the spread copied the no-ops.
+		expect(wrapped.setWidget("rpiv-lanes", () => ({}))).toBeUndefined();
+		expect(wrapped.setStatus("k", "v")).toBeUndefined();
+		expect(ctx.setWidget).not.toHaveBeenCalled();
+		expect(ctx.setStatus).not.toHaveBeenCalled();
+	});
+
+	it("double-wrapping never duplicates the brand key (ownKeys invariant)", () => {
+		recordRun("run-1", "ship");
+		const { real } = makeRealCtx();
+		const relay = createLaneRelayUiContext(real, "run-1", UNIT);
+
+		// Relay-over-relay is never built in production, but the ownKeys guard must
+		// keep it from throwing (a duplicate ownKeys entry is a TypeError).
+		const doubled = createLaneRelayUiContext({ ...relay } as ExtensionUIContext, "run-1", UNIT);
+		expect(() => ({ ...doubled })).not.toThrow();
+		expect(isLaneRelayUiContext({ ...doubled })).toBe(true);
 	});
 });
 

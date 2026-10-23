@@ -1,4 +1,4 @@
-import type { RecordingStatus } from "./state.js";
+import type { RecordingStatus } from "./state.ts";
 
 export interface StatusIntentMeta {
 	glyph: string;

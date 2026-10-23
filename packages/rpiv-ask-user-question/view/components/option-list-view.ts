@@ -1,5 +1,5 @@
-import type { StatefulView } from "../stateful-view.js";
-import { WrappingSelect, type WrappingSelectItem, type WrappingSelectTheme } from "./wrapping-select.js";
+import type { StatefulView } from "../stateful-view.ts";
+import { WrappingSelect, type WrappingSelectItem, type WrappingSelectTheme } from "./wrapping-select.ts";
 
 /**
  * Maximum number of option rows visible in the WrappingSelect window. Lifted here from
@@ -13,7 +13,7 @@ export interface OptionListViewConfig {
 }
 
 /**
- * Per-tick projection of OptionListView state. After Phase 11b, `inputBuffer`
+ * Per-tick projection of OptionListView state. `inputBuffer`
  * is part of the props bag — the session-owned `inlineInput` (a headless
  * `pi-tui` Editor instance) supplies its current `getText()` here per tick.
  * `OptionListView` is purely props-driven; the imperative buffer surface and

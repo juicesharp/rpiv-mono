@@ -17,8 +17,8 @@
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { Static, TSchema } from "typebox";
-import type { JsonSchemaCapable, JsonSchemaObject } from "./json-schema.js";
-import { jsonSchemaConverter, validateToJsonSchemaIssues } from "./json-schema.js";
+import type { JsonSchemaCapable, JsonSchemaObject } from "./json-schema.ts";
+import { jsonSchemaConverter, validateToJsonSchemaIssues } from "./json-schema.ts";
 
 /**
  * Wrap a TypeBox schema to return a `JsonSchemaCapable` — a Standard Schema v1

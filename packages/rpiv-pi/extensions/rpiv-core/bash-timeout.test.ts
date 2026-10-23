@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { armBashWatchdog, bashTimeoutReason, resolveBashTimeoutMs } from "./bash-timeout.js";
+import { armBashWatchdog, bashTimeoutReason, resolveBashTimeoutMs } from "./bash-timeout.ts";
 
 type AnyEvent = { type: string; [k: string]: unknown };
 

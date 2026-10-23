@@ -9,18 +9,18 @@
  * of re-probing `def.prompt` — the slot-priority rule lives in one place.
  */
 
-import { currentPrimaryArtifact } from "../chain-state.js";
-import { type AnyJudge, panelMembers } from "../judge.js";
+import { currentPrimaryArtifact } from "../chain-state.ts";
+import { type AnyJudge, panelMembers } from "../judge.ts";
 import {
 	FAIL_MISSING_ARTIFACT,
 	FAIL_MISSING_NAMED_READ,
 	FAIL_SKILL_NOT_REGISTERED,
 	MSG_STAGE_THREW,
-} from "../messages.js";
-import { readName } from "../stage-def.js";
-import type { RunContext } from "../types.js";
-import { haltPreflight, invariantPreflight } from "./errors.js";
-import type { ResolvedStage } from "./resolve-stage.js";
+} from "../messages.ts";
+import { readName } from "../stage-def.ts";
+import type { RunContext } from "../types.ts";
+import { haltPreflight, invariantPreflight } from "./errors.ts";
+import type { ResolvedStage } from "./resolve-stage.ts";
 
 /**
  * The skill-path preflight sequence, in its load-bearing order:

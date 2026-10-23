@@ -67,7 +67,7 @@ const REVIEW_SCHEMA = typeboxSchema(
 );
 ```
 
-`code-review` emits `blockers_count`, the runner counts it, and the next stage is `revise` or `commit` accordingly. No human eyeballs the review to decide. Backward edges are first-class: `revise → implement` is just another edge target. The runner counts backward jumps and halts at `maxBackwardJumps` (default 3, so at most 4 review iterations), so a stuck loop can't burn tokens forever.
+`code-review` emits `blockers_count`, the runner counts it, and the next stage is `revise` or `commit` accordingly. No human eyeballs the review to decide. Backward edges are first-class: `revise → implement` is just another edge target. The runner counts backward jumps and halts at `maxBackwardJumps` (default 3, so at most 4 review iterations) or at the absolute `maxLaps` ceiling (default 8 per destination, counting every re-entry — even waived ones — so an improving loop still converges), and both budgets reset per invocation (a resume re-opens the loop), so a stuck loop can't burn tokens forever.
 
 ## Before you wire: four questions per skill
 
@@ -211,7 +211,7 @@ Notice how little wiring the stages carry. Each `produces` stage's outcome is **
 - **`implement` fans out over every plan.** `IMPLEMENT_PLANS_FANOUT` (the `concurrency: 1` twin of `PLANS_PHASE_FANOUT`) walks the `phases:` frontmatter array — derive-checked against the body's `## Phase N:` headings — of *all* the plans the blueprint pass accumulated: push decomposition, every unit computed up front. Its units run serially, because they share one working tree and their write-sets are undeclared, so the scheduler can't derive dep edges.
 - **`validate` is a `prompt` stage, and it has to be.** This is the subtle one. The default rolling primary (and a plain `reads: ["plans"]`, which only reads `.at(-1)`) would hand `validate` the *last* plan alone, leaving every earlier phase unvalidated. `VALIDATE_PLANS_PROMPT` is a `PromptFn` that reaches into `state.named` for *every* plan in the latest blueprint pass and builds the whole `/skill:validate <p1> <p2> …` message itself. A prompt stage owns its entire message, so it can address the full accumulation a single positional arg can't.
 
-The review loop routes on the same `{ blockers_count }` gate as the opening `review-and-ship` example (and as the bundled `vet`), but the fix arm is `blueprint` itself rather than a separate `revise` stage. A corrective pass re-plans every review phase, blockers folded in, under the same `maxBackwardJumps` bound. That's the shape: `iterate` to accumulate, `prompt` to address the accumulation, a `gate` to close the loop.
+The review loop routes on the same `{ blockers_count }` gate as the opening `review-and-ship` example (and as the bundled `vet`), but the fix arm is `blueprint` itself rather than a separate `revise` stage. A corrective pass re-plans every review phase, blockers folded in, under the same `maxBackwardJumps` bound (default 3) and the absolute `maxLaps` ceiling (default 8), both fresh per invocation. That's the shape: `iterate` to accumulate, `prompt` to address the accumulation, a `gate` to close the loop.
 
 ## Ship it
 

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }));
 
 import { spawn } from "node:child_process";
-import { spawnPiInstall } from "./pi-installer.js";
+import { spawnPiInstall } from "./pi-installer.ts";
 
 beforeEach(() => {
 	vi.mocked(spawn).mockReset();

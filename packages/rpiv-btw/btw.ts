@@ -11,16 +11,18 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { AssistantMessage, Message, StopReason, UserMessage } from "@earendil-works/pi-ai";
 import {
+	buildContextEntries,
+	buildSessionContext,
 	convertToLlm,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	type ExtensionContext,
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import { type CappedHistory, capHistory, type FitBranchResult, fitBranch } from "./btw-budget.js";
-import { assistantMessageText, type BtwTurn, userMessageText } from "./btw-messages.js";
-import { showBtwOverlay } from "./btw-ui.js";
-import { getRuntimeCompleteSimple, loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.js";
+import { type CappedHistory, capHistory, type FitBranchResult, fitBranch } from "./btw-budget.ts";
+import { assistantMessageText, type BtwTurn, userMessageText } from "./btw-messages.ts";
+import { showBtwOverlay } from "./btw-ui.ts";
+import { getRuntimeCompleteSimple, loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.ts";
 
 // ---------------------------------------------------------------------------
 // Constants — flat named consts, grouped by concern (advisor pattern, b9428e9)
@@ -53,11 +55,11 @@ const errCallThrew = (msg: string) => `/btw call threw: ${msg}`;
 // Budget (context-budgeting) constants — defined in btw-budget.ts (the leaf budget
 // module; keeps the module cycle type-only at runtime), re-exported here so the
 // package surface is unchanged.
-export { BTW_CONTEXT_RESERVE, BTW_HISTORY_TOKEN_BUDGET, BTW_NO_ANCHOR_SAFETY_FACTOR } from "./btw-budget.js";
+export { BTW_CONTEXT_RESERVE, BTW_HISTORY_TOKEN_BUDGET, BTW_NO_ANCHOR_SAFETY_FACTOR } from "./btw-budget.ts";
 // BtwTurn + the message-text extractors live in the cycle-break leaf
 // (packages/rpiv-btw/btw-messages.ts); re-exported here so the package surface is
 // unchanged (packages/rpiv-btw/btw.test.ts / btw-ui.test.ts / btw-budget.test.ts still
-// import them from "./btw.js"). Import-then-re-export (not `export … from`) because
+// import them from "./btw.ts"). Import-then-re-export (not `export … from`) because
 // btw.ts consumes all three internally (userMessageText at :166,
 // assistantMessageText at :341, BtwTurn in BtwState/getSessionHistory/pushSessionTurn).
 export { assistantMessageText, type BtwTurn, userMessageText };
@@ -71,11 +73,45 @@ interface BtwState {
 	snapshots: Map<string, { messages: Message[]; entries: SessionEntry[] }>;
 }
 
-export function branchToMessages(branch: SessionEntry[]): Message[] {
-	const agentMessages = branch
-		.filter((e): e is SessionEntry & { type: "message" } => e.type === "message")
-		.map((e) => e.message);
-	return convertToLlm(agentMessages);
+/**
+ * Serialize a branch into the main agent's model context — the single branch→LLM
+ * conversion seam. The branch is the one session view every supported Pi exposes
+ * to extensions (`getBranch()`; the read-only session manager gained context
+ * methods only in later releases), so /btw reads it and serializes it with Pi's
+ * own exported `buildSessionContext`: after a compaction that is the compaction
+ * summary plus the kept and newer messages, and on Pi >= 1.0 context edits are
+ * applied — exactly the context the main model receives and the usage anchor
+ * meters. Filtering the branch's raw messages instead re-sent every summarized
+ * message (#274).
+ *
+ * The main agent's callable tool declarations are dropped: Pi >= 1.0 records the
+ * tool loadout as `toolsAdded`/`toolsRemoved` on transcript `system` messages,
+ * and providers resolve the request's tools from them, so `tools: []` alone
+ * would leave /btw able to stop on `toolUse` with no answer (#295). The prompt
+ * text stays.
+ */
+export function branchToContextMessages(branch: SessionEntry[]): Message[] {
+	return stripToolDeclarations(convertToLlm(buildSessionContext(branch).messages));
+}
+
+function stripToolDeclarations(messages: Message[]): Message[] {
+	if (!messages.some((m) => m.role === "system" && (m.toolsAdded || m.toolsRemoved))) return messages;
+	return messages.map((m) => {
+		if (m.role !== "system" || (!m.toolsAdded && !m.toolsRemoved)) return m;
+		const { toolsAdded: _added, toolsRemoved: _removed, ...rest } = m;
+		return rest;
+	});
+}
+
+/** The /btw snapshot: the main agent's context messages, plus its context entries
+ *  (compaction summary + kept + newer, via Pi's `buildContextEntries`) for the
+ *  anchor/cut primitives. */
+export function readContextSnapshot(sessionManager: ExtensionContext["sessionManager"]): {
+	messages: Message[];
+	entries: SessionEntry[];
+} {
+	const branch = sessionManager.getBranch() as SessionEntry[];
+	return { messages: branchToContextMessages(branch), entries: buildContextEntries(branch) };
 }
 
 // ---------------------------------------------------------------------------
@@ -172,12 +208,11 @@ export type BtwExecResult =
 	| { kind: "error"; error: string; stopReason?: StopReason }
 	| { kind: "aborted"; stopReason: StopReason };
 
-function readBranchSnapshot(ctx: ExtensionContext): { messages: Message[]; entries: SessionEntry[] } {
+function readSnapshot(ctx: ExtensionContext): { messages: Message[]; entries: SessionEntry[] } {
 	const cached = getSnapshot(ctx);
 	if (cached) return cached;
 	// Cold start (no message_end fired yet) — fall back to a single live read.
-	const branch = ctx.sessionManager.getBranch() as SessionEntry[];
-	return { messages: branchToMessages(branch), entries: branch };
+	return readContextSnapshot(ctx.sessionManager);
 }
 
 export interface BtwBuiltContext {
@@ -197,7 +232,7 @@ export function buildBtwMessages(
 	// ctx.model is non-null here — executeBtw returns early on !model before calling.
 	const model = ctx.model!;
 	const history = getSessionHistory(ctx);
-	const { messages, entries } = readBranchSnapshot(ctx);
+	const { messages, entries } = readSnapshot(ctx);
 	const systemPrompt = buildSystemPrompt();
 	const fitInput = { entries, messages, model, systemPrompt, question: userMessage };
 
@@ -360,8 +395,7 @@ export function registerMessageEndSnapshot(pi: ExtensionAPI): void {
 		const msg = event.message;
 		if (msg.role !== "assistant") return;
 		if ((msg as AssistantMessage).stopReason === "toolUse") return;
-		const branch = ctx.sessionManager.getBranch() as SessionEntry[];
-		setSnapshot(ctx, { messages: branchToMessages(branch), entries: branch });
+		setSnapshot(ctx, readContextSnapshot(ctx.sessionManager));
 	});
 }
 

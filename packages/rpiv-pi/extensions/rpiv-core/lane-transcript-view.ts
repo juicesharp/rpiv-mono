@@ -19,8 +19,8 @@ import {
 	type ToolDefArg,
 	type ViewerEntry,
 	type ViewerMessage,
-} from "./lane-transcript.js";
-import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.js";
+} from "./lane-transcript.ts";
+import { type DiskBranch, loadBranchFromDisk } from "./lane-transcript-disk.ts";
 import {
 	getLane,
 	getUnit,
@@ -29,7 +29,7 @@ import {
 	SINGLE_UNIT_KEY,
 	subscribeLanes,
 	type UnitLane,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 /** True when the lane currently carries real fan-out unit sub-rows (indices ≥ 0 —
  *  the reserved scalar slot is negative, so it never counts as a generation). */

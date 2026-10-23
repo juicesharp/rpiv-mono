@@ -4,7 +4,7 @@
  * `@mlflow/core` dependency here; the provider class loads lazily when configured.
  */
 
-import type { TelemetryProviderMeta } from "../../types/provider.js";
+import type { TelemetryProviderMeta } from "../../types/provider.ts";
 
 export const MLFLOW_PROVIDER_META: TelemetryProviderMeta = {
 	name: "mlflow",

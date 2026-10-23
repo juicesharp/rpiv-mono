@@ -1,5 +1,5 @@
-import { GitHubInterceptor, readUserGitHubConfig, resolveGitHubOptions } from "./github.js";
-import type { UrlInterceptor } from "./types.js";
+import { GitHubInterceptor, readUserGitHubConfig, resolveGitHubOptions } from "./github.ts";
+import type { UrlInterceptor } from "./types.ts";
 
 export {
 	DEFAULTS as GITHUB_INTERCEPTOR_DEFAULTS,
@@ -11,8 +11,8 @@ export {
 	type ResolvedGitHubOptions,
 	readUserGitHubConfig,
 	resolveGitHubOptions,
-} from "./github.js";
-export type { UrlInterceptor } from "./types.js";
+} from "./github.ts";
+export type { UrlInterceptor } from "./types.ts";
 
 // Package-private singletons set by registerWebTools at startup. The
 // orchestrator reads `getInterceptors()` per-request rather than caching the
@@ -47,8 +47,8 @@ export function getActiveGitHubInterceptor(): GitHubInterceptor | null {
 }
 
 // Public free-function alias for test cleanup. Resets the active GitHub
-// interceptor (if any) — same behavior the pre-refactor `clearCloneCache`
-// had, just routed through the class instead of module-level state.
+// interceptor (if any),
+// routed through the class rather than module-level state.
 export function clearCloneCache(): void {
 	activeGitHubInterceptor?.reset();
 }

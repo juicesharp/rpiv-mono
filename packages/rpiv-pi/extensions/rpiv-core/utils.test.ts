@@ -9,7 +9,7 @@ import {
 	PI_AGENT_SETTINGS,
 	readPiAgentSettings,
 	toErrorMessage,
-} from "./utils.js";
+} from "./utils.ts";
 
 function writeSettingsRaw(raw: string, path = getPiAgentSettingsPath()): void {
 	mkdirSync(dirname(path), { recursive: true });

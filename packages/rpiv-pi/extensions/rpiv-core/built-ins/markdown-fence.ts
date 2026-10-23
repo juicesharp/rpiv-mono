@@ -105,4 +105,29 @@ const fencedSpans = (content: string): [number, number][] => {
 	return spans;
 };
 
-export { closesFence, countHeadingsOutsideFences, FENCE_LINE_RE, fencedSpans, forEachLineOutsideFences };
+/**
+ * 1-based line of a fence opener that never closes, or `undefined` when every
+ * fence is balanced. Same walk as `fencedSpans`, reported as the one number an
+ * author needs to fix the leak.
+ */
+const openFenceLine = (content: string): number | undefined => {
+	let inFence = false;
+	let fenceLen = 0;
+	let fenceChar = "";
+	let opened = 0;
+	content.split("\n").forEach((line, index) => {
+		const fence = FENCE_LINE_RE.exec(line);
+		if (!fence) return;
+		if (!inFence) {
+			inFence = true;
+			fenceLen = fence[1].length;
+			fenceChar = fence[1][0];
+			opened = index + 1;
+		} else if (closesFence(line, fence, fenceChar, fenceLen)) {
+			inFence = false;
+		}
+	});
+	return inFence ? opened : undefined;
+};
+
+export { closesFence, countHeadingsOutsideFences, FENCE_LINE_RE, fencedSpans, forEachLineOutsideFences, openFenceLine };

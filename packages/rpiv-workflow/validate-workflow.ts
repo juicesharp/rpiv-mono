@@ -22,9 +22,9 @@
  *   ./validate/contract-compat.ts — skill-contract / JSON-Schema compatibility
  */
 
-import type { Workflow } from "./api.js";
-import type { SkillContractMap } from "./skill-contract.js";
-import { checkEdgeSchemaCompat, checkPredicateSchemas, checkReadsChannelCompat } from "./validate/contract-compat.js";
+import type { Workflow } from "./api.ts";
+import type { SkillContractMap } from "./skill-contract.ts";
+import { checkEdgeSchemaCompat, checkPredicateSchemas, checkReadsChannelCompat } from "./validate/contract-compat.ts";
 import {
 	checkEdgeKeys,
 	checkEdgeTargets,
@@ -32,8 +32,8 @@ import {
 	checkReachability,
 	checkStartStage,
 	checkWorkflowName,
-} from "./validate/graph.js";
-import { issueReporter, type WorkflowValidationIssue } from "./validate/issue.js";
+} from "./validate/graph.ts";
+import { issueReporter, type WorkflowValidationIssue } from "./validate/issue.ts";
 import {
 	checkFanoutReadHint,
 	checkFanoutSource,
@@ -41,13 +41,13 @@ import {
 	checkStageSemantics,
 	fanoutPublishedChannels,
 	publishedNamesOf,
-} from "./validate/stage-rules.js";
+} from "./validate/stage-rules.ts";
 
 export type {
 	ValidationIssueCode,
 	ValidationIssueParamsOf,
 	WorkflowValidationIssue,
-} from "./validate/issue.js";
+} from "./validate/issue.ts";
 
 /**
  * Validate one workflow. Aggregates all issues; never short-circuits. Caller

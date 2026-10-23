@@ -2,7 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 
-import { SettingsFieldView } from "./settings-field-view.js";
+import { SettingsFieldView } from "./settings-field-view.ts";
 
 const plain = makeTheme() as unknown as Theme;
 const tagged = makeTheme({

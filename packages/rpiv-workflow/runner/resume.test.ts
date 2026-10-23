@@ -15,37 +15,54 @@
  *      cursor, assess channel separation + transient judge roll, full-row
  *      drift guard, and the legacy-row (`parent`-less) stage-gone refusal
  *   8. Named-slot append-order (array history preserved across repeated calls)
+ *   9. Gate-stop halts — the routed-stop separator (generation close before
+ *      the halt row), the `gateStop` trailer, and the re-measure resume
+ *      entries (produces gate re-runs; side-effect gate dispatches onward)
  *
  * End-to-end loop-resume DISPATCH (re-run failed+remaining units, finished
  * no-op silence, the assess pending paths, back-edge generation reset) lives
  * in `resume-loop.test.ts`.
  */
 
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type FanoutFn, type IterateFn, produces, type Workflow } from "../api.js";
-import { stageEntryArgs } from "../chain-state.js";
-import type { Artifact } from "../handle.js";
-import { fs as fsHandle, handleToString } from "../handle.js";
-import { judge } from "../judge.js";
-import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
-import { advanceCursor, foldFanoutCompletion, freshCursor } from "../loop-kinds.js";
-import type { Output } from "../output.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	acts,
+	defineRoute,
+	type EdgeFn,
+	type FanoutFn,
+	type IterateFn,
+	match,
+	produces,
+	setRouteNote,
+	type Workflow,
+} from "../api.ts";
+import { stageEntryArgs } from "../chain-state.ts";
+import type { Artifact } from "../handle.ts";
+import { fs as fsHandle, handleToString, opaque } from "../handle.ts";
+import { judge } from "../judge.ts";
+import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.ts";
+import { advanceCursor, foldFanoutCompletion, freshCursor } from "../loop-kinds.ts";
+import { FAIL_GATE_STOP } from "../messages.ts";
+import type { Output } from "../output.ts";
 import {
 	appendHeader,
+	appendRoutingDecision,
 	appendStage,
+	type RoutingDecision,
 	readAllStages,
+	readHeader,
 	STATE_SCHEMA_VERSION,
 	stateFilePath,
 	type WorkflowHeader,
 	type WorkflowStage,
-} from "../state/index.js";
-import type { RunState } from "../types.js";
-import { reconstructState } from "./resume.js";
-import { resumeWorkflow } from "./runner.js";
+} from "../state/index.ts";
+import type { RunState } from "../types.ts";
+import { reconstructState } from "./resume.ts";
+import { resumeWorkflow, runWorkflow } from "./runner.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -67,7 +84,7 @@ const fakeOutput = (artifacts: readonly Artifact[] = []): Output => ({
  */
 const makeOutcome = (
 	name: string,
-): import("../output-spec.js").Outcome<unknown, "artifact-md", Record<string, unknown>> & { name: string } => ({
+): import("../output-spec.ts").Outcome<unknown, "artifact-md", Record<string, unknown>> & { name: string } => ({
 	name,
 	collector: { collect: () => ({ kind: "ok", artifacts: [] }) },
 });
@@ -564,8 +581,9 @@ describe("reconstructState", () => {
 		expect(result.detail).toContain("schema v99");
 	});
 
-	it("REFUSES a v1 (sequential) trail — absent or explicit `v: 1` — with version-mismatch (schema v2)", async () => {
-		// Under schema v2 the fold places completion rows by `unitIndex`; a v1
+	it("REFUSES v1 (absent or explicit) and v2 trails with version-mismatch (schema v3)", async () => {
+		// Under schema v3 the fold places completion rows by `unitIndex` and
+		// skips under-budget collected rows budget-aware; a v1
 		// (sequential) trail cannot replay under the new rules, so it is rejected
 		// cleanly ("start a fresh run") rather than mis-folded. An absent `v`
 		// resolves to 1 and is rejected identically.
@@ -593,6 +611,12 @@ describe("reconstructState", () => {
 		expect(explicit.ok).toBe(false);
 		if (explicit.ok) return;
 		expect(explicit.reason).toBe("version-mismatch");
+
+		// A v2 (pre-ordinal parallel-fanout) trail — the live upgrade path — is rejected too.
+		const v2 = await reconstructState(tmpDir, linearWorkflow, { ...baseHeader, v: 2 });
+		expect(v2.ok).toBe(false);
+		if (v2.ok) return;
+		expect(v2.reason).toBe("version-mismatch");
 	});
 
 	it("row whose stage is not in workflow.stages: returns stage-gone refusal", async () => {
@@ -687,6 +711,44 @@ describe("reconstructState", () => {
 		// Generation closed → no trailing open generation.
 		expect(result.trailing).toBeUndefined();
 		expect(result.drift).toBeUndefined();
+	});
+
+	it("fanout generation closed with every unit done: recorded unit tags are authoritative, no drift on a recompute mismatch", async () => {
+		// The live unit source now yields a DIFFERENT roster than the trail recorded
+		// (the shape a basename-keyed snapshot overwritten by a later round produces).
+		const units: FanoutFn = () => [{ prompt: "x", label: "task", id: "task-1" }];
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "build",
+			stages: {
+				build: produces({ outcome: makeOutcome("builds"), loop: fanout({ units }) }),
+				deploy: produces({ outcome: makeOutcome("deploys") }),
+			},
+			edges: { build: "deploy", deploy: "stop" },
+		} as Workflow;
+		const tail = fakeArtifact("deploys/d.md");
+		writeRunStages([
+			fanoutUnitRow("build", "phase-1", 0, 1, fakeOutput([fakeArtifact("builds/b1.md")])),
+			{
+				session: null,
+				stageNumber: 2,
+				stage: "deploy",
+				skill: "deploy",
+				status: "completed",
+				ts: "t2",
+				output: fakeOutput([tail]),
+			},
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		// The generation was closed by the deploy row with its one unit completed:
+		// the recorded tag stands in for the recompute and the fold does not drift.
+		expect(result.drift).toBeUndefined();
+		expect(result.state.stagesCompleted).toBe(2);
+		expect(result.trailing).toBeUndefined();
 	});
 
 	it("fanout drift: a recomputed unit id differs from a recorded row → ok with drift set, state still applied", async () => {
@@ -1220,7 +1282,7 @@ describe("reconstructState", () => {
 const RPIV_ARTIFACT_PATTERN = /\.rpiv\/artifacts\/(?:(?!\.\.)[\w.-])+\/(?:(?!\.\.)[\w.-])+\.md/g;
 
 /** Minimal outcome that scans assistant text for .rpiv/artifacts paths. */
-const artifactOutcome: import("../output-spec.js").Outcome<unknown, "artifact-md", Record<string, unknown>> = {
+const artifactOutcome: import("../output-spec.ts").Outcome<unknown, "artifact-md", Record<string, unknown>> = {
 	collector: {
 		collect: (ctx) => {
 			let lastMatch: string | undefined;
@@ -2067,4 +2129,683 @@ describe("resumeWorkflow", () => {
 	});
 
 	// Mid-loop resume dispatch (fanout/iterate/assess) is covered end-to-end in `resume-loop.test.ts`.
+});
+
+// ---------------------------------------------------------------------------
+// Gate-stop halts — the [routed stop row, FAIL_GATE_STOP row] pair a noted
+// decision stop leaves at the trail's tail, and the resume paths over it.
+// ---------------------------------------------------------------------------
+
+/** A routed-stop RoutingDecision row (`chain-advance`'s stop-branch audit shape). */
+const stopRow = (fromStage: string, fromStageIndex: number, note?: string): RoutingDecision => ({
+	type: "routing",
+	fromStageIndex,
+	fromStage,
+	decision: "stop",
+	...(note !== undefined ? { note } : {}),
+	ts: `t${fromStageIndex}`,
+});
+
+/** The sessionless terminal failure row `haltChain` appends behind the stop row. */
+const gateHaltRow = (stage: string, num: number): WorkflowStage => ({
+	session: null,
+	stageNumber: num,
+	stage,
+	status: "failed",
+	ts: `t${num}`,
+	errMsg: `Routing gate after "${stage}" matched no branch: gate failed`,
+});
+
+/** Write header + rows in trail order, routing rows interleaved verbatim. */
+function writeTrail(rows: Array<WorkflowStage | RoutingDecision>): WorkflowHeader {
+	appendHeader(tmpDir, baseHeader);
+	for (const row of rows) {
+		if ("type" in row && row.type === "routing") appendRoutingDecision(tmpDir, baseHeader.runId, row);
+		else appendStage(tmpDir, baseHeader.runId, row as WorkflowStage);
+	}
+	return baseHeader;
+}
+
+// ---------------------------------------------------------------------------
+// Fresh re-entry budgets on resume (revisits + laps) — both directions.
+// The per-destination ledgers are ENGINE MEMORY (never folded from the
+// trail), so a resume starts both empty: the direction that GRANTS (a
+// stranded cap-halt's first re-entry counts 1 and continues) and the
+// direction that BINDS (fresh budgets still halt an always-retry loop, so
+// repeated resumes cannot loop forever). Plus the fold-never-consults-hook
+// pin: reconstructState replays rows, it never votes.
+// ---------------------------------------------------------------------------
+
+describe("resumeWorkflow — fresh re-entry budgets (revisits + laps)", () => {
+	/** Write an artifact file at the given relative path under tmpDir. */
+	const writeArtifact = (relPath: string, content = "") => {
+		const parts = relPath.split("/");
+		const dir = join(tmpDir, ...parts.slice(0, -1));
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(tmpDir, relPath), content);
+	};
+
+	/** The stranded trail: pass 1 completed, then the ORIGINAL invocation's
+	 * guard halted re-entering `a` at its cap — the failure row a resume picks up. */
+	const capHaltedRows = (): WorkflowStage[] => [
+		{
+			session: null,
+			stageNumber: 1,
+			stage: "a",
+			skill: "a",
+			status: "completed",
+			ts: "t1",
+			output: fakeOutput([fakeArtifact(".rpiv/artifacts/a/a1.md")]),
+		},
+		{
+			session: null,
+			stageNumber: 2,
+			stage: "b",
+			skill: "b",
+			status: "completed",
+			ts: "t2",
+			output: fakeOutput([fakeArtifact(".rpiv/artifacts/b/b1.md")]),
+		},
+		{
+			session: null,
+			stageNumber: 3,
+			stage: "a",
+			skill: "a",
+			status: "failed",
+			ts: "t3",
+			errMsg: 'Backward-jump limit exceeded: stage "a" re-entered 4 times (max 3)',
+		},
+	];
+
+	const loopWf = (pick: () => "a" | "stop", progress?: import("../api.ts").StageDef["progress"]): Workflow => ({
+		name: "resume-wf",
+		start: "a",
+		stages: {
+			a: { kind: "produces", sessionPolicy: "fresh", outcome: artifactOutcome, ...(progress ? { progress } : {}) },
+			b: { kind: "produces", sessionPolicy: "fresh", outcome: artifactOutcome },
+		},
+		edges: {
+			a: "b",
+			b: defineRoute(["a", "stop"], pick, { readsData: false }),
+		},
+	});
+
+	it("stranded cap-halt: the resumed run's first re-entry counts 1 on fresh revisits/laps and continues", async () => {
+		appendHeader(tmpDir, resumeHeader);
+		for (const row of capHaltedRows()) appendStage(tmpDir, resumeHeader.runId, row);
+		for (const rel of [
+			".rpiv/artifacts/a/a2.md",
+			".rpiv/artifacts/b/b2.md",
+			".rpiv/artifacts/a/a3.md",
+			".rpiv/artifacts/b/b3.md",
+		]) {
+			writeArtifact(rel);
+		}
+
+		let picks = 0;
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a2.md")] },
+				{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b2.md")] },
+				{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/a/a3.md")] },
+				{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/b/b3.md")] },
+			],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: loopWf(() => (++picks <= 1 ? "a" : "stop")),
+			header: resumeHeader,
+			ref: "@2026-06-03_07-30-00-ab12",
+		});
+
+		// Failed-trailer re-ran `a` (a2) → b (b2) → b's decision re-entered `a` —
+		// the FIRST re-entry on the fresh ledgers (revisits 1, laps 1), not the
+		// 5th on the exhausted ones — then a3 → b3 → stop.
+		expect(result.success).toBe(true);
+		expect(result.stagesCompleted).toBe(6);
+	});
+
+	it("fresh budgets still bind — a hook-less always-retry loop stops at the FRESH cap after resume", async () => {
+		appendHeader(tmpDir, resumeHeader);
+		for (const row of capHaltedRows()) appendStage(tmpDir, resumeHeader.runId, row);
+
+		for (let i = 2; i <= 5; i++) {
+			writeArtifact(`.rpiv/artifacts/a/a${i}.md`);
+			writeArtifact(`.rpiv/artifacts/b/b${i}.md`);
+		}
+		const steps: Array<{ branch: ReturnType<typeof mockAssistantMessage>[] }> = [];
+		for (let i = 2; i <= 5; i++) {
+			steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/a/a${i}.md`)] });
+			steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/b/b${i}.md`)] });
+		}
+		const chain = createMockSessionChain({ cwd: tmpDir, steps });
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: loopWf(() => "a"),
+			header: resumeHeader,
+			ref: "@2026-06-03_07-30-00-ab12",
+		});
+
+		// Fresh cap 3: the resumed run re-runs a, b (a2/b2), then 3 counted
+		// re-entries (a3/b3, a4/b4, a5/b5) and halts when the 4th re-entry reads
+		// revisits 4 > 3 — a FRESH 4, not the pre-resume cumulative (a stale
+		// ledger would have halted the very first re-entry instead).
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/4.*max 3/);
+		expect(result.stagesCompleted).toBe(10);
+	});
+
+	it("fresh budgets still bind — an all-improved loop stops at the ceiling (maxLaps threads through resume)", async () => {
+		appendHeader(tmpDir, resumeHeader);
+		for (const row of capHaltedRows()) appendStage(tmpDir, resumeHeader.runId, row);
+
+		for (let i = 2; i <= 4; i++) {
+			writeArtifact(`.rpiv/artifacts/a/a${i}.md`);
+			writeArtifact(`.rpiv/artifacts/b/b${i}.md`);
+		}
+		const steps: Array<{ branch: ReturnType<typeof mockAssistantMessage>[] }> = [];
+		for (let i = 2; i <= 4; i++) {
+			steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/a/a${i}.md`)] });
+			steps.push({ branch: [mockAssistantMessage(`Wrote .rpiv/artifacts/b/b${i}.md`)] });
+		}
+		const chain = createMockSessionChain({ cwd: tmpDir, steps });
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: loopWf(
+				() => "a",
+				() => "improved",
+			),
+			header: resumeHeader,
+			ref: "@2026-06-03_07-30-00-ab12",
+			maxBackwardJumps: 5,
+			maxLaps: 2,
+		});
+
+		// cap 5 is outlived by "improved" waivers; the fresh lap ceiling (2)
+		// still binds: re-entries 1 and 2 are waived, the 3rd (laps 3 > 2) halts.
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/absolute lap ceiling/);
+		expect(result.error).toMatch(/3.*max 2/);
+		expect(result.stagesCompleted).toBe(8);
+	});
+
+	it("a malformed budget is refused pre-flight on resume — no row appended, no re-dispatch", async () => {
+		appendHeader(tmpDir, resumeHeader);
+		const rows = capHaltedRows();
+		for (const row of rows) appendStage(tmpDir, resumeHeader.runId, row);
+		const before = readFileSync(join(tmpDir, ".rpiv", "workflows", "runs", `${resumeHeader.runId}.jsonl`), "utf8");
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: loopWf(
+				() => "a",
+				() => "improved",
+			),
+			header: resumeHeader,
+			ref: "@2026-06-03_07-30-00-ab12",
+			maxBackwardJumps: 5,
+			maxLaps: Number.NaN,
+		});
+
+		expect(result).toEqual({
+			stagesCompleted: 0,
+			success: false,
+			error: "maxLaps must be a non-negative integer, got NaN",
+		});
+		const after = readFileSync(join(tmpDir, ".rpiv", "workflows", "runs", `${resumeHeader.runId}.jsonl`), "utf8");
+		expect(after).toBe(before);
+	});
+
+	it("the fold never consults the progress hook — reconstructState replays rows without voting", async () => {
+		const progressSpy = vi.fn(() => "improved" as const);
+		const spyWf: Workflow = {
+			name: "test-wf",
+			start: "a",
+			stages: {
+				a: { kind: "produces", sessionPolicy: "fresh", outcome: makeOutcome("a"), progress: progressSpy },
+				b: { kind: "produces", sessionPolicy: "fresh", outcome: makeOutcome("b") },
+			},
+			edges: {
+				a: "b",
+				b: defineRoute(["a", "stop"], () => "stop", { readsData: false }),
+			},
+		};
+		// A trail with a revisit round: a, b, a, b — the fold replays all four.
+		writeRunStages([
+			{
+				session: null,
+				stageNumber: 1,
+				stage: "a",
+				skill: "a",
+				status: "completed",
+				ts: "t1",
+				output: fakeOutput([fakeArtifact(".rpiv/artifacts/a/a1.md")]),
+			},
+			{
+				session: null,
+				stageNumber: 2,
+				stage: "b",
+				skill: "b",
+				status: "completed",
+				ts: "t2",
+				output: fakeOutput([fakeArtifact(".rpiv/artifacts/b/b1.md")]),
+			},
+			{
+				session: null,
+				stageNumber: 3,
+				stage: "a",
+				skill: "a",
+				status: "completed",
+				ts: "t3",
+				output: fakeOutput([fakeArtifact(".rpiv/artifacts/a/a2.md")]),
+			},
+			{
+				session: null,
+				stageNumber: 4,
+				stage: "b",
+				skill: "b",
+				status: "completed",
+				ts: "t4",
+				output: fakeOutput([fakeArtifact(".rpiv/artifacts/b/b2.md")]),
+			},
+		]);
+
+		const recon = await reconstructState(tmpDir, spyWf, baseHeader);
+
+		expect(recon.ok).toBe(true);
+		expect(progressSpy).not.toHaveBeenCalled();
+	});
+});
+
+describe("reconstructState — gate-stop halts", () => {
+	const completedRow = (stage: string, num: number, output: Output): WorkflowStage => ({
+		session: null,
+		stageNumber: num,
+		stage,
+		skill: stage,
+		status: "completed",
+		ts: `t${num}`,
+		output,
+	});
+
+	it("gateStop trailer: a failed row behind a routed stop from the same stage sets gateStop; an ordinary failure does not", async () => {
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "plan",
+			stages: {
+				plan: { kind: "produces", sessionPolicy: "fresh" },
+				check: { kind: "produces", sessionPolicy: "fresh" },
+			},
+			edges: { plan: "check", check: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			completedRow("plan", 1, fakeOutput([fakeArtifact("plans/p1.md")])),
+			completedRow("check", 2, fakeOutput()),
+			stopRow("check", 2, 'value "fail" matched no branch'),
+			gateHaltRow("check", 3),
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.gateStop?.fromStage).toBe("check");
+		expect(result.gateStop?.note).toBe('value "fail" matched no branch');
+		expect(result.drift).toBeUndefined();
+	});
+
+	it("no false positive: a failed trailer with no stop row behind it leaves gateStop unset", async () => {
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "plan",
+			stages: {
+				plan: { kind: "produces", sessionPolicy: "fresh" },
+				build: { kind: "produces", sessionPolicy: "fresh" },
+			},
+			edges: { plan: "build", build: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			completedRow("plan", 1, fakeOutput([fakeArtifact("plans/p1.md")])),
+			{ session: null, stageNumber: 2, stage: "build", status: "failed", ts: "t2", errMsg: "boom" },
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.gateStop).toBeUndefined();
+	});
+
+	it("fanout gate-stop: the stop separator closes+projects the generation, so the halt row is not an abort marker", async () => {
+		const planArt = fakeArtifact("plans/p1.md");
+		const u1 = fakeArtifact("verdicts/v1.json");
+		const u2 = fakeArtifact("verdicts/v2.json");
+		const units: FanoutFn = () => [
+			{ prompt: "d1", label: "dim 1/2", id: "dim-1" },
+			{ prompt: "d2", label: "dim 2/2", id: "dim-2" },
+		];
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "plan",
+			stages: {
+				plan: { kind: "produces", sessionPolicy: "fresh" },
+				grade: produces({ outcome: makeOutcome("verdicts"), loop: fanout({ units }) }),
+			},
+			edges: { plan: "grade", grade: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			completedRow("plan", 1, fakeOutput([planArt])),
+			fanoutUnitRow("grade", "dim-1", 0, 2, fakeOutput([u1])),
+			fanoutUnitRow("grade", "dim-2", 1, 3, fakeOutput([u2])),
+			stopRow("grade", 3, "completeness failed (medium)"),
+			gateHaltRow("grade", 4),
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		// The generation closed AT the separator — projection restored the entry
+		// primary (the live driver had projected before its route fired) — so no
+		// trailing open generation survives for the entry selector to re-enter.
+		expect(result.trailing).toBeUndefined();
+		expect(result.state.primaryArtifact).toStrictEqual(planArt);
+		expect(result.state.named.verdicts?.map((o) => o.artifacts[0])).toEqual([u1, u2]);
+		expect(result.gateStop?.fromStage).toBe("grade");
+		expect(result.drift).toBeUndefined();
+	});
+
+	it("post-resume trail: two same-parent generations split only by the stop pair fold separately, without drift", async () => {
+		const planArt = fakeArtifact("plans/p1.md");
+		const outs = [1, 2, 3, 4].map((n) => fakeArtifact(`verdicts/v${n}.json`));
+		const units: FanoutFn = () => [
+			{ prompt: "d1", label: "dim 1/2", id: "dim-1" },
+			{ prompt: "d2", label: "dim 2/2", id: "dim-2" },
+		];
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "plan",
+			stages: {
+				plan: { kind: "produces", sessionPolicy: "fresh" },
+				grade: produces({ outcome: makeOutcome("verdicts"), loop: fanout({ units }) }),
+			},
+			edges: { plan: "grade", grade: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			completedRow("plan", 1, fakeOutput([planArt])),
+			// Generation 1 (halted by the gate), the stop pair, then the fresh
+			// generation a stop-resume re-dispatch appended for the SAME parent.
+			// Without the separator these four unit rows would mis-fold as one
+			// generation (repeated unitIndex 0 → drift).
+			fanoutUnitRow("grade", "dim-1", 0, 2, fakeOutput([outs[0]!])),
+			fanoutUnitRow("grade", "dim-2", 1, 3, fakeOutput([outs[1]!])),
+			stopRow("grade", 3, "completeness failed (medium)"),
+			gateHaltRow("grade", 4),
+			fanoutUnitRow("grade", "dim-1", 0, 5, fakeOutput([outs[2]!])),
+			fanoutUnitRow("grade", "dim-2", 1, 6, fakeOutput([outs[3]!])),
+		]);
+
+		const result = await reconstructState(tmpDir, wf, baseHeader);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.drift).toBeUndefined();
+		// The fresh generation replaced the halted one on the channel — the live
+		// `placeFanoutOutput` semantics (index-addressed, latest generation wins).
+		expect(result.state.named.verdicts?.map((o) => o.artifacts[0])).toEqual([outs[2], outs[3]]);
+		// The SECOND generation is the trailing open one (its route never fired).
+		expect(result.trailing?.parent).toBe("grade");
+		// A completed unit-row trailer is not a gate-stop halt.
+		expect(result.gateStop).toBeUndefined();
+	});
+});
+
+describe("resumeWorkflow — gate-stop halts (the re-measure)", () => {
+	it("produces gate: resume re-runs the halted gate against the repaired tree and continues on pass", async () => {
+		const doneSpy = vi.fn();
+		// The gate's judgment is a function of the tree — the flag file stands in
+		// for the hand-repair the halt toast asks for.
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "plan",
+			stages: {
+				plan: { kind: "produces", sessionPolicy: "fresh" },
+				check: produces.script({
+					run: ({ cwd }) => ({
+						kind: "artifacts",
+						artifacts: [],
+						data: { verdict: existsSync(join(cwd, "fixed.flag")) ? "pass" : "fail" },
+					}),
+				}),
+				done: acts.script({ run: doneSpy }),
+			},
+			edges: {
+				plan: "check",
+				check: match("verdict", { done: "pass" }, { from: "check" }),
+				done: "stop",
+			},
+		} as Workflow;
+
+		writeTrail([
+			{
+				session: null,
+				stageNumber: 1,
+				stage: "plan",
+				skill: "plan",
+				status: "completed",
+				ts: "t1",
+				output: fakeOutput([fakeArtifact("plans/p1.md")]),
+			},
+			{
+				session: null,
+				stageNumber: 2,
+				stage: "check",
+				status: "completed",
+				ts: "t2",
+				output: { ...fakeOutput(), data: { verdict: "fail" } },
+			},
+			stopRow("check", 2, 'value "fail" matched no branch'),
+			gateHaltRow("check", 3),
+		]);
+
+		writeFileSync(join(tmpDir, "fixed.flag"), ""); // the hand-repair
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(chain.ctx, { workflow: wf, header: baseHeader, ref: "@ref" });
+
+		expect(result.success).toBe(true);
+		expect(doneSpy).toHaveBeenCalledTimes(1);
+		const stages = readAllStages(tmpDir, baseHeader.runId);
+		const appended = stages.slice(3);
+		expect(appended.map((s) => [s.stage, s.status])).toEqual([
+			["check", "completed"],
+			["done", "completed"],
+		]);
+	});
+
+	it("produces gate, nothing repaired: resume re-measures and halts again (idempotent stop, no stale pass)", async () => {
+		const doneSpy = vi.fn();
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "check",
+			stages: {
+				check: produces.script({
+					run: ({ cwd }) => ({
+						kind: "artifacts",
+						artifacts: [],
+						data: { verdict: existsSync(join(cwd, "fixed.flag")) ? "pass" : "fail" },
+					}),
+				}),
+				done: acts.script({ run: doneSpy }),
+			},
+			edges: { check: match("verdict", { done: "pass" }, { from: "check" }), done: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			{
+				session: null,
+				stageNumber: 1,
+				stage: "check",
+				status: "completed",
+				ts: "t1",
+				output: { ...fakeOutput(), data: { verdict: "fail" } },
+			},
+			stopRow("check", 1, 'value "fail" matched no branch'),
+			gateHaltRow("check", 2),
+		]);
+
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(chain.ctx, { workflow: wf, header: baseHeader, ref: "@ref" });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain("matched no branch");
+		expect(doneSpy).not.toHaveBeenCalled();
+	});
+
+	it("LIVE formation: an unchanged acts digest halts at the arm's own gate, and resume dispatches onward (e2e)", async () => {
+		// End to end through the real runner: the acts stage's NAMED outcome
+		// publishes its digest onto state.named (the side-effect publish rule),
+		// the gate folds it and stops with a note, chain-advance writes the
+		// [stop row, FAIL_GATE_STOP row] pair — and the resume entry then takes
+		// the side-effect arm, dispatching `verify` instead of replaying `fix`.
+		const digestOutcome: import("../output-spec.ts").Outcome<unknown, "digest", { changed: boolean }> = {
+			name: "digest",
+			collector: {
+				collect: () => ({ kind: "ok", artifacts: [{ handle: opaque("digest-unchanged"), role: "digest" }] }),
+			},
+			parser: { parse: () => ({ kind: "ok", payload: { kind: "digest", data: { changed: false } } }) },
+		};
+		const fixGate: EdgeFn = defineRoute(
+			["verify", "stop"],
+			({ state }) => {
+				const data = state.named.digest?.at(-1)?.data as { changed?: unknown } | undefined;
+				if (data?.changed !== false) return "verify";
+				setRouteNote(fixGate, "digest unchanged");
+				return "stop";
+			},
+			{ readsData: false },
+		);
+		const verifySpy = vi.fn(() => ({ kind: "artifacts" as const, artifacts: [], data: { verdict: "pass" } }));
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "fix",
+			stages: {
+				fix: acts({ skill: "fix", outcome: digestOutcome }),
+				verify: produces.script({ run: verifySpy }),
+			},
+			edges: { fix: fixGate, verify: "stop" },
+		} as Workflow;
+
+		const live = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("nothing to change")] }],
+		});
+		const halted = await runWorkflow(live.ctx, { workflow: wf, input: "x" });
+		expect(halted.success).toBe(false);
+		expect(halted.error).toContain("digest unchanged");
+
+		const header = readHeader(tmpDir, halted.runId!);
+		if (!header) throw new Error("halted run wrote no header");
+		const resumed = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(resumed.ctx, { workflow: wf, header, ref: "@ref" });
+
+		expect(result.success).toBe(true);
+		expect(verifySpy).toHaveBeenCalledTimes(1);
+		expect(resumed.sentMessages.some((m) => m.startsWith("/skill:fix"))).toBe(false);
+	});
+
+	it("the halt toast names the resume remedy with the run id", () => {
+		// The remedy string is what turns "fix and re-run" (read as: start over,
+		// re-paying the whole front-load) into "fix and resume".
+		const toast = FAIL_GATE_STOP("validate", 'value "fail" matched no branch', "2026-06-03_07-30-00-ab12").toast;
+		expect(toast).toContain("resume with /wf @2026-06-03_07-30-00-ab12");
+	});
+
+	it("an exhausted-budget halt points at a fresh run, NOT resume (resume would re-decide the same stop)", () => {
+		// meta unit-graph exhaustion vocabulary — the round/generation counters are
+		// derived from the trail and never reset on resume, so `/wf @<id>` re-halts
+		// identically. Each exhaustion note must drop the resume remedy.
+		for (const note of [
+			"plan red — 3/3 rounds spent; 1 failure(s), first: missing await",
+			"plan red — the same failures survived a correction (round 2); 1 failure(s)",
+			"implement FATAL — the user's pre-existing work was lost; see trail",
+			"plan-verdicts: no gate record — terminated (integrity stop)",
+		]) {
+			const { toast, error } = FAIL_GATE_STOP("plan-gate", note, "2026-10-01_08-57-20-042b");
+			expect(toast).toContain("start a fresh run");
+			expect(toast).not.toContain("resume with /wf");
+			// "matched no branch" is wrong for a halt that routed to `stop` on purpose.
+			expect(toast).not.toContain("matched no branch");
+			expect(error).not.toContain("matched no branch");
+		}
+	});
+
+	it("multi-target side-effect gate: resume re-routes (idempotent re-stop) — never replays the arm", async () => {
+		const fixSpy = vi.fn();
+		const route: EdgeFn = defineRoute(["verify", "alt", "stop"], () => {
+			setRouteNote(route, "still blocked");
+			return "stop";
+		});
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "fix",
+			stages: {
+				fix: acts.script({ run: fixSpy }),
+				verify: produces.script({ run: () => ({ kind: "artifacts", artifacts: [], data: {} }) }),
+				alt: produces.script({ run: () => ({ kind: "artifacts", artifacts: [], data: {} }) }),
+			},
+			edges: { fix: route, verify: "stop", alt: "stop" },
+		} as Workflow;
+
+		writeTrail([
+			{ session: null, stageNumber: 1, stage: "fix", status: "completed", ts: "t1", output: fakeOutput() },
+			stopRow("fix", 1, "still blocked"),
+			gateHaltRow("fix", 2),
+		]);
+
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(chain.ctx, { workflow: wf, header: baseHeader, ref: "@ref" });
+
+		// The ambiguous onward set re-fires the EDGE, not the arm: the route
+		// re-stops with its note and the run halts again — zero side effects.
+		expect(result.success).toBe(false);
+		expect(result.error).toContain("still blocked");
+		expect(fixSpy).not.toHaveBeenCalled();
+	});
+
+	it("side-effect gate: resume dispatches the sole onward target instead of replaying the arm", async () => {
+		const fixSpy = vi.fn();
+		const verifySpy = vi.fn(() => ({ kind: "artifacts" as const, artifacts: [], data: { verdict: "pass" } }));
+		const wf: Workflow = {
+			name: "test-wf",
+			start: "fix",
+			stages: {
+				fix: acts.script({ run: fixSpy }),
+				verify: produces.script({ run: verifySpy }),
+			},
+			edges: {
+				// The unchanged-tree shape: the arm ran, changed nothing, and its
+				// own edge stopped the run. Re-running the arm on resume would
+				// no-op again and re-trip the same gate — the livelock this entry
+				// exists to break.
+				fix: defineRoute(["verify", "stop"], () => "stop"),
+				verify: "stop",
+			},
+		} as Workflow;
+
+		writeTrail([
+			{ session: null, stageNumber: 1, stage: "fix", status: "completed", ts: "t1", output: fakeOutput() },
+			stopRow("fix", 1, "remediation left the working tree unchanged"),
+			gateHaltRow("fix", 2),
+		]);
+
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const result = await resumeWorkflow(chain.ctx, { workflow: wf, header: baseHeader, ref: "@ref" });
+
+		expect(result.success).toBe(true);
+		expect(fixSpy).not.toHaveBeenCalled();
+		expect(verifySpy).toHaveBeenCalledTimes(1);
+		const stages = readAllStages(tmpDir, baseHeader.runId);
+		expect(stages.slice(2).map((s) => [s.stage, s.status])).toEqual([["verify", "completed"]]);
+	});
 });

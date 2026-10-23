@@ -1,5 +1,5 @@
-import type { LlmPayloadMode } from "../config.js";
-import { resetTelemetryDispatcher } from "../dispatcher.js";
+import type { LlmPayloadMode } from "../config.ts";
+import { resetTelemetryDispatcher } from "../dispatcher.ts";
 
 /**
  * Module-level mutable state for instrumentation. Shared across `pi-handlers.ts`

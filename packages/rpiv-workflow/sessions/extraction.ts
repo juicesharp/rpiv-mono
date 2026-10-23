@@ -15,23 +15,23 @@
  *                                        kind = "artifacts").
  */
 
-import type { StageDef, StageSchema } from "../api.js";
-import { allocateStageNumber, currentStageRef } from "../audit.js";
-import { lifecycleCtxFromSession } from "../events.js";
-import type { Artifact } from "../handle.js";
-import { assertNever, formatError, nowIso, withTimeout } from "../internal-utils.js";
+import type { StageDef, StageSchema } from "../api.ts";
+import { allocateStageNumber, currentStageRef } from "../audit.ts";
+import { lifecycleCtxFromSession } from "../events.ts";
+import type { Artifact } from "../handle.ts";
+import { assertNever, formatError, nowIso, withTimeout } from "../internal-utils.ts";
 import {
 	ERR_COLLECTOR_THREW,
 	ERR_PARSER_THREW,
 	ERR_SCHEMA_TIMEOUT,
 	ERR_VALIDATE_RETRY_UNCHANGED,
-} from "../messages.js";
-import { sideEffectOutcome } from "../outcomes/index.js";
-import { finalizeOutput, type Output, outputMeta } from "../output.js";
-import type { CollectContext, Outcome } from "../output-spec.js";
-import { effectiveOutputSchemaOf } from "../stage-identity.js";
-import { type BranchEntry, readBranch } from "../transcript.js";
-import type { StageSessionContext, WorkflowSessionContext } from "../types.js";
+} from "../messages.ts";
+import { sideEffectOutcome } from "../outcomes/index.ts";
+import { finalizeOutput, type Output, outputMeta } from "../output.ts";
+import type { CollectContext, Outcome } from "../output-spec.ts";
+import { effectiveOutputSchemaOf } from "../stage-identity.ts";
+import { type BranchEntry, readBranch } from "../transcript.ts";
+import type { StageSessionContext, WorkflowSessionContext } from "../types.ts";
 import {
 	DEFAULT_VALIDATION_RETRIES,
 	DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
@@ -44,10 +44,10 @@ import {
 	type SchemaValidationFailure,
 	type ValidationResult,
 	validateOutputData,
-} from "../validate-output.js";
-import { clampRange } from "../validation-bounds.js";
-import { resolveDigest } from "../worktree-digest.js";
-import { resendIntoChild } from "./spawn.js";
+} from "../validate-output.ts";
+import { clampRange } from "../validation-bounds.ts";
+import { resolveDigest } from "../worktree-digest.ts";
+import { resendIntoChild } from "./spawn.ts";
 
 /**
  * The fatal arm shared by every extraction-stage outcome — `{ kind: "fatal";
@@ -138,6 +138,7 @@ function buildCollectCtx(
 		branchOffset,
 		snapshot: s.snapshot,
 		skill: s.skill,
+		...(s.unit?.label !== undefined ? { unitLabel: s.unit.label } : {}),
 	};
 }
 

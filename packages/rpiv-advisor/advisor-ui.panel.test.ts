@@ -1,6 +1,6 @@
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { showAdvisorPicker, showEffortPicker } from "./advisor-ui.js";
+import { showAdvisorPicker, showEffortPicker } from "./advisor-ui.ts";
 
 interface RenderableComponent {
 	render: (w: number) => string[];

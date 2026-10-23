@@ -2,8 +2,8 @@ import { type ExtensionUIContext, initTheme, type Theme } from "@earendil-works/
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { LaneDock } from "./lane-dock.js";
-import type { ViewerMessage } from "./lane-transcript.js";
+import { LaneDock } from "./lane-dock.ts";
+import type { ViewerMessage } from "./lane-transcript.ts";
 import {
 	__resetRunLaneRegistry,
 	captureFinalSnapshot,
@@ -19,7 +19,7 @@ import {
 	setLaneProgress,
 	setLaneStatus,
 	setUnitStarted,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 const WIDGET_KEY = "rpiv-lanes";
 

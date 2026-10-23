@@ -19,8 +19,9 @@ The widget is mounted above the Pi editor under the key `rpiv-todos`.
 Task state is partitioned by session id, so parallel sessions cannot read or
 overwrite each other's lists. Nothing is written to disk: on session start,
 compaction, and session-tree changes, the list is rebuilt by walking the branch
-and taking the last `todo` tool result's snapshot, which replaces the whole list
-(last-write-wins).
+and taking the last saved snapshot, which replaces the whole list
+(last-write-wins). See [tool-schema.md](./tool-schema.md#persistence) for where
+snapshots are saved.
 
 ## Anatomy of a row
 

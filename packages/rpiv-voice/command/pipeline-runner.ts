@@ -1,11 +1,11 @@
-import { appendErrorLog } from "../audio/error-log.js";
-import { isHallucination } from "../audio/hallucination-filter.js";
-import type { DecibriLike } from "../audio/mic-source.js";
-import { TARGET_SAMPLE_RATE } from "../audio/mic-source.js";
-import { bufferToFloat32, computeRmsFloat32, computeRmsInt16, samplesInInt16Chunk } from "../audio/pcm.js";
-import type { SttEngine } from "../audio/stt-engine.js";
-import { isHallucinationFilterEnabled } from "../config/voice-config.js";
-import type { VoiceSession } from "../state/voice-session.js";
+import { appendDiagnosticLog, appendErrorLog } from "../audio/error-log.ts";
+import { isHallucination } from "../audio/hallucination-filter.ts";
+import type { DecibriLike } from "../audio/mic-source.ts";
+import { TARGET_SAMPLE_RATE } from "../audio/mic-source.ts";
+import { bufferToFloat32, computeRmsFloat32, computeRmsInt16, samplesInInt16Chunk } from "../audio/pcm.ts";
+import type { SttEngine } from "../audio/stt-engine.ts";
+import { isHallucinationFilterEnabled } from "../config/voice-config.ts";
+import type { VoiceSession } from "../state/voice-session.ts";
 
 // 12 s soft cap: Whisper trains on 30 s windows and degrades on very short
 // inputs; 5 s force-flushes routinely bisect a clause mid-word. 12 s is the
@@ -72,8 +72,20 @@ export function startDictationPipeline(
 	// painting stale text after the final commit.
 	let utteranceEpoch = 0;
 
+	// Decode-latency breadcrumbs: one stt.decode line per completed recognize
+	// call (kind + wall-clock duration + sample count) so a freeze report shows
+	// how long each final/partial decode actually took.
+	const logDecode = (kind: "final" | "partial", sampleCount: number, startedAt: number): void => {
+		appendDiagnosticLog("stt.decode", `${kind} ${Date.now() - startedAt}ms ${sampleCount} samples`);
+	};
+
 	const recognizeFinal = async (chunks: Buffer[]): Promise<void> => {
 		if (chunks.length === 0) return;
+		// The signal aborts on cancel — the commit path drains first and aborts
+		// only after (voice-command teardown ordering). Post-abort the session
+		// is torn down and the drain result has no consumer, so skip the decode
+		// outright instead of running Whisper for a transcript nobody reads.
+		if (signal.aborted) return;
 		const samples = bufferToFloat32(Buffer.concat(chunks));
 		if (computeRmsFloat32(samples) < MIN_SEGMENT_RMS) {
 			// No audible content — but still finalize so any in-flight partial
@@ -82,7 +94,13 @@ export function startDictationPipeline(
 			return;
 		}
 		try {
+			const decodeStartedAt = Date.now();
 			const text = await sttEngine.recognize(samples, TARGET_SAMPLE_RATE);
+			logDecode("final", samples.length, decodeStartedAt);
+			// Canceled while the decode was in flight: discard the result — the
+			// accumulator is unconsumed on cancel and the session is done, so a
+			// dispatch would only churn a torn-down TUI.
+			if (signal.aborted) return;
 			if (!text || (hallucinationFilterEnabled && isHallucination(text))) {
 				session.dispatchAction({ kind: "audio_transcript_appended", text: "" });
 				return;
@@ -93,7 +111,11 @@ export function startDictationPipeline(
 			// We deliberately do not surface this to the TUI: writing to stderr
 			// corrupts the active render, and `notify` would churn the chat for
 			// every dropped segment. Instead, append a breadcrumb to a file the
-			// user can `cat` later when investigating transcript gaps.
+			// user can `cat` later when investigating transcript gaps. Only
+			// cancel teardown is exempt: the signal aborts pre-drain on cancel
+			// alone, so a post-abort rejection is a decode nobody consumes —
+			// the commit drain runs pre-abort and its failures always log.
+			if (signal.aborted) return;
 			appendErrorLog("stt.recognize", err);
 			session.dispatchAction({ kind: "audio_transcript_appended", text: "" });
 		}
@@ -123,10 +145,14 @@ export function startDictationPipeline(
 	};
 
 	// Rolling partial preview. Runs *outside* the `recognizing` chain so the
-	// preview latency isn't queued behind pending finals. Best-effort: a
-	// snapshot of the current buffer is decoded, and the result is dispatched
-	// as the new partial only if the utterance epoch hasn't advanced under us.
+	// preview latency isn't queued behind pending finals — though the engine
+	// itself serializes decodes (native handle is not proven concurrency-safe),
+	// so a partial can wait behind at most the one in-flight decode, never the
+	// whole chain. Best-effort: a snapshot of the current buffer is decoded,
+	// and the result is dispatched as the new partial only if the utterance
+	// epoch hasn't advanced under us.
 	const tryEmitPartial = (): void => {
+		if (signal.aborted) return;
 		if (partialInFlight) return;
 		if (speechBuffer.length === 0) return;
 		const now = Date.now();
@@ -139,12 +165,16 @@ export function startDictationPipeline(
 			try {
 				const samples = bufferToFloat32(Buffer.concat(snapshot));
 				if (computeRmsFloat32(samples) < MIN_SEGMENT_RMS) return;
+				const decodeStartedAt = Date.now();
 				const text = await sttEngine.recognize(samples, TARGET_SAMPLE_RATE);
+				logDecode("partial", samples.length, decodeStartedAt);
+				// Session torn down (cancel) or drain-superseded — never paint.
+				if (signal.aborted) return;
 				if (snapshotEpoch !== utteranceEpoch) return;
 				if (hallucinationFilterEnabled && isHallucination(text)) return;
 				session.dispatchAction({ kind: "audio_partial_transcript_set", text });
 			} catch (err) {
-				appendErrorLog("stt.recognize.partial", err);
+				if (!signal.aborted) appendErrorLog("stt.recognize.partial", err);
 			} finally {
 				partialInFlight = false;
 			}
@@ -222,13 +252,23 @@ function waitForMicShutdown(mic: DecibriLike, signal: AbortSignal, onFinish: () 
 		const onAbort = () => {
 			mic.stop();
 		};
+		// The terminal events can arrive in sequence (a Readable emits `close`
+		// after `end`) — drain exactly once.
+		let finished = false;
 		const finish = async () => {
+			if (finished) return;
+			finished = true;
 			signal.removeEventListener("abort", onAbort);
 			await onFinish();
 			resolve();
 		};
 		mic.once("end", finish);
 		mic.once("error", finish);
+		// `close` is the third terminal event in the DecibriLike contract, and
+		// the adapters forward it. Nothing else consumes it, so without this a
+		// close-without-end shutdown would park the drain — and with it the
+		// committed paste — forever.
+		mic.once("close", finish);
 		if (signal.aborted) {
 			mic.stop();
 		} else {

@@ -17,10 +17,10 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { type Artifact, handleToString } from "../handle.js";
-import { formatError } from "../internal-utils.js";
-import { stateFilePath } from "./paths.js";
-import { enumerateRunIds, readFirstJsonlLine } from "./raw.js";
+import { type Artifact, handleToString } from "../handle.ts";
+import { formatError } from "../internal-utils.ts";
+import { stateFilePath } from "./paths.ts";
+import { enumerateRunIds, readFirstJsonlLine } from "./raw.ts";
 import type {
 	LoopCapRow,
 	RoutingDecision,
@@ -29,7 +29,7 @@ import type {
 	StageStatus,
 	WorkflowHeader,
 	WorkflowStage,
-} from "./state.js";
+} from "./state.ts";
 
 /**
  * Reads every line, filters by shape (not position). Header has no
@@ -121,6 +121,14 @@ const hasValidSessionRef = (row: object): boolean => {
 const isRoutingDecision = (row: unknown): row is RoutingDecision =>
 	!!row && (row as { type?: unknown }).type === "routing";
 
+/**
+ * The routed-stop decision literal — mirrors routing-dsl's `STOP`, not
+ * imported so state/ stays a leaf. ONE local spelling for both consumers
+ * (the resume reader's separator scan and `trailingRoutingStop`), so the
+ * mirror can't drift within this module.
+ */
+const ROUTED_STOP = "stop";
+
 /** Shape guard for loop-cap telemetry rows. */
 const isLoopCapRow = (r: unknown): r is LoopCapRow => (r as { type?: unknown } | undefined)?.type === "loop-cap";
 
@@ -151,14 +159,29 @@ export function readAllStages(cwd: string, runId: string): WorkflowStage[] {
  * replays the trail as its system of record, and silently dropping a row
  * would replay a hole ("this stage never ran") — e.g. route onward past a
  * stage whose failure row lost its `status`.
+ *
+ * `stopBefore` maps a stage-row index to the routed-stop `RoutingDecision`
+ * that immediately precedes it in the trail — the fold's GENERATION
+ * SEPARATOR. A gate-stop halt writes [routing stop, failed stage row], and a
+ * later resume appends fresh rows behind that pair; when the halted gate is a
+ * fanout parent, its old and new unit rows would otherwise sit contiguous in
+ * this stage-only projection and mis-fold as ONE generation. Only stops
+ * FOLLOWED by a stage row are recorded: a trailing stop (the noteless-stop
+ * completion) stays invisible here, preserving the finished-run no-op resume.
  */
 export function readAllStagesForResume(
 	cwd: string,
 	runId: string,
-): { ok: true; rows: WorkflowStage[] } | { ok: false; detail: string } {
+): { ok: true; rows: WorkflowStage[]; stopBefore: Map<number, RoutingDecision> } | { ok: false; detail: string } {
 	const rows: WorkflowStage[] = [];
+	const stopBefore = new Map<number, RoutingDecision>();
+	let pendingStop: RoutingDecision | undefined;
 	for (const parsed of readParsedRows(cwd, runId)) {
 		if (isWorkflowStage(parsed) && hasValidSessionRef(parsed)) {
+			if (pendingStop) {
+				stopBefore.set(rows.length, pendingStop);
+				pendingStop = undefined;
+			}
 			rows.push(parsed);
 			continue;
 		}
@@ -166,8 +189,11 @@ export function readAllStagesForResume(
 			const label = typeof parsed.stage === "string" ? ` ("${parsed.stage}")` : "";
 			return { ok: false, detail: `stage row ${parsed.stageNumber}${label} failed the shape guard` };
 		}
+		// Non-stop routing rows are pure telemetry and stay invisible to the
+		// fold, exactly as before.
+		if (isRoutingDecision(parsed) && parsed.decision === ROUTED_STOP) pendingStop = parsed;
 	}
-	return { ok: true, rows };
+	return { ok: true, rows, stopBefore };
 }
 
 export function readRoutingDecisions(cwd: string, runId: string): RoutingDecision[] {
@@ -239,11 +265,13 @@ function recapOutcomeOf(last: WorkflowStage): RunRecap["outcome"] {
  * routing row as the trail's tail: static string edges never audit, a natural
  * chain end appends its terminal stage row after any routing row, and a resume
  * appends new stage rows behind a prior stop. Fail-soft via `readParsedRows`.
+ * The stop row this returns is EXCLUDED from `summarizeRun`'s `routingNotes` —
+ * the stopped refinement renders its note once, as `failureReason`.
  */
 function trailingRoutingStop(cwd: string, runId: string): RoutingDecision | undefined {
 	const rows = readParsedRows(cwd, runId);
 	const last = rows[rows.length - 1];
-	return isRoutingDecision(last) && last.decision === "stop" ? last : undefined;
+	return isRoutingDecision(last) && last.decision === ROUTED_STOP ? last : undefined;
 }
 
 /**
@@ -262,7 +290,11 @@ function trailingRoutingStop(cwd: string, runId: string): RoutingDecision | unde
  * note-less trail still names WHERE the run stopped. The refinement only
  * applies over a completed last stage row: a failed/aborted/cancelled tail
  * keeps its own outcome + errMsg (and by write order such a tail follows any
- * routing row anyway).
+ * routing row anyway). The recap also carries `routingNotes` — every
+ * note-bearing FORWARD routing row, verbatim in trail order (stop-row notes
+ * excluded; the stopped refinement renders those once as `failureReason`).
+ * Set only when non-empty, on EVERY outcome — a failed run may carry
+ * earlier-hop notes (a gate explained itself before a later stage blew up).
  */
 export function summarizeRun(cwd: string, runId: string): RunRecap | undefined {
 	const stages = readAllStages(cwd, runId);
@@ -276,6 +308,13 @@ export function summarizeRun(cwd: string, runId: string): RunRecap | undefined {
 		workflow: header?.workflow,
 	};
 	if (outcome !== "completed" && last.errMsg !== undefined) recap.failureReason = last.errMsg;
+	// Route-note recap — rides EVERY outcome. Forward rows only; a stop row's
+	// note renders once, below, as the stopped-refinement failureReason — never
+	// twice. Set only when non-empty (absent, never []).
+	const routingNotes = readRoutingDecisions(cwd, runId).flatMap((r) =>
+		r.note !== undefined && r.decision !== ROUTED_STOP ? [r.note] : [],
+	);
+	if (routingNotes.length > 0) recap.routingNotes = routingNotes;
 	if (outcome === "completed") {
 		const stop = trailingRoutingStop(cwd, runId);
 		if (stop) {

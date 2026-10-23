@@ -11,7 +11,7 @@ Single-tool extension implementing the advisor-strategy pattern: registers an `a
 - **`@earendil-works/pi-ai`** (peer): `Model`/`Api`/`ThinkingLevel` types plus a static value import of `getSupportedThinkingLevels` (`advisor/command.ts` effort picker); only `completeSimple` is resolved at runtime by `advisor/pi-compat.ts`
 - **`@earendil-works/pi-tui`** (peer): containers, select list, layout primitives
 - **`@juicesharp/rpiv-config`** (dependency): `validateGuidanceFields` (persisted prompt overrides), `modelKey`/`parseModelKey` (config codec + blocklist canonicalization)
-- **`typebox`** (dependency, `^1.1.24`): empty parameter schema — a runtime dep, not a peer, so tools still register under installers that don't materialize peers
+- **`typebox`** (`peerDependencies: "*"`, host-provided): empty parameter schema. Pi supplies and aliases `typebox` at load time, so it is never a `dependencies` entry — an installed copy would be a second live instance (v2.12.0, #282)
 
 ## Consumers
 - **Pi extension host** loads via `pi.extensions: ["./index.ts"]`; **`rpiv-pi`** lists it in `peerDependencies` and `siblings.ts`
@@ -65,7 +65,9 @@ export const ADVISOR_SYSTEM_PROMPT = readFileSync(fileURLToPath(
 ```typescript
 // execute.ts — buildSessionContext preserves Pi's RESOLVED LLM context (compaction + branch summaries).
 const { messages: sessionMessages } = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
-const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(convertToLlm(sessionMessages)));
+// stripToolDeclarations: Pi >= 1.0 transcripts carry the executor's tool loadout as toolsAdded/toolsRemoved on system messages, and providers
+// resolve request tools from them — `tools: []` alone leaves them callable (empty `toolUse` replies, #295). Prompt text is kept.
+const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(stripToolDeclarations(convertToLlm(sessionMessages))));
 const inventoryMessage = getInventoryMessage(pi.getAllTools()); // signature-keyed cache on a globalThis Symbol — rebuilds only when the tool-name set changes
 const messages = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
 const runtime = getRuntimeCompleteSimple(ctx.modelRegistry); // resolved BEFORE the try and the missing-key guard — OAuth hosts resolve ok:true with

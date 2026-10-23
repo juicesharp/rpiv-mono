@@ -155,10 +155,10 @@ export function writeConfig(c: WebToolsConfig): boolean {
 	return saveJsonConfig(CONFIG_PATH, c);
 }
 
-// Plan-surface no-op. Phase 4 omits the in-memory cache the plan sketched —
-// the tests' direct-writeFileSync pattern makes per-test invalidation a
-// rewrite-the-suite job for marginal perf gain. Kept exported so that
-// consumers writing against the plan's API can call it without breaking.
+// Deliberately a no-op — there is no in-memory config cache (the tests'
+// direct-writeFileSync pattern makes per-test invalidation a
+// rewrite-the-suite job for marginal perf gain). Kept exported so callers
+// keep a stable invalidation hook.
 export function invalidateConfigCache(): void {
 	// no-op
 }

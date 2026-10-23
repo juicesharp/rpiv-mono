@@ -5,11 +5,11 @@
  * (the verdict-channel walk). Runner-free — safe on `registration`.
  */
 
-import type { LoopDef, StageDef } from "../api.js";
-import { type AnyJudge, isPanel } from "../judge.js";
-import { LOOP_DEFAULTS } from "./constructors.js";
-import { panelVerdictChannel } from "./panel.js";
-import { synthesizeVerifyLoop } from "./verify.js";
+import type { LoopDef, StageDef } from "../api.ts";
+import { type AnyJudge, isPanel } from "../judge.ts";
+import { LOOP_DEFAULTS } from "./constructors.ts";
+import { panelVerdictChannel } from "./panel.ts";
+import { synthesizeVerifyLoop } from "./verify.ts";
 
 /**
  * THE round-0-entry-arg predicate — one spelling of "which kinds freeze a

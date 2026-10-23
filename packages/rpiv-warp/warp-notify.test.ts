@@ -21,7 +21,7 @@ import {
 	pushTitleStack,
 	writeOSC0,
 	writeOSC777,
-} from "./warp-notify.js";
+} from "./warp-notify.ts";
 
 const ORIGINAL_PLATFORM = process.platform;
 

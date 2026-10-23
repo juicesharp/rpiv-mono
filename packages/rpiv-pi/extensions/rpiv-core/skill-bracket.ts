@@ -22,14 +22,14 @@
  */
 
 import { type ExtensionAPI, type InputEvent, parseSkillBlock } from "@earendil-works/pi-coding-agent";
-import { loadModelsConfig, type ModelThinkingLevelValue } from "./models-config.js";
+import { loadModelsConfig, type ModelThinkingLevelValue } from "./models-config.ts";
 import {
 	applyEffectiveModel,
 	applyOrSkipIfStale,
 	type BaselineSnapshot,
 	getCapturedModel,
 	restoreBaseline,
-} from "./session-capture.js";
+} from "./session-capture.ts";
 
 const SKILL_PREFIX = "/skill:";
 

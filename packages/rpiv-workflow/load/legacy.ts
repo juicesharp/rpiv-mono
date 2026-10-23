@@ -11,8 +11,8 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { LoadAccumulator } from "./merge.js";
-import type { OverlayPaths } from "./paths.js";
+import type { LoadAccumulator } from "./merge.ts";
+import type { OverlayPaths } from "./paths.ts";
 
 /**
  * Legacy `.rpiv-workflow/` overlay directory detected at load time. The

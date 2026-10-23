@@ -20,12 +20,12 @@
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { BranchEntry, ModelSelection, WorkflowHostContext } from "@juicesharp/rpiv-workflow";
-import { isLaneRelayUiContext } from "./lane-relay-ui.js";
-import { loadModelsConfig, resolveMaxConcurrency, resolveStageModel } from "./models-config.js";
-import { getFocusedRun, getLane, recordRun, retireRun, setLaneAbort } from "./run-lane-registry.js";
-import { SdkWorkflowHost } from "./sdk-workflow-host.js";
-import { getCapturedModelRegistry, getCapturedUiContext } from "./session-capture.js";
-import { isModuleNotFound } from "./utils.js";
+import { isLaneRelayUiContext } from "./lane-relay-ui.ts";
+import { loadModelsConfig, resolveMaxConcurrency, resolveStageModel } from "./models-config.ts";
+import { getFocusedRun, getLane, recordRun, retireRun, setLaneAbort } from "./run-lane-registry.ts";
+import { SdkWorkflowHost } from "./sdk-workflow-host.ts";
+import { getCapturedModelRegistry, getCapturedUiContext } from "./session-capture.ts";
+import { isModuleNotFound } from "./utils.ts";
 
 /** Build the detached executor + abort tap from the live observer ctx + run identity. */
 type WorkflowExecution = {
@@ -40,7 +40,7 @@ type WorkflowExecution = {
  * preserve the tested public surface; the live cap is driven through
  * `resolveMaxConcurrency(loadModelsConfig())` at the consumer below.
  */
-export { DEFAULT_MAX_CONCURRENCY } from "./models-config.js";
+export { DEFAULT_MAX_CONCURRENCY } from "./models-config.ts";
 
 /**
  * Map the config layer's `ResolvedModelConfig` ({ model?, thinking? }) to the
@@ -97,7 +97,7 @@ export function createWorkflowExecution(
 		cwd: observer.cwd,
 		runId,
 		childSessionsDir, // resolved by the runner; rpiv-pi does not synthesize the path
-		maxConcurrency: resolveMaxConcurrency(loadModelsConfig()), // config-driven background-lane cap (default 4)
+		maxConcurrency: resolveMaxConcurrency(loadModelsConfig()), // config-driven background-lane cap (default 6)
 	});
 
 	// Record this run as a switchable lane at launch (appears in the ambient
@@ -177,7 +177,8 @@ export async function registerWorkflowExecutionHostProvider(): Promise<void> {
 		const { registerWorkflowExecutionHost } = await import("@juicesharp/rpiv-workflow/startup");
 		registerWorkflowExecutionHost({
 			createHost: createWorkflowExecution,
-			resolveModel: ({ stage, skill }) => toModelSelection(resolveStageModel(loadModelsConfig(), { stage, skill })),
+			resolveModel: ({ workflow, stage, skill }) =>
+				toModelSelection(resolveStageModel(loadModelsConfig(), { workflow, stage, skill })),
 			// Death-scene reader — re-open the just-failed session's persisted JSONL
 			// and return its branch, narrowed to the workflow-owned BranchEntry shape
 			// (the SDK's SessionEntry union carries private discriminators — the

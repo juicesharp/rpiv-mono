@@ -20,24 +20,24 @@ import {
 	STAGE_KINDS,
 	type StageDef,
 	type Workflow,
-} from "../api.js";
-import { type AnyJudge, isPanel } from "../judge.js";
+} from "../api.ts";
+import { type AnyJudge, isPanel } from "../judge.ts";
 import {
 	forEachJudgeChannel,
 	judgeSlotShapeIssues,
 	loopSpecOf,
 	panelVerdictChannel,
 	verifyShapeIssues,
-} from "../loop-constructors.js";
-import { readName } from "../stage-def.js";
-import { resolvePublishName } from "../stage-identity.js";
+} from "../loop-constructors.ts";
+import { readName } from "../stage-def.ts";
+import { actsPublishName, resolvePublishName } from "../stage-identity.ts";
 import {
 	MAX_VALIDATION_RETRIES,
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	MIN_VALIDATION_RETRIES,
 	MIN_VALIDATION_RETRY_TIMEOUT_MS,
-} from "../validation-bounds.js";
-import type { IssueReporter, ReportFn } from "./issue.js";
+} from "../validation-bounds.ts";
+import type { IssueReporter, ReportFn } from "./issue.ts";
 
 /**
  * Orchestrates the per-stage rule blocks. The orchestration loop binds the
@@ -54,6 +54,7 @@ export function checkStageSemantics(w: Workflow, r: IssueReporter): void {
 		checkVerifyInvariants(stage, name, report);
 		checkPromptInvariants(stage, name === w.start, report);
 		checkInheritsArtifactsKind(stage, report);
+		checkProgressShape(stage, report);
 		checkScriptStageInvariants(stage, report);
 	}
 }
@@ -84,6 +85,9 @@ function checkLoopInvariants(stage: StageDef, name: string, report: ReportFn): v
 	}
 	if (isInvalidDepArtifactFlag(loop)) {
 		report("loop-dep-flag-invalid", { depArtifactFlag: loop.depArtifactFlag });
+	}
+	if (isInvalidRetryHaltedUnits(loop)) {
+		report("loop-retry-halted-units-invalid", { retryHaltedUnits: loop.retryHaltedUnits });
 	}
 	// Pull loops + assess run the stage's outcome collector per unit.
 	if ((loop.kind === "iterate" || loop.kind === "assess") && stage.kind !== "produces") {
@@ -145,6 +149,17 @@ const isInvalidDepArtifactFlag = (loop: LoopDef): loop is FanoutLoop & { depArti
 	loop.kind === "fanout" &&
 	loop.depArtifactFlag !== undefined &&
 	(typeof loop.depArtifactFlag !== "string" || loop.depArtifactFlag.trim().length === 0);
+
+/**
+ * A fanout's `retryHaltedUnits` budget is present and out of range — not an
+ * integer or below 1. The type guard narrows to `FanoutLoop &
+ * { retryHaltedUnits: number }` so the report call reads the field without a
+ * cast or non-null assertion.
+ */
+const isInvalidRetryHaltedUnits = (loop: LoopDef): loop is FanoutLoop & { retryHaltedUnits: number } =>
+	loop.kind === "fanout" &&
+	loop.retryHaltedUnits !== undefined &&
+	(!Number.isInteger(loop.retryHaltedUnits) || loop.retryHaltedUnits < 1);
 
 /**
  * A stable named slot: iterate and assess always (every unit/round runs the
@@ -363,6 +378,21 @@ function checkInheritsArtifactsKind(stage: StageDef, report: ReportFn): void {
 }
 
 /**
+ * `progress` is the optional backward-jump waiver hook, declared on
+ * `StageDefBase` so every dispatch arm carries it. Present ⇒ must be a
+ * function — the guard awaits it per decision-edge re-entry. An absent
+ * hook is valid (every re-entry counts). No exclusion rules: `progress`
+ * composes with `loop` / `verify` / `reads` by design, so this is purely a
+ * shape check (mirrors the `readsData` lint posture: jiti erases the TS
+ * type, the load gate catches a hand-rolled literal).
+ */
+function checkProgressShape(stage: StageDef, report: ReportFn): void {
+	if (stage.progress !== undefined && typeof stage.progress !== "function") {
+		report("progress-not-function");
+	}
+}
+
+/**
  * Skillless script stages: presence of `stage.run` declares "the runner
  * calls this TS function instead of dispatching a Pi skill." Four fields
  * are categorically incompatible with that contract — fail loudly at
@@ -427,6 +457,11 @@ export function publishedNamesOf(w: Workflow): Set<string> {
 	const published = new Set<string>();
 	for (const [name, stage] of Object.entries(w.stages)) {
 		if (stage.kind === "produces") published.add(resolvePublishName(stage, name));
+		// Acts stages with an EXPLICITLY NAMED outcome publish too (the runtime
+		// write rule in `applyCompletedStage`) — the scan must match it so a
+		// downstream `reads: ["<acts-outcome>"]` doesn't falsely error at load.
+		const actsKey = actsPublishName(stage);
+		if (actsKey !== undefined) published.add(actsKey);
 		// Every judge channel (single judge, panel members, AND the folded verdict)
 		// counts for reachability — shared walk with the contract-compat index.
 		forEachJudgeChannel(stage, name, (channel) => published.add(channel));

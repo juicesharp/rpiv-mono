@@ -17,8 +17,8 @@
  * `terminal` export.
  */
 
-import { type EdgeTarget, STOP, type Workflow } from "../api.js";
-import type { IssueReporter } from "./issue.js";
+import { type EdgeTarget, STOP, type Workflow } from "../api.ts";
+import type { IssueReporter } from "./issue.ts";
 
 /** `name` is what users type as `/wf <name>` — empty string makes the workflow unreachable. */
 export function checkWorkflowName(w: Workflow, r: IssueReporter): void {

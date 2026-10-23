@@ -6,8 +6,8 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, sep } from "node:path";
-import { fencedSpans } from "./markdown-fence.js";
-import { containedPath, FILE_LINE_CITATION_RE, type StructureFinding } from "./shared.js";
+import { fencedSpans } from "./markdown-fence.ts";
+import { containedPath, FILE_LINE_CITATION_RE, type StructureFinding } from "./shared.ts";
 
 /**
  * Verify every `file:line` citation in `body` resolves against the working tree:
@@ -51,7 +51,7 @@ type BasenameIndex = { index: Map<string, string[]>; truncated: boolean };
  * Index every source file's basename → its absolute path(s) under `cwd` — the
  * candidate pool behind the suffix fallback in `verifyCitations`. The generative
  * producers (slice/synthesize/elaborate) routinely cite a file by bare basename
- * (`built-in-workflows.ts:1431`) or by a package-relative suffix
+ * (`workflows/build.ts:699`) or by a package-relative suffix
  * (`validate/stage-rules.ts:70` for `packages/rpiv-workflow/validate/stage-rules.ts`)
  * — mechanical path-prefix omissions, not fabricated references. The basename
  * keys the candidates; `verifyCitations` narrows them by whole-segment suffix.
@@ -259,6 +259,15 @@ const verifyCitations = (body: string, cwd: string, declared?: ReadonlySet<strin
 		const [, path, startStr, endStr] = m;
 		if (!path || !startStr) continue;
 		if (fenced.some(([s, e]) => m.index >= s && m.index < e)) continue;
+		// Sanctioned quoting — arrow-pair halves: a citation immediately followed
+		// by "→" (a revision note's OLD half) or immediately preceded by "→" (its
+		// NEW half) is a quoted reference, not a live claim — the same contract
+		// `citeOccursLive` honors for the cite remedy (the slice skill's re-slice
+		// mode pins revision-note quotations to arrow pairs or fences). Skipped
+		// BEFORE the `seen`-key bookkeeping so a live occurrence of the same cite
+		// elsewhere in the body still verifies.
+		if (body.startsWith("→", m.index + m[0].length)) continue;
+		if (body.endsWith("→", m.index)) continue;
 		if (PLACEHOLDER_CITATION_PREFIXES.some((p) => path.startsWith(p))) continue;
 		const key = `${path}:${startStr}${endStr ? `-${endStr}` : ""}`;
 		if (seen.has(key)) continue;

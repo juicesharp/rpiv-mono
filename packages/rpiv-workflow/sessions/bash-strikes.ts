@@ -22,7 +22,7 @@
  * (the resume fold's shape-filtered readers ignore it, like errMsg).
  */
 
-import type { StageSessionContext } from "../types.js";
+import type { StageSessionContext } from "../types.ts";
 
 const DEFAULT_BASH_TIMEOUT_STRIKES = 2; // one retry of a hung command is the operator-grade default.
 const MIN_BASH_TIMEOUT_STRIKES = 1; // at least one strike before any escalation.

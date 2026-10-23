@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { fs, handleToString, inline, opaque, url } from "./handle.js";
+import { fs, handleToString, inline, opaque, url } from "./handle.ts";
 
 describe("handle constructors", () => {
 	it("fs() tags a filesystem path", () => {

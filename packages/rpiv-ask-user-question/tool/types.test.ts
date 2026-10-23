@@ -13,7 +13,7 @@ import {
 	QuestionParamsSchema,
 	QuestionsSchema,
 	RESERVED_LABELS,
-} from "./types.js";
+} from "./types.ts";
 
 function makeQuestion(override: Partial<QuestionData> = {}): QuestionData {
 	return {

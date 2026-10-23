@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { eq, gt, gte, lt, lte, type NumericPredicate, type Predicate } from "./predicates.js";
+import { eq, gt, gte, lt, lte, type NumericPredicate, type Predicate } from "./predicates.ts";
 
 describe("numeric predicate combinators", () => {
 	it("gt() is strictly greater-than (boundary excluded)", () => {

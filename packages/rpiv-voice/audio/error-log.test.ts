@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { appendErrorLog, getErrorLogPath } from "./error-log.js";
+import { appendErrorLog, getErrorLogPath } from "./error-log.ts";
 
 // test/setup.ts stubs HOME to a fresh tmpdir at module-load (homedir() is
 // cached) and rmSync's errors.log between tests, so each `it` here starts

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { initialVoiceState } from "../state.js";
-import { draftFromConfig } from "../state-reducer.js";
-import { selectActiveView } from "./focus.js";
+import { initialVoiceState } from "../state.ts";
+import { draftFromConfig } from "../state-reducer.ts";
+import { selectActiveView } from "./focus.ts";
 
 const base = initialVoiceState(draftFromConfig({}));
 

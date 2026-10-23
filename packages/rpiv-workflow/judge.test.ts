@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { type AnyJudge, isPanel, type Judge, judge, judgeShapeIssues, type PanelJudge, panelMembers } from "./judge.js";
+import { type AnyJudge, isPanel, type Judge, judge, judgeShapeIssues, type PanelJudge, panelMembers } from "./judge.ts";
 
 const outcome = { name: "verdict" } as Judge["outcome"];
 

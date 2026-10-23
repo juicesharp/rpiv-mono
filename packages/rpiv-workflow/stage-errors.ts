@@ -1,4 +1,4 @@
-import type { FailureText } from "./messages.js";
+import type { FailureText } from "./messages.ts";
 
 /**
  * Shared-kernel stage error vocabulary — a package-root LEAF (zero value

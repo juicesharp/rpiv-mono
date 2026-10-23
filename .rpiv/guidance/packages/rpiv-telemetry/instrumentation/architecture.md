@@ -5,7 +5,7 @@ The Pi-binding / adapter layer — the **only** part of `rpiv-telemetry` that to
 
 ## Dependencies
 - **`@earendil-works/pi-coding-agent`** (peer): `ExtensionAPI`/`ExtensionContext` — type-only except `pi.on(...)`, `pi.events.on(...)`, `ctx.sessionManager`
-- **`typebox`** (`Type`, `Static`, `Value`): runtime payload validation — used **only** on the untyped EventBus boundary
+- **`typebox`** (`peerDependencies: "*"`, host-provided): `Type`, `Static`, `Value` for runtime payload validation — used **only** on the untyped EventBus boundary. Pi supplies and aliases `typebox` at load time, so it is never a `dependencies` entry (v2.12.0, #282)
 - Inward to siblings: `../config`, `../dispatcher`, `../providers`, `../types/events` (the `TelemetryEvent` union). Direction is strictly inward — nothing downstream imports back in
 
 ## Consumers
@@ -46,8 +46,9 @@ function handleSubAgentBusEvent(h, data): void {
   }
   const mapped = h.map(data, currentSessionId);
   if (mapped.kind === "subagent_started"          // gate 3: started with no prior created = FOREGROUND
-      && !inflightSubAgents.has(key(mapped))) return; // — suppressed silently, never dispatched
-  updateInflightTracker(mapped);                  // set on created, refresh startedAtMs on background started, delete on completed/failed
+      && !inflightSubAgents.has(inflightKey(mapped.sessionId, mapped.agentId))) return; // — suppressed silently, never dispatched
+  // In-flight tracking (inlined branch chain): set on created, refresh startedAtMs on background
+  // started, delete on completed/failed — keyed `${sessionId}\0${agentId}` via the inflightKey helper
   dispatchTelemetryEvent(mapped);
 }
 ```
@@ -69,6 +70,7 @@ Runs from the `session_shutdown` handler's `postDispatch` (the only spec that us
 - **NO reassigning an imported `let`** across modules — mutate shared state only through its `set*` setter (`state.ts`)
 - **Validation asymmetry is intentional** — only the untyped EventBus is schema-checked; Pi lifecycle payloads are not
 - **`teardownTelemetry` is the single reset path** — called from shutdown AND from tests for isolation
+- **Sub-agent identity is carried structurally** — root spans name as `subagent-turn[<type>]` with `subagent.type`/`parent.session.id` attributes; Pi-native lineage (parent session, agent type) is extracted in `payload-summary.ts`
 
 <important if="you are adding a new instrumented event to rpiv-telemetry">
 ## Adding an Instrumented Event

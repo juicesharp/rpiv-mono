@@ -8,7 +8,7 @@ import {
 	formatKeySpecForDisplay,
 	loadConfig,
 	resolveCollapseKey,
-} from "./config.js";
+} from "./config.ts";
 
 describe("formatKeySpecForDisplay", () => {
 	it("capitalizes each +-part of a resolved spec", () => {

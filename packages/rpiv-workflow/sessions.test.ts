@@ -20,32 +20,32 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StageDef, StageSchema, Workflow } from "./api.js";
-import { currentPrimaryArtifact } from "./chain-state.js";
-import { LifecycleDispatcher } from "./events.js";
-import { type Artifact, fs as fsHandle } from "./handle.js";
-import { WorkflowAbortError } from "./internal-utils.js";
+import type { StageDef, StageSchema, Workflow } from "./api.ts";
+import { currentPrimaryArtifact } from "./chain-state.ts";
+import { LifecycleDispatcher } from "./events.ts";
+import { type Artifact, fs as fsHandle } from "./handle.ts";
+import { WorkflowAbortError } from "./internal-utils.ts";
 import {
 	ERR_VALIDATE_RETRY_UNCHANGED,
 	FAIL_STAGE_NO_RESPONSE,
 	FAIL_VALIDATION_EXHAUSTED,
 	MSG_STAGE_FAILED,
-} from "./messages.js";
-import { finalizeOutput, type Output, outputMeta } from "./output.js";
-import type { CollectContext, Outcome } from "./output-spec.js";
-import { reconstructState } from "./runner/resume.js";
+} from "./messages.ts";
+import { finalizeOutput, type Output, outputMeta } from "./output.ts";
+import type { CollectContext, Outcome } from "./output-spec.ts";
+import { reconstructState } from "./runner/resume.ts";
 import {
 	handleRetry,
 	produceAttempt,
 	type RetryDeps,
 	validateOutput,
 	worktreeUnchangedSince,
-} from "./sessions/extraction.js";
-import { executeStageSession } from "./sessions/index.js";
-import { appendHeader, appendStage, STATE_SCHEMA_VERSION, type WorkflowHeader } from "./state/index.js";
-import { DEFAULT_TRIGGER } from "./triggers.js";
-import { typeboxSchema } from "./typebox-adapter.js";
-import type { RunState, StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "./types.js";
+} from "./sessions/extraction.ts";
+import { executeStageSession } from "./sessions/index.ts";
+import { appendHeader, appendStage, STATE_SCHEMA_VERSION, type WorkflowHeader } from "./state/index.ts";
+import { DEFAULT_TRIGGER } from "./triggers.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
+import type { RunState, StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "./types.ts";
 
 /** Default test wiring for SessionContext's lifecycle + runIdentity fields. */
 const testLifecycle = () => new LifecycleDispatcher(undefined);
@@ -56,7 +56,7 @@ const testRunIdentity = (overrides: Partial<{ workflow: string; totalStages: num
 	...overrides,
 });
 
-import { MAX_VALIDATION_RETRIES, MAX_VALIDATION_RETRY_TIMEOUT_MS } from "./validate-output.js";
+import { MAX_VALIDATION_RETRIES, MAX_VALIDATION_RETRY_TIMEOUT_MS } from "./validate-output.ts";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -1744,6 +1744,44 @@ describe("sessions — halt routing", () => {
 				count: 1,
 				reasons: ["bash command exceeded the 180s per-command timeout and was aborted: `find /`"],
 			},
+		});
+
+		const result = await reconstructState(tmpDir, workflow, header);
+
+		expect(result.ok).toBe(true); // NOT refused as malformed-row / version-mismatch
+		if (!result.ok) return; // type narrow
+		expect(result.state.stagesCompleted).toBe(1); // advanced exactly once — the field did not block the fold
+	});
+
+	it("a completed row carrying attemptOrdinal replays through the resume fold byte-for-byte (additive — no refusal)", async () => {
+		// The v3 additive ordinal field is resume-safe in the strikes-field style:
+		// the strict resume reader's deep guard tolerates the unknown field (like
+		// errMsg) and `foldKnownStage` reads only status/output/session/stage, so
+		// the row advances stagesCompleted once with no re-dispatch. (The WRITER
+		// stamps the ordinal on collected rows only; a completed row here pins the
+		// reader's tolerance, not the write path.)
+		const header: WorkflowHeader = {
+			runId: "run-resume-ordinal",
+			workflow: "test-wf",
+			input: "x",
+			ts: "2026-01-01T00:00:00.000Z",
+			v: STATE_SCHEMA_VERSION,
+		};
+		const workflow: Workflow = {
+			name: "test-wf",
+			start: "test",
+			stages: { test: { kind: "side-effect", sessionPolicy: "fresh" } },
+			edges: { test: "stop" },
+		};
+		appendHeader(tmpDir, header);
+		appendStage(tmpDir, header.runId, {
+			stageNumber: 1,
+			stage: "test",
+			skill: "test",
+			status: "completed",
+			ts: "2026-01-01T00:00:01.000Z",
+			session: { id: "s1" },
+			attemptOrdinal: 1,
 		});
 
 		const result = await reconstructState(tmpDir, workflow, header);

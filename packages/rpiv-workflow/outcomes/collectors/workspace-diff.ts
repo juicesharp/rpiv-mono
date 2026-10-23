@@ -22,10 +22,10 @@
  * thin diff primitive.
  */
 
-import { type Artifact, fs as fsHandle } from "../../handle.js";
-import type { ArtifactCollector, CollectContext, CollectResult, SnapshotContext } from "../../output-spec.js";
-import { defineCollector } from "../../output-spec.js";
-import { execFileAsync, GIT_EXEC_TIMEOUT_MS } from "../exec.js";
+import { type Artifact, fs as fsHandle } from "../../handle.ts";
+import type { ArtifactCollector, CollectContext, CollectResult, SnapshotContext } from "../../output-spec.ts";
+import { defineCollector } from "../../output-spec.ts";
+import { execFileAsync, GIT_EXEC_TIMEOUT_MS } from "../exec.ts";
 
 export interface WorkspaceDiffSnapshot {
 	/** Post-stage diff compares against this set of (path, statusCode) pairs captured pre-stage. */

@@ -1,7 +1,7 @@
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { reconcileAdvisorTool } from "./advisor/handlers.js";
-import { ADVISOR_TOOL_NAME } from "./advisor/index.js";
+import { reconcileAdvisorTool } from "./advisor/handlers.ts";
+import { ADVISOR_TOOL_NAME } from "./advisor/index.ts";
 
 const NOTIFY = { disabled: "stripped", restored: "added" };
 

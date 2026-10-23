@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { initialVoiceState, type VoiceState } from "../state.js";
-import type { BindingContext } from "./contract.js";
+import { initialVoiceState, type VoiceState } from "../state.ts";
+import type { BindingContext } from "./contract.ts";
 import {
 	selectHallucinationFilterFieldProps,
 	selectLanguageReadonlyFieldProps,
 	selectMicReadonlyFieldProps,
+	selectNumThreadsReadonlyFieldProps,
 	selectStatusBarProps,
 	selectTranscriptProps,
-} from "./projections.js";
+} from "./projections.ts";
 
 const DICTATION_CTX: BindingContext = { activeView: "dictation" };
 
@@ -65,6 +66,22 @@ describe("selectLanguageReadonlyFieldProps", () => {
 		expect(props.label).toBe("Language");
 		expect(props.field.kind).toBe("readonly");
 		expect(props.hint).toBe("Run /languages to change.");
+	});
+});
+
+describe("selectNumThreadsReadonlyFieldProps", () => {
+	it("is a readonly field stringifying the default thread count", () => {
+		const props = selectNumThreadsReadonlyFieldProps(makeState({ numThreads: 4 }), DICTATION_CTX);
+		expect(props.active).toBe(false);
+		expect(props.label).toBe("Threads");
+		expect(props.field).toEqual({ kind: "readonly", value: "4" });
+		expect(props.hint).toBe("Set numThreads in voice.json; re-run /voice to apply.");
+	});
+
+	it("stringifies a non-default thread count the same way — still inactive", () => {
+		const props = selectNumThreadsReadonlyFieldProps(makeState({ numThreads: 8 }), DICTATION_CTX);
+		expect(props.field).toEqual({ kind: "readonly", value: "8" });
+		expect(props.active).toBe(false);
 	});
 });
 

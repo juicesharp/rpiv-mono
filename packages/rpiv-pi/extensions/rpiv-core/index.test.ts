@@ -22,14 +22,14 @@ import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding
 import { createMockCommandCtx, createMockModelRegistry } from "@juicesharp/rpiv-test-utils";
 import { registerWorkflowExecutionHost } from "@juicesharp/rpiv-workflow/startup";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetRunLaneRegistry, getLane, recordRun, setFocusedRun } from "./run-lane-registry.js";
-import { __resetSessionCaptureState, registerSessionCapture } from "./session-capture.js";
+import { __resetRunLaneRegistry, getLane, recordRun, setFocusedRun } from "./run-lane-registry.ts";
+import { __resetSessionCaptureState, registerSessionCapture } from "./session-capture.ts";
 import {
 	createWorkflowExecution,
 	DEFAULT_MAX_CONCURRENCY,
 	registerWorkflowExecutionHostProvider,
 	toModelSelection,
-} from "./workflow-execution-host.js";
+} from "./workflow-execution-host.ts";
 
 // Capture the provider rpiv-core registers with the /startup seam without
 // pulling in the whole runner graph — the only symbol the registrar reaches for.
@@ -227,26 +227,34 @@ describe("toModelSelection", () => {
 
 describe("registerWorkflowExecutionHostProvider", () => {
 	it("registers a provider whose createHost is the executor factory and whose resolveModel reads models.json", async () => {
-		writeModels({ stages: { plan: { model: "anthropic/opus", thinking: "high" } } });
+		writeModels({
+			presets: { build: { stages: { plan: { model: "anthropic/sonnet" } } } },
+			stages: { plan: { model: "anthropic/opus", thinking: "high" } },
+		});
 
 		await registerWorkflowExecutionHostProvider();
 
 		expect(registerWorkflowExecutionHost).toHaveBeenCalledTimes(1);
 		const provider = vi.mocked(registerWorkflowExecutionHost).mock.calls[0][0];
 		expect(provider.createHost).toBe(createWorkflowExecution);
-		// resolveModel threads the stage/skill cascade through to a ModelSelection.
-		expect(provider.resolveModel?.({ stage: "plan", skill: "build" })).toEqual({
+		// resolveModel threads the workflow/stage/skill cascade through to a
+		// ModelSelection — the presets.<workflow>.stages rung wins for its workflow…
+		expect(provider.resolveModel?.({ workflow: "build", stage: "plan", skill: "synthesize" })).toEqual({
+			model: "anthropic/sonnet",
+		});
+		// …and any other workflow falls through to the flat stages rung.
+		expect(provider.resolveModel?.({ workflow: "ship", stage: "plan", skill: "synthesize" })).toEqual({
 			model: "anthropic/opus",
 			thinking: "high",
 		});
 		// An unconfigured stage with no defaults resolves to no override.
-		expect(provider.resolveModel?.({ stage: "unknown", skill: "build" })).toBeUndefined();
+		expect(provider.resolveModel?.({ workflow: "build", stage: "unknown", skill: "build" })).toBeUndefined();
 	});
 });
 
 describe("default-concurrency cap", () => {
-	it("defaults the background-lane cap to 4", () => {
-		expect(DEFAULT_MAX_CONCURRENCY).toBe(4);
+	it("defaults the background-lane cap to 6", () => {
+		expect(DEFAULT_MAX_CONCURRENCY).toBe(6);
 	});
 });
 

@@ -1,4 +1,4 @@
-import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.js";
+import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.ts";
 
 const FIRECRAWL_API_URL = "https://api.firecrawl.dev/v1";
 export const FIRECRAWL_API_KEY_ENV_VAR = "FIRECRAWL_API_KEY";

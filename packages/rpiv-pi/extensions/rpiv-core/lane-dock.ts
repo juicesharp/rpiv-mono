@@ -25,8 +25,8 @@ import {
 	renderLaneList,
 	SPIN_INTERVAL_MS,
 	SPINNER_FRAMES,
-} from "./lane-list.js";
-import { type LaneEntry, laneNeedsInput, listLanes, listLanesForDisplay } from "./run-lane-registry.js";
+} from "./lane-list.ts";
+import { type LaneEntry, laneNeedsInput, listLanes, listLanesForDisplay } from "./run-lane-registry.ts";
 
 const WIDGET_KEY = "rpiv-lanes";
 /** Ambient discoverability footer — surfaces how to step in with the two self-explanatory

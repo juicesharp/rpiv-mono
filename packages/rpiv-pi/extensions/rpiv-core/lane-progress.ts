@@ -35,8 +35,8 @@
  */
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { shortFailureReason } from "./lane-failure.js";
-import { isLaneRelayUiContext } from "./lane-relay-ui.js";
+import { shortFailureReason } from "./lane-failure.ts";
+import { isLaneRelayUiContext } from "./lane-relay-ui.ts";
 import {
 	clearUnitLanes,
 	foldStageUsage,
@@ -48,9 +48,9 @@ import {
 	setRecap,
 	setUnitStarted,
 	sweepRunningUnits,
-} from "./run-lane-registry.js";
-import { getCapturedUiContext } from "./session-capture.js";
-import { isModuleNotFound } from "./utils.js";
+} from "./run-lane-registry.ts";
+import { getCapturedUiContext } from "./session-capture.ts";
+import { isModuleNotFound } from "./utils.ts";
 
 /**
  * Process-global guard holding the active `registerLifecycle` disposer. Anchored
@@ -194,7 +194,7 @@ export async function registerLaneProgress(): Promise<void> {
 					units: info.units ? { done: 0, total: info.units.length } : undefined,
 				});
 			},
-			// NEW — the previously-missing half of the bracket. Materialize a per-unit
+			// Materialize a per-unit
 			// sub-row (label + running) for fan-out units ONLY. The host publishes the
 			// live session separately (setCurrentSession at this index); both upsert the
 			// same key in either order. The lifecycle bus is the sole cross-package channel.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { routeKey } from "./key-router.js";
-import { initialVoiceState } from "./state.js";
-import { draftFromConfig } from "./state-reducer.js";
+import { routeKey } from "./key-router.ts";
+import { initialVoiceState } from "./state.ts";
+import { draftFromConfig } from "./state-reducer.ts";
 
 const ESC = "\x1b";
 const TAB = "\t";

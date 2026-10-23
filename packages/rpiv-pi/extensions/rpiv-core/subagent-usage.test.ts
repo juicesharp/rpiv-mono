@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { LaneUsage } from "./lane-usage.js";
+import type { LaneUsage } from "./lane-usage.ts";
 import {
 	__resetSubagentUsage,
 	getSubagentUsageForRun,
 	getSubagentUsageForStage,
 	recordSubagentCompletion,
-} from "./subagent-usage.js";
+} from "./subagent-usage.ts";
 
 /** A `subagents:completed` payload shape — `{ …, tokens: { input, output, total } }`
  *  (pi-subagents `buildEventData`). `tokens` is omitted entirely when nothing was

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FLAG_DEBUG, MSG_TYPE_GIT_CONTEXT, MSG_TYPE_GUIDANCE } from "./constants.js";
+import { FLAG_DEBUG, MSG_TYPE_GIT_CONTEXT, MSG_TYPE_GUIDANCE } from "./constants.ts";
 
 describe("rpiv-core constants", () => {
 	it("FLAG_DEBUG is the canonical debug-flag name", () => {

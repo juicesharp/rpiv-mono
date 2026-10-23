@@ -238,12 +238,14 @@ Every constructor accepts the shared introspectable facet and policy knobs:
 | `onCap` | fanout/iterate `"halt"` · assess `"advance"` | What happens at the effective cap (`min(max, run.maxIterations)`). `"halt"` — terminal failure (mirrors the backward-jump guard). `"advance"` — soft-stop: warn, land a `{type:"loop-cap"}` telemetry row, fire `onLoopCap`, keep the projected result, advance downstream. |
 | `result` | fanout `"entry"` · iterate/assess `"last"` | What the loop leaves in `{state.output, state.primaryArtifact}` (the pair is governed as one). `"entry"` restores the pair captured at loop entry (reproduces routing-sees-upstream); `"last"` uses the last completed produce unit's pair (zero produce units degrades to entry). |
 
-`fanout()` adds three knobs the sequential kinds have no use for:
+`fanout()` adds five knobs the sequential kinds have no use for:
 
 | Knob (fanout only) | Default | Meaning |
 |---|---|---|
 | `concurrency` | host cap | Per-fanout in-flight ceiling, applied as `min(concurrency, host maxConcurrency)`. `1` **serializes** the loop — the safe model for units mutating shared state (e.g. applying a plan to one working tree). Integer ≥ 1, validated at construction and load. |
 | `failFast` | absent (collect-all) | Opt out of collect-all: the first failing unit halts the run terminally and cancels in-flight siblings. Cancelled siblings leave unfilled slots, so a later resume re-dispatches them. |
+| `haltWhenAllFailed` | absent | Opt-in halt at generation close: when every declared slot of a closing generation is filled and every one is a failed sentinel (strict all-filled-all-failed), the run halts terminally at the loop stage (parent-attributed `FAIL_FANOUT_ALL_FAILED` row) instead of advancing into a fan-in over an empty channel. Collection is unchanged — per-unit collect-all soft-halt rows keep flowing, so resume still rebuilds sentinels rather than re-running dead units (a unit interrupted inside its `retryHaltedUnits` window is the exception — its slot re-dispatches while retry budget remains). An over-cap `"advance"` generation never qualifies (beyond-cap slots stay unfilled). `failFast` wins when both are set. With `retryHaltedUnits` set, the close waits for every unit's retries — see that row. |
+| `retryHaltedUnits` | absent (exactly one dispatch) | Re-dispatch a soft-halted collect-all unit (a failed sentinel in its slot) up to `retryHaltedUnits` MORE times. One attempt = the unit's whole dispatch with a fresh pre-attempt snapshot — a retry's disk-first collection sees only its own session's writes, and the attempt-1 failure memo rides the re-dispatch prompt as the additive suffix (same unit prompt otherwise). Only the FINAL attempt's output folds. With `haltWhenAllFailed` set, the close waits for every unit's retries — it fires only when every FINAL attempt is a failed sentinel; a unit that recovers on retry keeps the generation alive. Integer ≥ 1, validated at construction and load. Inert under `failFast` (a fail-fast halt terminates the run; there is nothing left to re-dispatch into). |
 | `depArtifactFlag` | none | Injects each completed dependency's artifact path into the dependent unit's prompt as `<flag> <path>`, one per direct `deps` entry whose slot holds a non-failed output. Pairs with `Unit.deps` — `deps` orders the waves, this hands the dependent something to read. Failed dep slots are skipped. |
 
 #### The resume contract (all loop kinds)
@@ -690,7 +692,7 @@ Grouped by discovery model:
 
 | Collector | Signature | What it does |
 |-----------|-----------|--------------|
-| `transcriptPathCollector` | `({ pattern: RegExp })` | Scans assistant text for the last regex match; emits one `fs` artifact. |
+| `transcriptPathCollector` | `({ pattern: RegExp, match?, argKeys? })` | Scans assistant text for the last regex match; on a miss, the string arguments of the agent's tool calls (`match` narrows by call, `argKeys` by argument key — e.g. `match: (tc) => tc.name === "write", argKeys: ["path"]`). Emits one `fs` artifact. |
 | `directoryPathCollector` | `({ dir, ext? })` | Wrapper over `transcriptPathCollector` for `<dir>/<file>.<ext>`. |
 | `urlCollector` | `({ pattern? })` | Scans for `https?://…`; emits a `url` handle. |
 
@@ -698,7 +700,7 @@ Grouped by discovery model:
 
 | Collector | Signature | What it does |
 |-----------|-----------|--------------|
-| `toolCallCollector` | `({ match, toArtifact })` | Walks every `tool_use` part; emits N artifacts via author's mappers. |
+| `toolCallCollector` | `({ match, toArtifact })` | Walks every tool-invocation part (Pi's `toolCall`/`arguments`, normalised to `{ name, input }`); emits N artifacts via author's mappers. |
 
 **Diff the filesystem:**
 

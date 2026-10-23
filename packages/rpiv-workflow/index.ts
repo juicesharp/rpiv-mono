@@ -73,12 +73,19 @@
 // Runner-free surface (DSL, registrars, loader, outcomes, …) lives in
 // `./registration.js`; startup-time siblings import that to skip the ~530ms
 // engine. This entry layers the runner on top for embedders.
-export * from "./registration.js";
+export * from "./registration.ts";
 
-// The execution engine — the only re-export unique to this entry.
+// The execution engine — the only re-export unique to this entry. The budget
+// defaults and `validateRunBudgets` ride along: the runner refuses a malformed
+// `maxBackwardJumps`/`maxLaps`/`maxIterations` pre-flight, so an embedder
+// must be able to pre-validate and read the defaults the refusal math uses.
 export {
+	MAX_BACKWARD_JUMPS,
+	MAX_ITERATIONS,
+	MAX_LAPS,
 	type ResumeWorkflowByRunIdOptions,
 	type ResumeWorkflowOptions,
+	type RunBudgetOptions,
 	type RunWorkflowByNameOptions,
 	type RunWorkflowOptions,
 	type RunWorkflowResult,
@@ -86,7 +93,8 @@ export {
 	resumeWorkflowByRunId,
 	runWorkflow,
 	runWorkflowByName,
-} from "./runner/index.js";
+	validateRunBudgets,
+} from "./runner/index.ts";
 
 // NOTE: the Pi extension `default` entry is `./extension.ts`, not this barrel,
 // so loading the extension doesn't evaluate the runtime re-exports above.

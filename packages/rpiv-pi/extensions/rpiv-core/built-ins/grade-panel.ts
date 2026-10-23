@@ -2,21 +2,74 @@
  * The grade panels: the shared tiered panel factory, its build-lane instances,
  * and ship's bespoke tier-independent panel and verdict channel.
  */
-import { directoryPathCollector, fanout, handleToString, jsonBodyParser } from "@juicesharp/rpiv-workflow/registration";
+import { fanout, handleToString, type RunView } from "@juicesharp/rpiv-workflow/registration";
 import {
 	dimensionsToRegrade,
 	freshVerdicts,
 	GOAL_DIMENSIONS,
-	gateRoster,
-	gateTier,
 	latestVerdictPerDimension,
 	PLAN_DIMENSIONS,
+	panelProgress,
+	panelRoster,
 	planAuthoredRisks,
+	RISK_DIMENSION,
 	SHIP_DIMENSIONS,
 	SLICE_DIMENSIONS,
-} from "./gates.js";
-import { isSurgicalFix, priorArtifact } from "./priors.js";
-import { latestFsArtifact } from "./shared.js";
+	shipRoster,
+} from "./gates.ts";
+import { isSurgicalFix, priorArtifact } from "./priors.ts";
+import { haltPreflight, latestFsArtifact } from "./shared.ts";
+import { verdictOutcome } from "./verdict-outcome.ts";
+
+/**
+ * The dimension-scoped artifact flags every panel body composes — ONE
+ * construction site shared by the `gradePanelFanout` factory and ship's
+ * bespoke twin, so the twins' flag spellings can't drift. Each flag is empty
+ * when its channel carries no fs artifact (workflows without that stage
+ * simply emit no flag). Routing: `--context` → architecture-fit only,
+ * `--goal` → GOAL_DIMENSIONS, `--acceptance` → completeness only — the
+ * per-dimension keying stays at the prompt-composition sites.
+ */
+const dimensionArtifactFlags = (state: RunView): { contextFlag: string; goalFlag: string; acceptanceFlag: string } => {
+	const flag = (channel: string, name: string): string => {
+		const doc = latestFsArtifact(state, channel);
+		return doc?.handle.kind === "fs" ? ` --${name} ${handleToString(doc.handle)}` : "";
+	};
+	return {
+		contextFlag: flag("research", "context"),
+		goalFlag: flag("goal", "goal"),
+		acceptanceFlag: flag("acceptance", "acceptance"),
+	};
+};
+
+/**
+ * The deterministic citation floor's verdict as a `--cite-check` flag for the
+ * correctness unit — threaded whenever the floor has published, WHATEVER its
+ * result. A clean verdict is itself load-bearing evidence: it is the settled
+ * fact that every citation in the artifact mechanically resolves, so the
+ * correctness grader can skip the file-by-file re-resolution it otherwise
+ * duplicates (the single most expensive part of the most expensive dimension)
+ * and spend its spot-check budget on claim-vs-code semantics — the one thing
+ * the floor cannot judge. A findings-bearing verdict additionally carries the
+ * advisory leads the grader folds into its sample. Required, never degraded:
+ * a panel configured over a cite channel whose channel carries no fs verdict
+ * throws the halt preflight — the built-in graphs run the floor before every
+ * panel dispatch, so an absent verdict is an integrity break. A panel with no
+ * `citeChannel` (the slice gate, a user workflow without a floor) composes no
+ * flag.
+ */
+const citeCheckFlag = (state: RunView, citeChannel: string | undefined): string => {
+	if (citeChannel === undefined) return "";
+	const doc = latestFsArtifact(state, citeChannel);
+	if (doc?.handle.kind !== "fs") {
+		throw haltPreflight(
+			"grade",
+			"grade: no citation-floor verdict to thread as --cite-check",
+			`grade: the '${citeChannel}' channel carries no fs verdict — the deterministic citation floor must run before the correctness unit dispatches (a panel configured over a cite channel requires it)`,
+		);
+	}
+	return ` --cite-check ${handleToString(doc.handle)}`;
+};
 
 /**
  * A grade panel: one `grade` session per dimension over the latest artifact on
@@ -45,34 +98,52 @@ import { latestFsArtifact } from "./shared.js";
  * (and the slice gate's `design-readiness`, which never grades fit or
  * goal-completeness) gets the bare flags.
  *
- * A CONFIRM panel (`confirm: true`) additionally threads each still-blocking
- * dimension's latest verdict in as `--prior`: the confirming grader must
- * adjudicate the prior round's findings — uphold or refute each with cited
- * evidence — instead of silently out-voting them (a blind second opinion once
- * rationalized past a checkable fact and its pass overwrote a correct fail at
- * the latest-per-dimension fold). Only PENDING dimensions get the flag: in the
- * degenerate full-roster fallback a carried passing verdict has nothing to
- * adjudicate, and a first grade has no prior at all.
+ * `--prior` threads a dimension's latest fresh verdict when that dimension is
+ * still pending (a confirm or re-grade of a blocking prior — the grader must
+ * adjudicate the prior findings, not out-vote them) and always on correctness
+ * and on the risk unit (their re-grades scope to the prior). A carried
+ * passing prior on any other dimension is not re-adjudicated. Round 1 emits
+ * no flag.
+ *
+ * The `RISK_DIMENSION` unit joins the roster through `panelRoster` whenever
+ * the graded channel declares `risks:` — bare flags plus `--prior`: no
+ * `--goal` (the goal-contradiction class stays with correctness), no
+ * `--cite-check` (resolution is correctness's lead source), no `--context`.
+ *
+ * Every panel wires `haltWhenAllFailed: true`: a generation in which EVERY
+ * dispatched dimension unit failed is a dead panel — nothing was collected, so
+ * there are no verdicts to fold — and the run halts at the panel's own close
+ * instead of routing the gate machinery over an empty verdict channel.
  */
 const gradePanelFanout = (
 	channel: string,
 	dimensions: readonly string[],
 	verdictChannel: string,
-	{ confirm = false, priorChannel }: { confirm?: boolean; priorChannel?: string } = {},
+	{
+		confirm = false,
+		priorChannel,
+		citeChannel,
+	}: { confirm?: boolean; priorChannel?: string; citeChannel?: string } = {},
 ) =>
 	fanout({
 		source: channel,
 		unit: { by: "dimension-list", pattern: "dimensions" },
-		max: dimensions.length,
+		// +1: the risk unit `panelRoster` may add on top of the dimension list.
+		max: dimensions.length + 1,
+		haltWhenAllFailed: true,
+		retryHaltedUnits: 1,
 		units: ({ state, cwd }) => {
 			const doc = latestFsArtifact(state, channel);
 			if (doc?.handle.kind !== "fs") return [];
 			const target = handleToString(doc.handle);
-			const research = latestFsArtifact(state, "research");
-			const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
-			const goal = latestFsArtifact(state, "goal");
-			const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
-			const roster = gateRoster(gateTier(state, verdictChannel), dimensions);
+			// The goal-derived acceptance inventory threads to the completeness
+			// unit only: completeness anchors on the enumerated items instead of
+			// re-deriving the ask list from goal prose each round. Conditional —
+			// workflows without an acceptance stage (vet/polish, user-authored)
+			// simply emit no flag.
+			const { contextFlag, goalFlag, acceptanceFlag } = dimensionArtifactFlags(state);
+			const citeFlag = citeCheckFlag(state, citeChannel);
+			const roster = panelRoster(state, channel, verdictChannel, dimensions);
 			const latest = latestVerdictPerDimension(freshVerdicts(state.named[verdictChannel], target));
 			const risks = planAuthoredRisks(state, channel);
 			const pending = dimensionsToRegrade(roster, latest, risks);
@@ -87,10 +158,12 @@ const gradePanelFanout = (
 			// (round 1 / first re-grade) the carry-forward applies unchanged. See
 			// `isSurgicalFix` for the fail-closed contract.
 			const surgical =
-				!confirm && priorChannel !== undefined && isSurgicalFix(state, priorChannel, cwd, target, latest, pending);
+				!confirm &&
+				priorChannel !== undefined &&
+				isSurgicalFix(state, priorChannel, cwd, target, latest, pending, risks);
 			const priorPresent = priorChannel !== undefined && priorArtifact(state, priorChannel) !== undefined;
 			const priorFlag = (d: string): string => {
-				if (!confirm || !pending.includes(d)) return "";
+				if (d !== "correctness" && d !== RISK_DIMENSION && !pending.includes(d)) return "";
 				const handle = latest.get(d)?.artifacts.find((a) => a.handle.kind === "fs")?.handle;
 				return handle ? ` --prior ${handleToString(handle)}` : "";
 			};
@@ -100,7 +173,7 @@ const gradePanelFanout = (
 			// empty ⇒ single dimensionless grade fall-through).
 			const toGrade = surgical ? carryForward : priorPresent ? roster : carryForward;
 			return toGrade.map((d) => ({
-				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${priorFlag(d)}`,
+				prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${d === "completeness" ? acceptanceFlag : ""}${d === "correctness" ? citeFlag : ""}${priorFlag(d)}`,
 				label: d,
 				id: `${channel}-dim-${d}`,
 			}));
@@ -110,12 +183,14 @@ const gradePanelFanout = (
 const SLICE_DIMENSION_FANOUT = gradePanelFanout("slices", SLICE_DIMENSIONS, "slice-verdicts");
 const PLAN_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-verdicts", {
 	priorChannel: "plan-snapshot",
+	citeChannel: "plan-cite-check",
 });
 // The post-splice code gate re-grades the SAME `plans` artifact on its own
 // `code-verdicts` channel, so its carry-forward reads the code gate's verdicts,
 // never the pre-elaborate plan gate's.
 const CODE_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts", {
 	priorChannel: "code-snapshot",
+	citeChannel: "code-cite-check",
 });
 // The confirm stages re-run the SAME panel machinery on the SAME verdict
 // channel: with the failing dimensions the only ones pending, the panel emits
@@ -125,8 +200,30 @@ const CODE_DIMENSION_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-v
 // evidence) so a confirming pass records WHY the fail died instead of silently
 // out-voting it at the latest-per-dimension fold.
 // Distinct fanout instances (not aliases) so each stage owns its loop object.
-const PLAN_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-verdicts", { confirm: true });
-const CODE_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts", { confirm: true });
+const PLAN_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "plan-verdicts", {
+	confirm: true,
+	citeChannel: "plan-cite-check",
+});
+const CODE_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-verdicts", {
+	confirm: true,
+	citeChannel: "code-cite-check",
+});
+
+// The three build lanes' whole-lap progress hooks — one instance per lane,
+// declared on every stage the guard can re-enter (grade / fix-or-confirm /
+// snapshot), beside the fanout twins that grade the same channels. The
+// plan/code lanes amend the plan in place, so their rounds are cut at
+// snapshot rows; the slice lane re-slices to a new file, so its rounds group
+// by artifact basename (see panelProgress).
+const SLICE_PANEL_PROGRESS = panelProgress("slice-verdicts", SLICE_DIMENSIONS);
+const PLAN_PANEL_PROGRESS = panelProgress("plan-verdicts", PLAN_DIMENSIONS, {
+	snapshotChannel: "plan-snapshot",
+	artifactChannel: "plans",
+});
+const CODE_PANEL_PROGRESS = panelProgress("code-verdicts", PLAN_DIMENSIONS, {
+	snapshotChannel: "code-snapshot",
+	artifactChannel: "plans",
+});
 
 /**
  * Ship's grade panel — a bespoke `fanout({...})` mirroring `gradePanelFanout`'s
@@ -139,61 +236,71 @@ const CODE_CONFIRM_FANOUT = gradePanelFanout("plans", PLAN_DIMENSIONS, "code-ver
  * correctness), and the `freshVerdicts` / `latestVerdictPerDimension` /
  * `dimensionsToRegrade` carry-forward so a re-grade emits only still-pending
  * dimensions. Tier-independence is structural: the roster never shrinks, so a
- * light run still grades `architecture-fit`. Ship-only addition: the
- * correctness unit carries `--cite-check <verdict>` when the deterministic
- * citation floor recorded findings — advisory by construction here, since a
- * blocking finding STOPs at the cite gate before grade ever runs — so the
- * grader adjudicates them rather than leaving them unread.
+ * light run still grades `architecture-fit`. The correctness unit carries
+ * `--cite-check <verdict>` whenever the floor published (`citeCheckFlag` —
+ * a clean verdict settles citation resolution so the grader skips the
+ * mechanical re-resolution; a findings-bearing one is advisory by
+ * construction here, since a blocking finding STOPs at the cite gate before
+ * grade ever runs, and the grader adjudicates the leads rather than leaving
+ * them unread).
+ *
+ * `haltWhenAllFailed: true` mirrors the factory panels: an all-failed
+ * generation (every dimension session dead, nothing collected) halts the run
+ * at the panel's own close — one hop earlier than `shipGradeGate`, which was
+ * previously the first point to face the empty fold.
  */
 export const SHIP_DIMENSION_FANOUT = fanout({
 	source: "plans",
 	unit: { by: "dimension-list", pattern: "dimensions" },
-	max: SHIP_DIMENSIONS.length,
+	// +1: the risk unit `shipRoster` adds when the plan declares `risks:`.
+	max: SHIP_DIMENSIONS.length + 1,
+	haltWhenAllFailed: true,
+	retryHaltedUnits: 1,
 	units: ({ state }) => {
 		const doc = latestFsArtifact(state, "plans");
 		if (doc?.handle.kind !== "fs") return [];
 		const target = handleToString(doc.handle);
-		const research = latestFsArtifact(state, "research");
-		const contextFlag = research?.handle.kind === "fs" ? ` --context ${handleToString(research.handle)}` : "";
-		const goal = latestFsArtifact(state, "goal");
-		const goalFlag = goal?.handle.kind === "fs" ? ` --goal ${handleToString(goal.handle)}` : "";
-		// The floor's findings (advisory by construction — see the fanout doc
-		// above) thread as `--cite-check`; no findings ⇒ no flag.
-		const cite = latestFsArtifact(state, "plan-cite-check");
-		const citeFindings = (state.named["plan-cite-check"]?.at(-1)?.data as { findings?: unknown[] } | undefined)
-			?.findings;
-		const citeFlag =
-			cite?.handle.kind === "fs" && Array.isArray(citeFindings) && citeFindings.length > 0
-				? ` --cite-check ${handleToString(cite.handle)}`
-				: "";
-		// Tier-independent roster: SHIP_DIMENSIONS verbatim — never gateRoster(gateTier(...)).
-		const roster = SHIP_DIMENSIONS;
+		// The shared flag-composition site — the twins compose it rather than
+		// mirroring it (dimension keying below stays ship's own).
+		const { contextFlag, goalFlag, acceptanceFlag } = dimensionArtifactFlags(state);
+		// The floor's verdict is REQUIRED here — citeCheckFlag fails closed when
+		// the configured channel carries no fs verdict; a clean verdict settles
+		// resolution, findings carry the advisory leads (see citeCheckFlag).
+		const citeFlag = citeCheckFlag(state, "plan-cite-check");
+		// Tier-independent roster: SHIP_DIMENSIONS verbatim (plus the risk unit
+		// when the plan declares risks) — never gateRoster(gateTier(...)).
+		const roster = shipRoster(state);
 		const latest = latestVerdictPerDimension(freshVerdicts(state.named["ship-verdicts"], target));
 		const risks = planAuthoredRisks(state, "plans");
 		const pending = dimensionsToRegrade(roster, latest, risks);
 		const carryForward = pending.length > 0 ? pending : roster;
 		return carryForward.map((d) => ({
-			prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${d === "correctness" ? citeFlag : ""}`,
+			prompt: `--dimension ${d} --artifact ${target}${d === "architecture-fit" ? contextFlag : ""}${GOAL_DIMENSIONS.has(d) ? goalFlag : ""}${d === "completeness" ? acceptanceFlag : ""}${d === "correctness" ? citeFlag : ""}`,
 			label: d,
 			id: `plans-dim-${d}`,
 		}));
 	},
 });
 
+// Ship's whole-lap hook — INERT by topology (the grade gate routes implement
+// or stop, so no edge ever re-enters the grade stage), declared for uniformity
+// so every panel lane names its hook beside its panel.
+const SHIP_PANEL_PROGRESS = panelProgress("ship-verdicts", SHIP_DIMENSIONS);
+
 // Ship's grade panel writes its verdicts to a DISTINCT channel (same
 // directory, different artifact basenames) so they never mix with build's
 // plan/code verdicts — named for the workflow, completing the slice-verdicts
 // / plan-verdicts / code-verdicts / ship-verdicts parallel.
-export const shipVerdictOutcome = {
-	name: "ship-verdicts",
-	collector: directoryPathCollector({ dir: ".rpiv/artifacts/verdicts", ext: "json" }),
-	parser: jsonBodyParser,
-};
+export const shipVerdictOutcome = verdictOutcome("ship-verdicts", "plans");
 
 export {
 	CODE_CONFIRM_FANOUT,
 	CODE_DIMENSION_FANOUT,
+	CODE_PANEL_PROGRESS,
 	PLAN_CONFIRM_FANOUT,
 	PLAN_DIMENSION_FANOUT,
+	PLAN_PANEL_PROGRESS,
+	SHIP_PANEL_PROGRESS,
 	SLICE_DIMENSION_FANOUT,
+	SLICE_PANEL_PROGRESS,
 };

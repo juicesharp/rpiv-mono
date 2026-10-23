@@ -1,9 +1,9 @@
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, type vi } from "vitest";
-import registerTodo from "./index.js";
-import { EMPTY_STATE } from "./state/state.js";
-import { getActiveRenderSession, getRenderState, getState } from "./state/store.js";
-import { __resetState } from "./todo.js";
+import registerTodo from "./index.ts";
+import { EMPTY_STATE } from "./state/state.ts";
+import { getActiveRenderSession, getRenderState, getState } from "./state/store.ts";
+import { __resetState } from "./todo.ts";
 
 // Capture the extension's registered handlers + tool + command. Each registerTodo()
 // call builds a fresh closure (fresh module-level `todoOverlay`), so isolation
@@ -118,7 +118,7 @@ describe("rpiv-todo — per-session todo store isolation (Phase 1 baseline)", ()
 
 		// Creator-ownership: the render slot is still the parent's. The first UI
 		// session claims the pointer before lazy overlay loading, and a child cannot
-		// re-set it. NOTE: full child-rebind prevention is Phase 2.
+		// re-set it.
 		expect(getRenderState().tasks.map((t) => t.subject)).toEqual(["parent-task"]);
 		// Sanity: the child's task DID land in its own slot.
 		expect(getState("child").tasks.map((t) => t.subject)).toEqual(["child-task"]);

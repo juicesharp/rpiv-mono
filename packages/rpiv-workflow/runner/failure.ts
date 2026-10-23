@@ -12,11 +12,11 @@ import {
 	notifyPartialArtifacts,
 	recordFatalFailure,
 	terminate,
-} from "../audit.js";
-import { formatError, isAbortError } from "../internal-utils.js";
-import { FAIL_WORKFLOW_ABORTED, MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE } from "../messages.js";
-import type { RunContext, UnitRef, WorkflowHostContext } from "../types.js";
-import { StagePreflightError } from "./errors.js";
+} from "../audit.ts";
+import { formatError, isAbortError } from "../internal-utils.ts";
+import { FAIL_WORKFLOW_ABORTED, MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE } from "../messages.ts";
+import type { RunContext, UnitRef, WorkflowHostContext } from "../types.ts";
+import { StagePreflightError } from "./errors.ts";
 
 /**
  * Explicit result of one chain-walk step, threaded up through

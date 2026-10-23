@@ -1,4 +1,4 @@
-import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
+import type { SearchProvider, SearchResponse, SearchResult } from "./types.ts";
 
 const BRAVE_SEARCH_API_URL = "https://api.search.brave.com/res/v1/web/search";
 export const BRAVE_API_KEY_ENV_VAR = "BRAVE_SEARCH_API_KEY";

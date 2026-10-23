@@ -18,12 +18,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { StageDef } from "./api.js";
-import { applyCompletedStage, placeFanoutOutput, stageEntryArgs } from "./chain-state.js";
-import { type Artifact, fs as fsHandle, handleToString } from "./handle.js";
-import { failedOutput, type Output, type OutputMeta } from "./output.js";
-import { fanin } from "./stage-def.js";
-import type { RunState } from "./types.js";
+import type { StageDef } from "./api.ts";
+import { applyCompletedStage, placeFanoutOutput, stageEntryArgs } from "./chain-state.ts";
+import { type Artifact, fs as fsHandle, handleToString } from "./handle.ts";
+import { failedOutput, type Output, type OutputMeta } from "./output.ts";
+import { fanin } from "./stage-def.ts";
+import type { RunState } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures

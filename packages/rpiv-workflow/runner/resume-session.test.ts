@@ -32,17 +32,17 @@ import { join } from "node:path";
 import { mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Workflow } from "../api.js";
-import { registerWorkflowExecutionHost } from "../execution-host.js";
-import { fs as fsHandle } from "../handle.js";
-import type { WorkflowSessionContext } from "../host.js";
+import type { Workflow } from "../api.ts";
+import { registerWorkflowExecutionHost } from "../execution-host.ts";
+import { fs as fsHandle } from "../handle.ts";
+import type { WorkflowSessionContext } from "../host.ts";
 import {
 	MSG_RESUME_PROMOTED,
 	MSG_RESUME_REATTACHED,
 	MSG_RESUME_SESSION_FALLBACK,
 	REATTACH_PROMPT,
-} from "../messages.js";
-import type { CollectContext, Outcome } from "../output-spec.js";
+} from "../messages.ts";
+import type { CollectContext, Outcome } from "../output-spec.ts";
 import {
 	appendHeader,
 	appendStage,
@@ -51,11 +51,11 @@ import {
 	STATE_SCHEMA_VERSION,
 	type WorkflowHeader,
 	type WorkflowStage,
-} from "../state/index.js";
-import { lastMatchInBranch } from "../transcript.js";
-import { typeboxSchema } from "../typebox-adapter.js";
-import type { WorkflowHostContext } from "../types.js";
-import { resumeWorkflow } from "./runner.js";
+} from "../state/index.ts";
+import { lastMatchInBranch } from "../transcript.ts";
+import { typeboxSchema } from "../typebox-adapter.ts";
+import type { WorkflowHostContext } from "../types.ts";
+import { resumeWorkflow } from "./runner.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -482,7 +482,7 @@ describe("session-backed resume — detaches to the provider's executor host", (
 		// The resumed stage resolved its per-child model through the provider — proving
 		// resolveModel is threaded onto resumed stages, not just live ones.
 		expect(result.success).toBe(true);
-		expect(resolveModel).toHaveBeenCalledWith({ stage: "build", skill: "build" });
+		expect(resolveModel).toHaveBeenCalledWith({ workflow: "wf", stage: "build", skill: "build" });
 	});
 
 	it("threads the lane name to createHost — header.workflow when the run carried no --name alias", async () => {

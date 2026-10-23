@@ -160,7 +160,7 @@ Events emitted before any provider is registered are dropped at the dispatcher
 boundary — there is no buffer and no replay. In the built-in Pi flow
 `initInstrumentation` registers providers before it attaches any handler, but only
 the console provider is constructed synchronously; the MLflow provider joins when
-its lazy `import("./mlflow/index.js")` resolves, which is after the handlers are
+its lazy `import("./mlflow/index.ts")` resolves, which is after the handlers are
 attached — in practice before the first Pi event, though not guaranteed by
 construction.
 

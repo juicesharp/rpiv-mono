@@ -17,7 +17,7 @@
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import type { LaneSession } from "./run-lane-registry.js";
+import type { LaneSession } from "./run-lane-registry.ts";
 
 /** The agent event the raw session's subscribe listener receives — derived from the SDK
  *  signature so this module imports no SDK event-type value. */

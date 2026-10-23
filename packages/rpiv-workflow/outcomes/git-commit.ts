@@ -25,8 +25,8 @@
  * pin the event loop.
  */
 
-import { type Artifact, opaque } from "../handle.js";
-import type { Output } from "../output.js";
+import { type Artifact, opaque } from "../handle.ts";
+import type { Output } from "../output.ts";
 import type {
 	ArtifactCollector,
 	ArtifactParser,
@@ -34,8 +34,8 @@ import type {
 	Outcome,
 	ParseContext,
 	SnapshotContext,
-} from "../output-spec.js";
-import { execFileAsync, GIT_EXEC_TIMEOUT_MS } from "./exec.js";
+} from "../output-spec.ts";
+import { execFileAsync, GIT_EXEC_TIMEOUT_MS } from "./exec.ts";
 
 /**
  * Output data shape produced by `gitCommitParser` — co-located with the

@@ -11,6 +11,52 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `create` accepts `tasks[]` as a one-of with `subject`, so a plan can land in one call. The batch is all-or-nothing; items cannot `blockedBy` each other (#44).
 
+## [2.13.10] - 2026-10-23
+
+## [2.13.9] - 2026-10-17
+
+### Changed
+
+- Faster extension startup: relative imports now name the published `.ts` files instead of nonexistent `.js` targets, so Pi's loader (jiti) no longer runs fallback resolution for each of them on every launch. Runtime behavior is unchanged. Thanks @ry4nyu for #306, and @szastupov for #304.
+
+## [2.13.8] - 2026-10-12
+
+## [2.13.7] - 2026-10-12
+
+## [2.13.6] - 2026-10-12
+
+## [2.13.5] - 2026-10-12
+
+### Fixed
+
+- **Tasks changed from codemode scripts survive resume, reload, tree navigation and compaction.** A `todo` call made through another tool (Pi's codemode, or any `ctx.executeTool` caller) never becomes a standalone tool result on the session branch, so replay could not see it. Tasks created only that way came back empty, and a task completed that way rolled back to its last directly recorded status. Every call that changes the list now also saves its snapshot as a `rpiv-todo-state` custom entry (never sent to the model), and replay restores from the latest one. Sessions saved before this change still replay from tool results. ([#290](https://github.com/juicesharp/rpiv-mono/issues/290))
+
+## [2.13.4] - 2026-10-11
+
+## [2.13.3] - 2026-10-11
+
+## [2.13.2] - 2026-10-11
+
+## [2.13.1] - 2026-10-11
+
+## [2.13.0] - 2026-10-11
+
+## [2.12.0] - 2026-09-30
+
+### Fixed
+
+- **`typebox` is declared as a `peerDependencies: "*"` entry, no longer a `dependencies` entry.** Pi provides `typebox` to extensions and aliases the bare specifier to its own bundled copy at load time, so the copy this manifest installed was dead weight at best and a second live instance at worst. Pi 0.99.1 warns at every startup about the old shape ("Host-provided extension packages must be declared in peerDependencies with a \"*\" range, not dependencies: typebox"); this clears it once the release is installed. Contributed in #282; reported in #266, #268, #272 and #277.
+
+## [2.11.0] - 2026-09-21
+
+## [2.10.1] - 2026-09-13
+
+## [2.10.0] - 2026-09-12
+
+## [2.9.0] - 2026-09-01
+
+## [2.8.0] - 2026-08-29
+
 ## [2.7.1] - 2026-08-24
 
 ## [2.7.0] - 2026-08-21

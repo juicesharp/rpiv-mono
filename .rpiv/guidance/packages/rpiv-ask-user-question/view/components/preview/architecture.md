@@ -6,12 +6,12 @@ Render-only sub-system that turns a `QuestionData.options[i].preview` markdown s
 ## Dependencies
 - **`@earendil-works/pi-tui`**: `Markdown`, `MarkdownTheme`, `Component`, `visibleWidth`, `truncateToWidth` (no `wrapTextWithAnsi` — `Markdown.render(width)` wraps)
 - **`@earendil-works/pi-coding-agent`**: `Theme` (`theme.fg("accent"|"dim"|"muted", ...)`)
-- **Internal**: `../../../state/i18n-bridge.js` (`t`), `../../../tool/types.js` (`QuestionData`), `../wrapping-select.js` (`WrappingSelectItem`), `../option-list-view.js` (`OptionListView`), `../../stateful-view.js` (`StatefulView`)
+- **Internal**: `../../../state/i18n-bridge.ts` (`t`), `../../../tool/types.ts` (`QuestionData`), `../wrapping-select.ts` (`WrappingSelectItem`), `../option-list-view.ts` (`OptionListView`), `../../stateful-view.ts` (`StatefulView`)
 
 ## Module Structure
 ```
 markdown-content-cache.ts   — Per-question Map<optionIndex, Markdown> with single cachedWidth; lazy + width-keyed invalidation
-preview-block-renderer.ts   — Owns the cache; computes blockHeight; renderBlock = bordered box + blank + affordance row (height-stable)
+preview-block-renderer.ts   — Owns the cache; computes blockHeight; renderBlock = bordered box + blank + affordance row (height-stable); the row's text is a `NotesAffordance` (`add` | `edit` | `none`) the pane derives from `focused`/`notesVisible`/`hasNote` — `edit` once the question has a saved note (#197)
 preview-box-renderer.ts     — Pure 4-sided border + 1-col padding; computeBoxDimensions; stripFenceMarkers (drops literal ``` lines)
 preview-layout-decider.ts   — Pure decideLayout, adaptiveLeftWidth, crossTabMaxLeftWidth, columnWidths, bodyWidths
 preview-pane.ts             — Thin StatefulView<PreviewPaneProps> composer; re-exports public surface for tests
@@ -75,11 +75,11 @@ render(width: number): string[] {
     const mode = decideLayout(this.getTerminalWidth(), width);
     return mode === "side-by-side" ? this.renderSideBySide(width, mode) : [
         ...this.optionListView.render(width), ...Array(STACKED_GAP_ROWS).fill(""),
-        ...this.previewBlock.renderBlock(width, this.props.selectedIndex, mode, this.props.focused, this.props.notesVisible),
+        ...this.previewBlock.renderBlock(width, this.props.selectedIndex, mode, this.notesAffordance()),
     ];
 }
 ```
-**`inputMode` bypass**: `PreviewPaneProps` is `{ notesVisible, selectedIndex, focused, inputMode }` — `inputMode` is true while the "Type something." custom-answer row is accepting input (`state.inputMode`, surfaced by `selectPreviewPaneProps`). That row sits at index `options.length`, out of bounds for any option's preview, so the pane renders the option list at the **full pane width** — no left-column split, no preview block. All four members (`render`, `focusedItemRowRange`, `naturalHeight`, `maxNaturalHeight`) apply the identical guard, preserving the `naturalHeight === render().length` and `maxNaturalHeight >= naturalHeight` parity invariants; side-by-side + preview resume verbatim when `inputMode` clears on nav-away.
+**`inputMode` bypass**: `PreviewPaneProps` is `{ notesVisible, hasNote, selectedIndex, focused, inputMode }` — `inputMode` is true while the "Type something." custom-answer row is accepting input (`state.inputMode`, surfaced by `selectPreviewPaneProps`). That row sits at index `options.length`, out of bounds for any option's preview, so the pane renders the option list at the **full pane width** — no left-column split, no preview block. All four members (`render`, `focusedItemRowRange`, `naturalHeight`, `maxNaturalHeight`) apply the identical guard, preserving the `naturalHeight === render().length` and `maxNaturalHeight >= naturalHeight` parity invariants; side-by-side + preview resume verbatim when `inputMode` clears on nav-away. `setGlobalLeftWidth` is initialized to a THROWING sentinel — render is a hard fail before the cross-tab width is injected.
 
 ## Composition with Options List (side-by-side)
 `renderSideBySide` splits via `columnWidths(width, adaptiveLeft)`, renders `optionListView.render(leftWidth)` and `renderPaddedPreviewLines(rightWidth, mode)`, then row-zips: `truncateToWidth(left, leftWidth, "") + spacePad + gap + right`, finally `truncateToWidth(joined, width, "")`. `adaptiveLeft` is injected via `setGlobalLeftWidth` (cross-tab `crossTabLeftWidthWithDonation`) so the seam stays stable on tab switch.

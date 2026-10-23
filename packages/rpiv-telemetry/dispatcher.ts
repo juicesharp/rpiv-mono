@@ -1,6 +1,6 @@
-import { isEventEnabled, loadTelemetryConfig, type TelemetryConfig } from "./config.js";
-import type { TelemetryEvent } from "./types/events.js";
-import type { TelemetryProvider } from "./types/provider.js";
+import { isEventEnabled, loadTelemetryConfig, type TelemetryConfig } from "./config.ts";
+import type { TelemetryEvent } from "./types/events.ts";
+import type { TelemetryProvider } from "./types/provider.ts";
 
 /**
  * Bounded async telemetry dispatcher.

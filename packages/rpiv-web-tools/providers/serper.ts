@@ -1,4 +1,4 @@
-import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
+import type { SearchProvider, SearchResponse, SearchResult } from "./types.ts";
 
 const SERPER_API_URL = "https://google.serper.dev/search";
 export const SERPER_API_KEY_ENV_VAR = "SERPER_API_KEY";

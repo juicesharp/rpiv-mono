@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { StatefulView } from "../stateful-view.js";
+import type { StatefulView } from "../stateful-view.ts";
 
 // Rows start at col 0 so the settings surface aligns with dictation
 // (transcript + status bar are also flush-left). The pointer occupies a fixed

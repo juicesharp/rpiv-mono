@@ -2,7 +2,7 @@ import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { makeTheme, makeTui } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
 
-import { runWithSplash, type SplashController } from "./splash-runner.js";
+import { runWithSplash, type SplashController } from "./splash-runner.ts";
 
 interface CapturedComponent {
 	render: (w: number) => unknown;

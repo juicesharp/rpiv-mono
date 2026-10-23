@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { withTimeout } from "./internal-utils.js";
-import { jsonSchemaToStandard } from "./json-schema.js";
+import { withTimeout } from "./internal-utils.ts";
+import { jsonSchemaToStandard } from "./json-schema.ts";
 import {
 	DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
 	describeFailure,
@@ -18,7 +18,7 @@ import {
 	MIN_VALIDATION_RETRY_TIMEOUT_MS,
 	type SchemaValidationFailure,
 	validateOutputData,
-} from "./validate-output.js";
+} from "./validate-output.ts";
 
 describe("withTimeout", () => {
 	it("resolves with the inner promise's value when it settles before the timer", async () => {

@@ -18,12 +18,17 @@ declare module "sherpa-onnx-node" {
 	}
 	// Note: OfflineRecognizer has no release/destroy/free method in
 	// sherpa-onnx-node@1.13.0 — the native handle is GC-managed.
-	// We use the synchronous `decode` + `getResult` pair (the canonical
-	// upstream example uses sync exclusively).
+	// The engine uses the async pair — `OfflineRecognizer.createAsync` for
+	// construction and `decodeAsync` for decoding — which runs as napi async
+	// work off the shared event loop. `decodeAsync` resolves the parsed
+	// result, so `getResult` is not needed on the async path. The
+	// synchronous `decode` + `getResult` pair stays declared: this d.ts
+	// mirrors the binding's full surface.
 	export interface Recognizer {
 		createStream(): Stream;
 		decode(stream: Stream): void;
 		getResult(stream: Stream): Result;
+		decodeAsync(stream: Stream): Promise<Result>;
 	}
 	// Whisper config: `language` and `task` are optional (and meaningless for
 	// the *.en monolingual variants — the upstream example omits them

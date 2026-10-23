@@ -77,13 +77,14 @@ code. The `content[0].text` string is written for the model, not for a log.
       questionIndex: number,
       question: string,
       kind: "option" | "custom" | "multi",
-      answer: string | null,       // option label, typed text, or null for multi
-      selected?: string[],         // chosen labels, multi-select only
+      answer: string | null,       // option label, custom text, or null
+      selected?: string[],         // chosen labels, multi-select only; can accompany answer
       notes?: string,              // free-text note, when you wrote one
       preview?: string,            // echoed back when the chosen option carried a preview
     }>,
     cancelled: boolean,
     globalNote?: string,          // Submit-tab note; present even when cancelled is true
+    unanswered?: number[],        // indexes of questions left blank on a partial submit
     error?: QuestionnaireError,    // one of the codes above
   }
 }
@@ -100,27 +101,98 @@ question is blank.
 
 Cancelling, and any result with neither answer segments nor a global note, both collapse
 to the single string `User declined to answer questions` so the model sees one canonical
-signal. Partial submission is allowed: unanswered questions simply contribute no segment.
+signal. Partial submission is allowed: the questions left blank are named in an
+`unanswered: "<question>", …` segment after the answers (before any global note), and their
+indexes are in `details.unanswered`. Both are absent when every question is answered.
 A cancelled result always reads as the decline in text; its note, if any, survives only
 in `details.globalNote`.
 
 ## Event contract
 
-The package publishes one event on Pi's event bus, emitted after validation passes and
-before the dialog is shown. Import it from the `/events` subpath:
+Everything here imports from the `/events` subpath.
+
+### Outbound
+
+`rpiv:ask-user:prompt` carries the questionnaire, emitted after validation passes and
+before the dialog is shown:
 
 ```ts
 import { ASK_USER_PROMPT_EVENT, type AskUserPromptEventPayload } from "@juicesharp/rpiv-ask-user-question/events";
 
 pi.events.on(ASK_USER_PROMPT_EVENT, (payload: AskUserPromptEventPayload) => {
+  // payload.toolCallId — names this questionnaire on the events below
   // payload.questions[].{ question, header, multiSelect, options[] }
   // payload.questions[].options[].{ label, description, hasPreview }
 });
 ```
 
-The channel name is `rpiv:ask-user:prompt`. Preview *content* is deliberately not shipped
-in the payload — only `hasPreview: boolean` — so listeners forwarding the event across a
-process or network boundary stay cheap.
+Preview *content* is deliberately not shipped in the payload — only `hasPreview: boolean` —
+so listeners forwarding the event across a process or network boundary stay cheap.
+
+`rpiv:ask-user:blocked` brackets the wait for input: `{ active: true, toolCallId }` before the
+dialog opens, `{ active: false, toolCallId }` in a `finally` when it closes for any reason, so
+a listener can tell blocked-on-human apart from working. Several questionnaires can be open
+at once (Pi runs tool calls in parallel), so match `active: false` to its prompt by
+`toolCallId` — that is also how a remote mirror learns a question was answered elsewhere.
+
+### Inbound
+
+`rpiv:ask-user:answer` answers or cancels one open questionnaire without synthesizing
+keystrokes — for programs driving Pi from outside: a pane supervisor, a phone or web
+bridge, a test harness. Name the questionnaire by the `toolCallId` from its prompt event:
+
+```ts
+import {
+  ASK_USER_ANSWER_EVENT,
+  ASK_USER_ANSWER_RESULT_EVENT,
+  ASK_USER_PROMPT_EVENT,
+  type AskUserAnswerResultEventPayload,
+  type AskUserPromptEventPayload,
+} from "@juicesharp/rpiv-ask-user-question/events";
+
+pi.events.on(ASK_USER_PROMPT_EVENT, ({ toolCallId }: AskUserPromptEventPayload) => {
+  pi.events.emit(ASK_USER_ANSWER_EVENT, {
+    toolCallId,
+    requestId: "r1", // optional, echoed on the verdict
+    answers: [
+      { questionIndex: 0, optionIndexes: [1] },                 // single-select: one index…
+      { questionIndex: 1, text: "something else" },             // …or custom text
+      { questionIndex: 2, optionIndexes: [0, 2], text: "and" }, // multi-select: either or both
+    ],
+    globalNote: "optional, like the Submit tab's note",
+  });
+  // or decline, as Esc does: { toolCallId, cancel: true }
+});
+
+pi.events.on(ASK_USER_ANSWER_RESULT_EVENT, (v: AskUserAnswerResultEventPayload) => {
+  // { ok, code?, reason?, requestId?, toolCallId? }
+});
+```
+
+Indexes are 0-based into the prompt's `questions` and each question's `options`. Per-question
+`notes` are accepted too; notes are trimmed and dropped when blank, as in the dialog.
+
+- **When:** from the moment the prompt event is emitted — answering straight from the
+  prompt listener works, and no dialog is shown — until the questionnaire closes.
+- **First answer wins**, typed in the terminal or sent here. A later one is refused.
+- **All or nothing.** Every question must be answered once, indexes in range and distinct,
+  custom text not blank. Otherwise nothing is applied and the dialog stays open — a partly
+  applied answer would reach the model indistinguishable from one the user gave. Unknown
+  fields are ignored.
+- **One verdict per attempt** on `rpiv:ask-user:answer-result`. Branch on `code`; `reason`
+  is for logs and its wording may change:
+
+| `code` | Meaning |
+|---|---|
+| `not_found` | No open questionnaire has that `toolCallId` — never opened, or already answered or closed. |
+| `invalid_payload` | A field is missing or has the wrong type. |
+| `invalid_answer` | Well-formed, but does not fit the questions: a question unanswered or answered twice, an index out of range or repeated, blank text, two options or option plus text on single-select. |
+| `unsupported_host` | An RPC/ACP host shows the questions in its own dialogs ([Hosts and runtime behavior](./hosts.md)); those cannot be answered from here. |
+
+The bus is per session: questions asked inside a `/lanes` workflow child run on that child's
+own bus, so an emitter on the parent session's bus cannot see or answer them.
+
+### Stability
 
 Stability policy for the `rpiv:*` namespace: channel names are immutable, payload changes
 are append-only and always optional, payloads stay JSON-safe, and any breaking change ships

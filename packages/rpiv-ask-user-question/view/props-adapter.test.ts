@@ -1,6 +1,6 @@
 import { Editor, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
-import type { PerTabSelector } from "../state/selectors/contract.js";
+import type { PerTabSelector } from "../state/selectors/contract.ts";
 import {
 	selectDialogProps,
 	selectMultiSelectProps,
@@ -8,7 +8,7 @@ import {
 	selectPreviewPaneProps,
 	selectSubmitPickerProps,
 	selectTabBarProps,
-} from "../state/selectors/projections.js";
+} from "../state/selectors/projections.ts";
 import {
 	makeFakeMultiSelectView,
 	makeFakePreviewPane,
@@ -16,16 +16,16 @@ import {
 	makeQuestionnaireState as makeState,
 	makeStatefulView,
 	makeTabComponents,
-} from "../test-fixtures.js";
-import type { QuestionAnswer, QuestionData } from "../tool/types.js";
-import { type BoundGlobalBinding, type BoundPerTabBinding, globalBinding, perTabBinding } from "./component-binding.js";
-import type { OptionListViewProps } from "./components/option-list-view.js";
-import type { SubmitPickerProps } from "./components/submit-picker.js";
-import type { TabBarProps } from "./components/tab-bar.js";
-import type { WrappingSelectItem } from "./components/wrapping-select.js";
-import type { DialogProps } from "./dialog-builder.js";
-import { QuestionnairePropsAdapter } from "./props-adapter.js";
-import type { TabComponents } from "./tab-components.js";
+} from "../test-fixtures.ts";
+import type { QuestionAnswer, QuestionData } from "../tool/types.ts";
+import { type BoundGlobalBinding, type BoundPerTabBinding, globalBinding, perTabBinding } from "./component-binding.ts";
+import type { OptionListViewProps } from "./components/option-list-view.ts";
+import type { SubmitPickerProps } from "./components/submit-picker.ts";
+import type { TabBarProps } from "./components/tab-bar.ts";
+import type { WrappingSelectItem } from "./components/wrapping-select.ts";
+import type { DialogProps } from "./dialog-builder.ts";
+import { QuestionnairePropsAdapter } from "./props-adapter.ts";
+import type { TabComponents } from "./tab-components.ts";
 
 function makeFixture(overQuestions?: QuestionData[]) {
 	const questions = overQuestions ?? [makeQuestion(), makeQuestion()];
@@ -112,6 +112,7 @@ describe("QuestionnairePropsAdapter.apply", () => {
 		});
 		expect(tabsByIndex[0]!.preview.setProps).toHaveBeenLastCalledWith({
 			notesVisible: false,
+			hasNote: false,
 			selectedIndex: 1,
 			focused: true,
 			inputMode: false,

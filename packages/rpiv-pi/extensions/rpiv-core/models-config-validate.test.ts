@@ -3,14 +3,14 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./models-config-sources.js", () => ({
+vi.mock("./models-config-sources.ts", () => ({
 	bundledAgentNames: vi.fn(() => ["codebase-analyzer"]),
 	skillCommandNames: vi.fn(() => ["commit"]),
 	loadWorkflowMap: vi.fn(async () => ({ build: ["research", "plan"] })),
 }));
 
-import { loadWorkflowMap } from "./models-config-sources.js";
-import { registerModelsConfigValidation } from "./models-config-validate.js";
+import { loadWorkflowMap } from "./models-config-sources.ts";
+import { registerModelsConfigValidation } from "./models-config-validate.ts";
 
 function writeModels(config: unknown) {
 	const dir = join(process.env.HOME!, ".config", "rpiv-pi");

@@ -1,6 +1,6 @@
 import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { WrappingSelect, type WrappingSelectItem, type WrappingSelectTheme } from "./wrapping-select.js";
+import { WrappingSelect, type WrappingSelectItem, type WrappingSelectTheme } from "./wrapping-select.ts";
 
 // Cursor render emitted by wrapping-select.ts:renderInlineInputRow — pi-tui's
 // zero-width CURSOR_MARKER (hardware-cursor positioning) immediately followed by

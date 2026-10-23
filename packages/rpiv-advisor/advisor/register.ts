@@ -7,9 +7,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { validateGuidanceFields } from "@juicesharp/rpiv-config";
 import { Type } from "typebox";
-import { loadAdvisorConfig } from "./config.js";
-import { executeAdvisor } from "./execute.js";
-import { ADVISOR_TOOL_NAME, TOOL_LABEL } from "./messages.js";
+import { loadAdvisorConfig } from "./config.ts";
+import { executeAdvisor } from "./execute.ts";
+import { ADVISOR_TOOL_NAME, TOOL_LABEL } from "./messages.ts";
 
 const AdvisorParams = Type.Object({});
 

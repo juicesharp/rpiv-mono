@@ -22,7 +22,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { FLAG_DEBUG, MSG_TYPE_GUIDANCE } from "./constants.js";
+import { FLAG_DEBUG, MSG_TYPE_GUIDANCE } from "./constants.ts";
 
 // ---------------------------------------------------------------------------
 // Module-local constants

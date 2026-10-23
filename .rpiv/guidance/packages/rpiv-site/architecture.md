@@ -10,17 +10,19 @@ Hand-built marketing tour at `https://rpiv-pi.com` (deployed to GitHub Pages —
 - **`astro` ^5.0.0** (devDep): the entire framework — `.astro` SFCs, content collections, static output
 - **`@astrojs/sitemap` ^3.2.0** / **`@astrojs/rss` ^4.0.0** (devDep): `/sitemap-index.xml`; `/blog/rss.xml` feed builder
 - **`pagefind` ^1.5.2** (devDep): static search index + UI, mounted on docs pages via `Search.astro`
-- **`@fontsource/jetbrains-mono` ^5.2.8** (runtime dep): bundled font, imported in `src/layouts/Base.astro` (no CDN)
+- **`@fontsource/jetbrains-mono` ^5.2.8`** (runtime dep): bundled font, imported + preloaded in `src/layouts/Base.astro` (no CDN)
 - **`sharp`** (ambient — used only by `scripts/generate-og.mjs`, not in `package.json`): operator-only OG/apple-touch-icon rasteriser
 
 ## Consumers
-- **GitHub Pages**: serves the contents of `dist/` (output of `astro build`); `public/CNAME` pins the domain
+- **GitHub Pages**: serves the contents of `dist/` (output of `astro build`); `public/CNAME` pins the domain; `.github/workflows/deploy-site.yml` deploys on pushes touching `packages/rpiv-site/**`
 - **No runtime callers** — fully static, no API or backend
 
 ## Module Structure
 ```
-Build config         — astro.config.mjs + tsconfig.json; site has its own type universe
-public/              — Static assets copied verbatim (CNAME, favicon.svg, apple-touch-icon, og-* images (png/jpg), robots.txt)
+Build config         — astro.config.mjs (static output; /docs/getting-started → /docs redirect; Shiki
+                       transformer remapping github-dark inline colors to a CSS var; sitemap filter)
+                       + tsconfig.json; site has its own type universe
+public/              — Static assets copied verbatim (CNAME, favicon.svg, apple-touch-icon, og-* images, robots.txt, .nojekyll)
 scripts/generate-og.mjs — Operator-only build helper (sharp); NOT invoked by `astro build`
 src/pages/           — File-based routes (home + blog + docs trees) → see src/pages/architecture.md
 src/layouts/         — Base.astro (HTML shell, SEO, JSON-LD, bundled font) + DocsLayout.astro
@@ -31,14 +33,13 @@ src/lib/ + src/styles/ — Typed adapters/spec readers → see src/lib/architect
 
 ## Cross-Package Spec Loading (build-time only)
 ```typescript
-// src/content.config.ts — seven collections. Two reach OUT of the package via
-// Astro's glob loader so the site reads upstream rpiv-pi sources directly (no dup).
+// src/content.config.ts — spec-mirror collections reach OUT of the package via Astro's glob
+// loader so the site reads upstream rpiv-pi sources directly (no dup).
 const skillSpecs  = defineCollection({ loader: glob({ pattern: "*/SKILL.md", base: "../rpiv-pi/skills" }), schema: ... });
 const agentSpecs  = defineCollection({ loader: glob({ pattern: "*.md",       base: "../rpiv-pi/agents" }), schema: ... });
-// Visitor copy lives locally, joined by slug == upstream `name`. Schemas now carry
-// structured doc fields (purpose/when_to_use/inputs/outputs/key_steps/related).
-const skills      = defineCollection({ loader: glob({ pattern: "*.md", base: "./src/content/skills" }), schema: ... });
-const agents      = defineCollection({ loader: glob({ pattern: "*.md", base: "./src/content/agents" }), schema: ... });
+// Visitor copy lives locally, joined by slug == upstream `name`. Schemas carry structured doc fields
+// (purpose/when_to_use/inputs/outputs/key_steps/related). Skills without visitor copy still index via
+// the spec fallback in src/lib/skills.ts — partial coverage is fine.
 // Local-only collections (no upstream mirror): extensions, posts, docs.
 ```
 
@@ -51,22 +52,20 @@ const agents      = defineCollection({ loader: glob({ pattern: "*.md", base: "./
 //   compatibility anchor — every package peer-depends on "*", so there is no published
 //   floor); throws if the devDependency key is missing (build-time guard).
 // agents.ts / skills.ts — Astro content-collection adapters (use `astro:content`).
-//   Embed hand-curated tables: TIER_BY_NAME (capability tier per agent — 15 named
-//   agents across locator/analyzer/external/specialist/verifier),
+//   Embed hand-curated tables: TIER_BY_NAME (capability tier per named agent), the
 //   PIPELINE/SECONDARY/CODE_REVIEW_FLOW tuples + ARTIFACT_WRITE_SITES / PIPELINE_META.
-// workflows.ts — hand-maintained presentation mirror of all four built-in
-//   pipelines (build/vet/polish/ship; nothing is omitted); build's 31 runtime
-//   stages fold into a curated seven-act spine (capture → slice → design → review →
-//   plan → code → land). Components consume these typed APIs — never `getCollection()` directly.
+// workflows.ts — hand-maintained presentation mirror of all four built-in pipelines
+//   (build/vet/polish/ship; nothing is omitted); build's runtime stages fold into a curated
+//   act spine. Components consume these typed APIs — never `getCollection()` directly.
 ```
 
 ## Architectural Boundaries
-- **NO runtime — output is `static`** (`astro.config.mjs:6`); every data lookup runs in frontmatter at build time
+- **NO runtime — output is `static`** (`astro.config.mjs`); every data lookup runs in frontmatter at build time
 - **NO duplicated specs** — agents and skills are loaded from `packages/rpiv-pi/` via cross-package glob; local content is the visitor-copy overlay (tagline + structured doc fields) plus the `extensions`, `posts`, `docs` collections
 - **NO `getCollection` in components** — components import from the typed `src/lib/` adapters; `astro:content` is touched only by `src/lib/` and page frontmatter (e.g. `docs/reference/agents/[slug].astro` calls `getCollection`/`render` directly)
 - **NO root-tsconfig coverage; `.astro` escapes Biome** — Astro's own pipeline owns type-check and `.astro` files; Biome lints `.ts`/`.css`/`.html` via the root config
 - **`scripts/generate-og.mjs` is operator-only** — depends on an ambient `sharp`, reads a local `~/Downloads/...jpg`; never run by `astro build`
-- **Hand-curated spec tables in `src/lib/`** — when an upstream agent/skill is added or its tier changes, update `TIER_BY_NAME` / `PIPELINE` etc. in the same change
+- **Hand-curated spec tables in `src/lib/`** — when an upstream agent/skill is added or its tier changes, update `TIER_BY_NAME` / `PIPELINE` etc. in the same change; when the pipeline shape changes in rpiv-pi's `built-in-workflows.ts`, re-sync the spine in `src/lib/workflows.ts` (deliberate folding only)
 
 <important if="you are adding a new section component to the marketing site">
 ## Adding a Section
@@ -78,7 +77,7 @@ const agents      = defineCollection({ loader: glob({ pattern: "*.md", base: "./
 
 <important if="you are adding or removing an upstream skill, agent, or sibling extension">
 ## Sync Checklist for Spec Changes
-1. **New skill**: add the visitor-copy `src/content/skills/<slug>.md` (tagline + structured `purpose`/`when_to_use`/`inputs`/`outputs`/`key_steps`/`related`); the upstream `SKILL.md` is auto-loaded by `skillSpecs`. If the skill belongs to a section flow, append it to `PIPELINE` / `SECONDARY` / `CODE_REVIEW_FLOW` in `src/lib/skills.ts`. If it writes an artifact, add an `ARTIFACT_WRITE_SITES` row. If the pipeline shape itself changes (stages added/removed in rpiv-pi's `built-in-workflows.ts`), re-sync the spine + `stageCount` in `src/lib/workflows.ts`.
+1. **New skill**: optionally add the visitor-copy `src/content/skills/<slug>.md` (tagline + structured `purpose`/`when_to_use`/`inputs`/`outputs`/`key_steps`/`related`) — the upstream `SKILL.md` is auto-loaded by `skillSpecs` and the skill indexes even without copy (spec fallback). If the skill belongs to a section flow, append it to `PIPELINE` / `SECONDARY` / `CODE_REVIEW_FLOW` in `src/lib/skills.ts`. If it writes an artifact, add an `ARTIFACT_WRITE_SITES` row. If the pipeline shape itself changes (stages added/removed in rpiv-pi's `built-in-workflows.ts`), re-sync the spine in `src/lib/workflows.ts`.
 2. **New agent**: add `src/content/agents/<slug>.md` (tagline + `purpose`/`when_to_use`/`dispatched_by`) and a `TIER_BY_NAME` row in `src/lib/agents.ts`; `agentSpecs` picks the upstream `.md` up automatically.
 3. **New sibling extension**: create `src/content/extensions/<slug>.md` with `package`/`status`/`order` frontmatter. Only add a `SIBLING_NAMES` + `ROLES` entry in `src/lib/siblings.ts` if the sibling should appear in the curated SiblingGrid — `SIBLING_NAMES` is a hand-picked subset, NOT 1:1 with `extensions/`.
 4. **Sibling renamed/removed**: update `SIBLING_NAMES`/`ROLES` if it was listed, AND delete the matching `extensions/<slug>.md`. The build fails loudly if a name in the tuple has no `package.json`.

@@ -1,27 +1,27 @@
 import { getMarkdownTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { Editor, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
-import type { QuestionData } from "../tool/types.js";
+import type { QuestionData } from "../tool/types.ts";
 import {
 	type BoundGlobalBinding,
 	type BoundPerTabBinding,
 	globalBinding,
 	perTabBinding,
-} from "../view/component-binding.js";
-import { MultiSelectView } from "../view/components/multi-select-view.js";
-import { OptionListView } from "../view/components/option-list-view.js";
-import { PreviewBlockRenderer } from "../view/components/preview/preview-block-renderer.js";
-import { crossTabLeftWidthWithDonation } from "../view/components/preview/preview-layout-decider.js";
-import type { PreviewPaneProps } from "../view/components/preview/preview-pane.js";
-import { PreviewPane } from "../view/components/preview/preview-pane.js";
-import { SubmitPicker } from "../view/components/submit-picker.js";
-import { TabBar } from "../view/components/tab-bar.js";
-import type { WrappingSelectItem, WrappingSelectTheme } from "../view/components/wrapping-select.js";
-import { DialogView } from "../view/dialog-builder.js";
-import { QuestionnairePropsAdapter } from "../view/props-adapter.js";
-import type { StatefulView } from "../view/stateful-view.js";
-import type { TabBodyHeights, TabComponents } from "../view/tab-components.js";
-import type { PerTabSelector } from "./selectors/contract.js";
-import { selectActivePreviewPaneIndex } from "./selectors/derivations.js";
+} from "../view/component-binding.ts";
+import { MultiSelectView } from "../view/components/multi-select-view.ts";
+import { OptionListView } from "../view/components/option-list-view.ts";
+import { PreviewBlockRenderer } from "../view/components/preview/preview-block-renderer.ts";
+import { crossTabLeftWidthWithDonation } from "../view/components/preview/preview-layout-decider.ts";
+import type { PreviewPaneProps } from "../view/components/preview/preview-pane.ts";
+import { PreviewPane } from "../view/components/preview/preview-pane.ts";
+import { SubmitPicker } from "../view/components/submit-picker.ts";
+import { TabBar } from "../view/components/tab-bar.ts";
+import type { WrappingSelectItem, WrappingSelectTheme } from "../view/components/wrapping-select.ts";
+import { DialogView } from "../view/dialog-builder.ts";
+import { QuestionnairePropsAdapter } from "../view/props-adapter.ts";
+import type { StatefulView } from "../view/stateful-view.ts";
+import type { TabBodyHeights, TabComponents } from "../view/tab-components.ts";
+import type { PerTabSelector } from "./selectors/contract.ts";
+import { selectActivePreviewPaneIndex } from "./selectors/derivations.ts";
 import {
 	selectDialogProps,
 	selectMultiSelectProps,
@@ -29,8 +29,8 @@ import {
 	selectPreviewPaneProps,
 	selectSubmitPickerProps,
 	selectTabBarProps,
-} from "./selectors/projections.js";
-import type { QuestionnaireState } from "./state.js";
+} from "./selectors/projections.ts";
+import type { QuestionnaireState } from "./state.ts";
 
 export interface QuestionnaireBuildConfig {
 	tui: TUI;
@@ -47,6 +47,12 @@ export interface QuestionnaireBuildConfig {
 	 * of runtime context.
 	 */
 	collapseKey: string;
+	/**
+	 * Maps `tui.terminal.rows` to the rows the dialog may render — identity for the
+	 * overlay, a capped share for the inline editor slot (`../presentation.ts`). Applied
+	 * inside `getTerminalRows`, so `DialogView`'s overflow partition is mode-agnostic.
+	 */
+	rowBudget: (terminalRows: number) => number;
 }
 
 export interface QuestionnaireBuilt {
@@ -117,13 +123,14 @@ class QuestionnaireBuilder {
 	private readonly initialState: QuestionnaireState;
 	private readonly getCurrentTab: () => number;
 	private readonly collapseKey: string;
+	private readonly rowBudget: (terminalRows: number) => number;
 
 	private readonly selectTheme: WrappingSelectTheme;
 	private readonly markdownTheme = getMarkdownTheme();
 	private readonly notesInput: Editor;
 	private readonly inlineInput: Editor;
 	private readonly getTerminalWidth = () => this.tui.terminal.columns;
-	private readonly getTerminalRows = () => this.tui.terminal.rows;
+	private readonly getTerminalRows = () => this.rowBudget(this.tui.terminal.rows);
 
 	constructor(config: QuestionnaireBuildConfig) {
 		this.tui = config.tui;
@@ -134,6 +141,7 @@ class QuestionnaireBuilder {
 		this.initialState = config.initialState;
 		this.getCurrentTab = config.getCurrentTab;
 		this.collapseKey = config.collapseKey;
+		this.rowBudget = config.rowBudget;
 
 		this.selectTheme = this.makeSelectTheme();
 		const textEditorTheme = editorTheme(this.theme);
@@ -186,6 +194,7 @@ class QuestionnaireBuilder {
 		});
 		const preview = new PreviewPane({
 			question,
+			theme: this.theme,
 			getTerminalWidth: this.getTerminalWidth,
 			optionListView: optionList,
 			previewBlock,

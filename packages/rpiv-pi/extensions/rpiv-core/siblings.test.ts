@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LEGACY_SIBLINGS, SIBLINGS } from "./siblings.js";
+import { LEGACY_SIBLINGS, SIBLINGS } from "./siblings.ts";
 
 describe("SIBLINGS registry", () => {
 	it("contains 8 entries (pi-subagents at SIBLINGS[0] — tintinweb fork is the dispatch runtime)", () => {
@@ -66,6 +66,11 @@ describe("SIBLINGS registry", () => {
 		// `pi-subagents` token is excluded via `(?![-\w])`).
 		expect(subagentsEntry?.matches.test("@tintinweb/pi-subagents-utils")).toBe(false);
 		expect(subagentsEntry?.matches.test("@gotgenes/pi-subagents-utils")).toBe(false);
+	});
+
+	it("marks rpiv-advisor optional and every other sibling required (#167)", () => {
+		const optional = SIBLINGS.filter((s) => s.optional === true).map((s) => s.pkg);
+		expect(optional).toEqual(["npm:@juicesharp/rpiv-advisor"]);
 	});
 
 	it("every entry has non-empty pkg + provides", () => {

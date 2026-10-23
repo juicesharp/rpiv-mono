@@ -21,10 +21,10 @@
  * surface (siblings register built-ins without dragging the runner in).
  */
 
-import type { Artifact } from "./handle.js";
-import { markSymbol, readSymbol } from "./internal-utils.js";
-import type { Output, RunView } from "./output.js";
-import type { Outcome } from "./output-spec.js";
+import type { Artifact } from "./handle.ts";
+import { markSymbol, readSymbol } from "./internal-utils.ts";
+import type { Output, RunView } from "./output.ts";
+import type { Outcome } from "./output-spec.ts";
 
 export interface JudgeContext {
 	cwd: string;

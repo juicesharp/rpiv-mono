@@ -23,20 +23,20 @@
  * `unitTagOf`, `judgeStageDef`, `LoopEntry`, `NextStep`.
  */
 
-import type { AssessLoop, IterateLoop, LoopDef, StageDef, Unit, UnitRole } from "./api.js";
-import { decorateStage, runIdentityOf } from "./audit.js";
+import type { AssessLoop, IterateLoop, LoopDef, StageDef, Unit, UnitRole } from "./api.ts";
+import { decorateStage, runIdentityOf } from "./audit.ts";
 // Fanout completion is INDEX-ADDRESSED (place-by-unitIndex), the
 // shared authority for the live parallel fold AND the resume fold so the two
 // reconstruct byte-identical declared-order state regardless of
 // completion/resume order. iterate/assess keep advanceCursor (sequential).
-import { placeFanoutOutput, resolveStagePrompt } from "./chain-state.js";
-import { failureMemoSuffix } from "./failure-memos.js";
-import { type Artifact, handleToString } from "./handle.js";
-import { isPanel, type Judge, type PanelJudge, panelMembers, resolveJudgePrompt } from "./judge.js";
-import { MSG_LOOP_CURSOR_CORRUPT } from "./messages.js";
-import { finalizeOutput, isFailedOutput, type Output, type OutputMeta } from "./output.js";
-import { invariantPreflight } from "./stage-errors.js";
-import type { RunContext, RunState, StageSessionContext, UnitRef, WorkflowHostContext } from "./types.js";
+import { placeFanoutOutput, resolveStagePrompt } from "./chain-state.ts";
+import { failureMemoSuffix } from "./failure-memos.ts";
+import { type Artifact, handleToString } from "./handle.ts";
+import { isPanel, type Judge, type PanelJudge, panelMembers, resolveJudgePrompt } from "./judge.ts";
+import { MSG_LOOP_CURSOR_CORRUPT } from "./messages.ts";
+import { finalizeOutput, isFailedOutput, type Output, type OutputMeta } from "./output.ts";
+import { invariantPreflight } from "./stage-errors.ts";
+import type { RunContext, RunState, StageSessionContext, UnitRef, WorkflowHostContext } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Cursor + entry vocabulary (kind-agnostic, shared live + fold)
@@ -123,6 +123,19 @@ export interface LoopDeps {
 		e: Pick<LoopEntry, "name" | "def">,
 		count: number,
 		cap: number,
+	) => Promise<void>;
+	/** Record the terminal all-failed generation-close halt
+	 *  (FAIL_FANOUT_ALL_FAILED) — parent-attributed, sessionless, unit-field-free
+	 *  (the `haltLoop` recording shape), so the resume fold's halt-marker
+	 *  predicate keeps the generation open and a later resume re-derives the
+	 *  halt with zero new resume code. Fired from `finishLoop`'s single halt
+	 *  spelling across all four closing paths. */
+	haltLoopWhenAllFailed: (
+		hostCtx: WorkflowHostContext,
+		run: RunContext,
+		e: Pick<LoopEntry, "name" | "skill">,
+		failed: number,
+		total: number,
 	) => Promise<void>;
 	/** Record a mid-flight run abort at the loop seam (FAIL_WORKFLOW_ABORTED).
 	 *  Keeps the drivers free of engine imports; wired to `recordAbortedAtSeam`. */
@@ -429,7 +442,21 @@ export interface SequentialStrategy extends LoopKindStrategy {
  *  named channel. `cursor.filledCount` becomes the filled-slot count (completion);
  *  `cursor.index` is left untouched — it stays the next-unit pointer. `lastProduce`
  *  is the highest-index non-failed slot (deterministic — order-free, so live +
- *  resume + re-dispatch agree). */
+ *  resume + re-dispatch agree).
+ *
+ * THE INDEX-OVERWRITE HAZARD this fold owns: the sentinel a soft-halted unit
+ * places overwrites whatever its slot held from prior rounds, so the stale
+ * round-N fail the gate should have blocked on is ERASED from the channel the
+ * moment that dimension's unit dies — the gate then folds only the surviving
+ * dimensions, and absence is not failure. Only a DIMENSION-BEARING sentinel
+ * can represent the unresolved dimension (the gate-side twin comment sits on
+ * `allDimensionsPass`): it registers as the dimension's latest entry carrying
+ * no `pass`/`severity`, which reads blocking. The mirror hazard — an UNFILLED
+ * slot (infra death wrote no row) leaving the stale fail as the channel's
+ * entry for that dimension — blocks on a verdict the fix may already have
+ * addressed; that shape stays distinguishable because its slot is
+ * `undefined`, not a sentinel.
+ */
 export function foldFanoutCompletion(
 	state: RunState,
 	cursor: LoopCursor,
@@ -455,11 +482,32 @@ function lastNonFailedSlot(slots: readonly (Output | undefined)[]): LoopCursor["
 	return undefined;
 }
 
+/** THE strict all-failed generation-close predicate — `true` when every declared
+ *  slot is filled and every one is a failed sentinel (the fan-in would read an
+ *  empty channel). Reuses `lastNonFailedSlot`: `undefined` is exactly the
+ *  "no non-failed slot" verdict, so the conjunction is filled + all-failed. An
+ *  over-cap-advancing generation NEVER satisfies it (beyond-cap slots stay
+ *  `undefined`, so `filledCount < slots.length`). Consumed by `finishLoop`'s
+ *  single halt spelling (loop.ts) across all four closing paths. */
+export const allFanoutSlotsFailed = (cursor: LoopCursor): boolean =>
+	cursor.slots !== undefined &&
+	cursor.filledCount === cursor.slots.length &&
+	lastNonFailedSlot(cursor.slots) === undefined;
+
 /** THE fanout fail-fast narrow — `true` when a fanout loop opted out of the
  *  default collect-all via `fanout({ failFast: true })`. The ONE spelling of the
  *  kind+field guard the dispatcher (sibling-cancel) and `buildUnitSession`
  *  (`collectAll`) both read, so the narrow can't drift across its read sites. */
 export const isFailFast = (loop: LoopDef): boolean => loop.kind === "fanout" && loop.failFast === true;
+
+/** THE haltWhenAllFailed narrow — `true` when a fanout loop opted into the
+ *  all-failed generation-close halt via `fanout({ haltWhenAllFailed: true })`.
+ *  The ONE spelling of the kind+field guard `finishLoop` reads (loop.ts),
+ *  mirroring `isFailFast` above so the two fanout flags can't drift across
+ *  their read sites. The `=== true` keeps the flag boolean-safe for
+ *  jiti-loaded literals. */
+export const isHaltWhenAllFailed = (loop: LoopDef): boolean =>
+	loop.kind === "fanout" && loop.haltWhenAllFailed === true;
 
 /** fanout units collect-all by default (opt out via fanout({ failFast: true }));
  *  the `kind === "fanout"` guard is LOAD-BEARING: iterate/assess units MUST NOT
@@ -489,6 +537,7 @@ export function buildUnitSession(
 	snapshot: unknown,
 	signal: AbortSignal | undefined,
 	onSuccess: StageSessionContext["onSuccess"],
+	attemptOrdinal?: number,
 ): StageSessionContext {
 	return {
 		cwd: run.cwd,
@@ -505,12 +554,16 @@ export function buildUnitSession(
 		snapshot,
 		branchOffset: undefined,
 		unit: { parent: e.name, role: u.role, index, id: u.id, label: u.label },
-		model: run.resolveModel?.({ stage: e.name, skill: u.skill }),
+		model: run.resolveModel?.({ workflow: run.workflow.name, stage: e.name, skill: u.skill }),
 		signal,
 		readSessionBranch: run.readSessionBranch,
 		worktreeDigest: run.worktreeDigest,
 		collectAll: shouldCollectAll(e.loop),
 		laneUnitIndex: laneIndexFor(e.loop, index),
+		// The v3 trail contract's attempt ordinal (present on every fanout unit
+		// attempt; `auditFor` projects it onto the collected halt row). Omitted
+		// when undefined so the sequential callers keep byte-identical sessions.
+		...(attemptOrdinal !== undefined ? { attemptOrdinal } : {}),
 		onFailure: undefined,
 		onSuccess,
 	};

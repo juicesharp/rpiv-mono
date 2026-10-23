@@ -10,7 +10,7 @@ import {
 	resolveAndFormatNewGuidance,
 	resolveGuidance,
 	takeRootGuidance,
-} from "./guidance.js";
+} from "./guidance.ts";
 
 let projectDir: string;
 

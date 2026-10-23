@@ -1,4 +1,4 @@
-import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.js";
+import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.ts";
 
 const EXA_API_URL = "https://api.exa.ai/search";
 const EXA_CONTENTS_API_URL = "https://api.exa.ai/contents";

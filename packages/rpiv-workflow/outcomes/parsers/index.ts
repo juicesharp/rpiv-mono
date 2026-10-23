@@ -8,4 +8,4 @@
  * own. The framework ships only universal interpretations.
  */
 
-export { jsonBodyParser } from "./json-body.js";
+export { jsonBodyParser } from "./json-body.ts";

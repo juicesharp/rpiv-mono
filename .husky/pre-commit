@@ -1,13 +1,34 @@
 #!/bin/sh
 
-# Capture staged files before biome potentially rewrites them
+# Capture the staged set BEFORE biome may rewrite the worktree. A staged file
+# that ALSO carries unstaged changes is PARTIALLY staged: re-adding it wholesale
+# after biome would sweep those unstaged hunks into the commit (observed
+# 2026-09-20 — an unrelated in-flight edit landed in a commit it was never
+# staged for). PARTIAL_FILES is index-vs-worktree, read before any rewrite so a
+# fully staged file biome reformats does not masquerade as partial.
 STAGED_FILES=$(git diff --cached --name-only)
+PARTIAL_FILES=$(git diff --name-only)
+
+is_partial() {
+  for p in $PARTIAL_FILES; do
+    [ "$p" = "$1" ] && return 0
+  done
+  return 1
+}
 
 # Decision-code contamination guard — fail-fast before the slower biome + tsc pass.
 echo "Checking for decision-code contamination..."
 npm run check:decision-codes
 if [ $? -ne 0 ]; then
   echo "❌ Decision-code citations found — reword the comment to state the contract (see scripts/check-no-decision-codes.mjs)."
+  exit 1
+fi
+
+# File-size ratchet guard — fail-fast before the slower biome + tsc pass.
+echo "Checking file-size ratchet..."
+npm run check:file-sizes
+if [ $? -ne 0 ]; then
+  echo "❌ File-size ratchet violated — split the file, or bump the baseline deliberately (see scripts/check-file-sizes.mjs)."
   exit 1
 fi
 
@@ -18,9 +39,31 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Restage any files biome --write modified (skip paths now covered by .gitignore)
+# Restage biome's rewrites — for FULLY staged files only (skip paths now
+# covered by .gitignore). A partially staged file keeps its index content;
+# its STAGED bytes are checked in place instead: biome's stdin mode
+# (`--stdin-file-path`, so the file's own config applies) prints the fixed
+# content, and any difference from the index blob means the staged hunks
+# carry formatting or safe-fix drift — the commit fails without the unstaged
+# hunks riding in. (Stdin mode reports fixes only; lint errors in the staged
+# hunks are already caught by the worktree-wide `npm run check` above.)
 for file in $STAGED_FILES; do
-  if [ -f "$file" ] && ! git check-ignore -q "$file"; then
+  if [ ! -f "$file" ] || git check-ignore -q "$file"; then
+    continue
+  fi
+  if is_partial "$file"; then
+    staged_in=$(mktemp) && staged_out=$(mktemp)
+    git show ":$file" > "$staged_in"
+    npx biome check --write --error-on-warnings --stdin-file-path="$file" < "$staged_in" > "$staged_out" 2>/dev/null
+    biome_rc=$?
+    cmp -s "$staged_in" "$staged_out"
+    same=$?
+    rm -f "$staged_in" "$staged_out"
+    if [ $biome_rc -ne 0 ] || [ $same -ne 0 ]; then
+      echo "❌ $file is partially staged and its STAGED content is not biome-clean. The hook never re-adds a partially staged file — stage the formatted version of those hunks (e.g. git add -p after biome check --write) and retry."
+      exit 1
+    fi
+  else
     git add "$file"
   fi
 done

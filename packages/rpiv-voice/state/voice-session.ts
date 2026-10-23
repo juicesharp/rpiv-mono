@@ -1,29 +1,30 @@
 import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
-import type { VoiceConfig } from "../config/voice-config.js";
-import { saveVoiceConfig } from "../config/voice-config.js";
-import { globalBinding } from "../view/component-binding.js";
-import { EqualizerView } from "../view/components/equalizer-view.js";
-import { SettingsFieldView } from "../view/components/settings-field-view.js";
-import { SettingsFormView } from "../view/components/settings-form-view.js";
-import { StatusBarView } from "../view/components/status-bar-view.js";
-import { TranscriptView } from "../view/components/transcript-view.js";
-import { OverlayView } from "../view/overlay-view.js";
-import { VoiceOverlayPropsAdapter } from "../view/props-adapter.js";
-import { DictationScreenStrategy, SettingsScreenStrategy } from "../view/screen-content-strategy.js";
-import { t } from "./i18n-bridge.js";
-import { routeKey, type VoiceAction } from "./key-router.js";
+import type { VoiceConfig } from "../config/voice-config.ts";
+import { loadVoiceConfig, resolveNumThreads, saveVoiceConfig } from "../config/voice-config.ts";
+import { globalBinding } from "../view/component-binding.ts";
+import { EqualizerView } from "../view/components/equalizer-view.ts";
+import { SettingsFieldView } from "../view/components/settings-field-view.ts";
+import { SettingsFormView } from "../view/components/settings-form-view.ts";
+import { StatusBarView } from "../view/components/status-bar-view.ts";
+import { TranscriptView } from "../view/components/transcript-view.ts";
+import { OverlayView } from "../view/overlay-view.ts";
+import { VoiceOverlayPropsAdapter } from "../view/props-adapter.ts";
+import { DictationScreenStrategy, SettingsScreenStrategy } from "../view/screen-content-strategy.ts";
+import { t } from "./i18n-bridge.ts";
+import { routeKey, type VoiceAction } from "./key-router.ts";
 import {
 	selectEqualizerFieldProps,
 	selectEqualizerProps,
 	selectHallucinationFilterFieldProps,
 	selectLanguageReadonlyFieldProps,
 	selectMicReadonlyFieldProps,
+	selectNumThreadsReadonlyFieldProps,
 	selectStatusBarProps,
 	selectTranscriptProps,
-} from "./selectors/projections.js";
-import { initialVoiceState, type VoiceState } from "./state.js";
-import { type ApplyContext, draftFromConfig, type Effect, reduce, type VoiceResult } from "./state-reducer.js";
+} from "./selectors/projections.ts";
+import { initialVoiceState, type VoiceState } from "./state.ts";
+import { type ApplyContext, draftFromConfig, type Effect, reduce, type VoiceResult } from "./state-reducer.ts";
 
 export interface VoiceSessionDeps {
 	pasteToEditor: (text: string) => void;
@@ -50,7 +51,6 @@ export interface VoiceSessionComponent {
 
 export class VoiceSession {
 	private state: VoiceState;
-	private readonly persistedConfig: VoiceConfig;
 	private readonly adapter: VoiceOverlayPropsAdapter;
 	private readonly overlay: OverlayView;
 	private readonly tui: VoiceSessionConfig["tui"];
@@ -64,8 +64,10 @@ export class VoiceSession {
 		this.tui = config.tui;
 		this.deps = config.deps;
 		this.done = config.done;
-		this.persistedConfig = config.persistedConfig;
-		this.state = initialVoiceState(draftFromConfig(config.persistedConfig));
+		this.state = initialVoiceState(
+			draftFromConfig(config.persistedConfig),
+			resolveNumThreads(config.persistedConfig),
+		);
 
 		const transcript = new TranscriptView(config.theme);
 		const divider = new DynamicBorder((s) => config.theme.fg("accent", s));
@@ -76,8 +78,9 @@ export class VoiceSession {
 		const languageField = new SettingsFieldView(config.theme);
 		const hallucinationField = new SettingsFieldView(config.theme);
 		const equalizerField = new SettingsFieldView(config.theme);
+		const numThreadsField = new SettingsFieldView(config.theme);
 		const settingsForm = new SettingsFormView({
-			fields: [micField, languageField, hallucinationField, equalizerField],
+			fields: [micField, languageField, hallucinationField, equalizerField, numThreadsField],
 		});
 
 		const dictation = new DictationScreenStrategy({ transcript, divider, equalizer, statusBar });
@@ -99,6 +102,7 @@ export class VoiceSession {
 			globalBinding({ component: languageField, select: selectLanguageReadonlyFieldProps }),
 			globalBinding({ component: hallucinationField, select: selectHallucinationFilterFieldProps }),
 			globalBinding({ component: equalizerField, select: selectEqualizerFieldProps }),
+			globalBinding({ component: numThreadsField, select: selectNumThreadsReadonlyFieldProps }),
 			globalBinding({ component: this.overlay, select: (state) => ({ state }) }),
 		];
 
@@ -185,6 +189,11 @@ export class VoiceSession {
 	}
 
 	private applyContext(): ApplyContext {
-		return { persistedConfig: this.persistedConfig };
+		// A re-reader, not the constructor snapshot: save handlers must merge
+		// the draft against voice.json as it is at save time, so a mid-session
+		// hand edit of a JSON-only key round-trips instead of being reverted.
+		// Only the save handlers invoke it, so the hot dispatch path (one
+		// audio_chunk per mic frame) never touches disk.
+		return { readPersistedConfig: loadVoiceConfig };
 	}
 }

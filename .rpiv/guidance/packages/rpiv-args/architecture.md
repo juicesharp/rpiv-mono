@@ -19,7 +19,7 @@ Three-hook extension that hardens Pi's `/skill:<name> <args>` invocation surface
 
 ## Module Structure
 ```
-.  — Flat package. index.ts is a thin default-export shim; args.ts owns all, grouped by concern:
+.  — Flat package. index.ts is a thin default-export shim (plus the `LOADED_MARKER` presence slot it sets on `globalThis` — rpiv-pi's sibling detection reads it because this package registers no tool or command, #216; the key must match rpiv-pi's `SIBLINGS` entry); args.ts owns all, grouped by concern:
      parse/substitute — parseCommandArgs, substituteArgs ($N/$ARGUMENTS), substituteVariables (${SKILL_DIR}/${SESSION_ID})
      shell           — resolveShellTimeoutMs, runOneShellCommand, truncateForLLM, formatShellOutput, executeShellInBody (block→inline mask-and-restore)
      skill-index     — build/get/invalidateSkillIndex (exported reset for tests)

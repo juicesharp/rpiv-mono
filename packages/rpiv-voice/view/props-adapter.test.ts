@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { BindingContext } from "../state/selectors/contract.js";
-import { initialVoiceState, type VoiceState } from "../state/state.js";
-import type { BoundGlobalBinding } from "./component-binding.js";
-import { VoiceOverlayPropsAdapter } from "./props-adapter.js";
+import type { BindingContext } from "../state/selectors/contract.ts";
+import { initialVoiceState, type VoiceState } from "../state/state.ts";
+import type { BoundGlobalBinding } from "./component-binding.ts";
+import { VoiceOverlayPropsAdapter } from "./props-adapter.ts";
 
 const DRAFT = { hallucinationFilterEnabled: true, equalizerEnabled: false };
 const BASE = initialVoiceState(DRAFT);

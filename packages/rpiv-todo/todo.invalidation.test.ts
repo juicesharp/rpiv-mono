@@ -1,8 +1,8 @@
 import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import registerTodo from "./index.js";
-import { getState, replaceState } from "./state/store.js";
-import { __resetState } from "./todo.js";
+import registerTodo from "./index.ts";
+import { getState, replaceState } from "./state/store.ts";
+import { __resetState } from "./todo.ts";
 
 // Pins the substring `isStaleCtxError` matches in pi-core's invalidated-proxy error.
 const STALE_CTX_MESSAGE = "This extension ctx is stale after session replacement or reload.";

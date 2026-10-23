@@ -2,7 +2,8 @@
 // validate-workflow-invariant.mjs — self-check helper for the elaborate skill.
 //
 // Invoked by the elaborate Self-check step ONLY when a phase's write-set
-// includes packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts. It
+// includes packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts (the
+// composition barrel) or one of the workflows/*.ts modules beside it. It
 // re-derives the effective skill contracts + contract-sourced outcomes onto
 // the LIVE built-in workflows and runs validateWorkflow over each, exiting 1
 // with one `<workflow>: [<code>] <message>` line per error OR warning issue
@@ -11,7 +12,7 @@
 //
 // Reads only — writes nothing to the tree. The harness mirrors the
 // withDerivedOutcomes / deriveAndValidate helpers in
-// packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.test.ts, so the
+// rpiv-core/workflow-test-harness.ts, so the
 // contract-derived outcomes are threaded before validateWorkflow runs (the
 // built-ins carry no inline outputSchema/outcomes — they are contract-sourced,
 // via buildSkillContractsFromFrontmatter(BUNDLED_SKILLS_DIR)).
@@ -53,14 +54,14 @@ try {
 }
 
 // Declared skill contracts threaded from the bundled skills dir — mirrors
-// built-in-workflows.test.ts DECLARED_CONTRACTS. Without these, the
+// workflow-test-harness.ts DECLARED_CONTRACTS. Without these, the
 // contract-backed routing lint (checkPredicateSchemas) fires false warnings on
 // dispatching stages whose produces.data schema is sourced from the contract,
 // not declared inline as outputSchema.
 const DECLARED_CONTRACTS = new Map(buildSkillContractsFromFrontmatter(BUNDLED_SKILLS_DIR));
 
 // Derive contract-sourced outcomes onto a mutable copy of a workflow, mirroring
-// built-in-workflows.test.ts withDerivedOutcomes. Deriving on a (shallow) copy
+// workflow-test-harness.ts withDerivedOutcomes. Deriving on a (shallow) copy
 // keeps the shared builtInWorkflows constant untouched across the loop.
 const withDerivedOutcomes = (wf) => {
 	const mutable = { ...wf, stages: { ...wf.stages } };
@@ -76,7 +77,8 @@ for (const wf of builtInWorkflows) {
 		// Errors AND warnings. route-reads-unvalidated-data — this helper's
 		// flagship defect — is itself a warning (issue.ts:244), and the
 		// mirrored deriveAndValidate harness asserts 0 errors AND 0 warnings
-		// on clean built-ins (built-in-workflows.test.ts:508). Gating on
+		// on clean built-ins (built-ins/reconcile.test.ts — the validate-clean
+		// it). Gating on
 		// error-only would let the named defect slip through green.
 		if (issue.severity !== "error" && issue.severity !== "warning") continue;
 		failed += 1;

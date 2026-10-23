@@ -11,7 +11,7 @@
 
 Turn "build this feature" into a run of named stages — discover → research → design →
 plan → implement → validate → code-review → commit — each one writing a reviewable
-Markdown artifact under `.rpiv/artifacts/` that the next stage consumes. rpiv-pi adds 29
+Markdown artifact under `.rpiv/artifacts/` that the next stage consumes. rpiv-pi adds 30
 skills, 15 specialist subagents, and four ready-made `/wf` pipelines to
 [Pi Agent](https://github.com/badlogic/pi-mono), and runs every stage in a detached child
 session you watch from a lane dock below your editor. It is for developers who want
@@ -49,7 +49,7 @@ Now run a pipeline:
 brief, slices it, designs each slice in parallel, gates the plan, then implements and
 validates; see [docs/workflows.md](./docs/workflows.md) for the full stage list and
 the other pipelines. The run detaches immediately: a lane appears in
-the dock under your editor with live progress while you keep typing. Press `ctrl+q` —
+the dock under your editor with live progress while you keep typing. Press `ctrl+q` (`alt+l` on Windows and WSL) —
 or `↓` on an empty prompt, or `/lanes` — to step in, replay the transcript, answer a
 parked question with `⏎`, or stop the run with `x`.
 
@@ -95,12 +95,12 @@ no overrides.
 | Setting | What it does | Default |
 | --- | --- | --- |
 | `/rpiv-models` | Pick model + reasoning effort for the global default, a subagent, a skill, a workflow stage, or a preset stage | no overrides |
-| `RPIV_LANES_HOTKEY` | Rebind the lane-browser hotkey to any Pi key id, or set `off` to register none | `ctrl+q` |
+| `RPIV_LANES_HOTKEY` | Rebind the lane-browser hotkey to any Pi key id, or set `off` to register none | `ctrl+q` (`alt+l` on Windows and WSL) |
 | `RPIV_BASH_TIMEOUT_MS` | Per-command bash watchdog inside detached child sessions, clamped to 5 s–30 min | `180000` (3 min) |
 
 ## Reference
 
-- [docs/skills.md](./docs/skills.md) — all 29 skills: what each consumes, what it writes,
+- [docs/skills.md](./docs/skills.md) — all 30 skills: what each consumes, what it writes,
   and which ones the model may pick on its own.
 - [docs/workflows.md](./docs/workflows.md) — the four `/wf` pipelines stage by stage,
   plus hand-driven recipes for when you don't want a whole pipeline.
@@ -117,7 +117,7 @@ no overrides.
 
 | Requirement | Why |
 | --- | --- |
-| [Pi Agent](https://github.com/badlogic/pi-mono) | The host. Install it globally so `pi` is on your PATH |
+| [Pi Agent](https://github.com/badlogic/pi-mono) 0.80.x or 1.x | The host. Install it globally so `pi` is on your PATH. Workflow child sessions are tested against Pi 0.80.6, 1.0.4, and 1.1.0 |
 | A model provider | Pi's own `/login` or `~/.pi/agent/models.json` — see [docs/models-config.md](./docs/models-config.md) |
 | [`@tintinweb/pi-subagents`](https://www.npmjs.com/package/@tintinweb/pi-subagents) | Supplies the `Agent` tool. Without it the parallel-analysis skills cannot dispatch. Installed by `/rpiv-setup` |
 | [`@juicesharp/rpiv-workflow`](https://www.npmjs.com/package/@juicesharp/rpiv-workflow) | Supplies `/wf`. Without it the four built-in workflows do not register. Installed by `/rpiv-setup` |
@@ -134,15 +134,16 @@ You need no build step and no native dependency.
 | Session-start banner: *bundled agents need attention* | A bundled agent changed upstream and your on-disk copy was edited | Run `/rpiv-update-agents` — it overwrites rpiv-managed files, and never touches agents you added yourself |
 | `/rpiv-setup` or `/rpiv-models` says it requires interactive mode | Running headless | Install manually with `pi install npm:<pkg>`, or hand-edit `models.json` |
 | `/rpiv-setup` fails on one package | Network or registry issue | Retry that package with `pi install npm:<pkg>`, then re-run `/rpiv-setup` |
-| `/lanes` reports *No in-flight runs* (and `ctrl+q` does nothing) | Nothing is running | Expected — the browser only opens over live lanes |
-| `ctrl+q` does nothing | `RPIV_LANES_HOTKEY` is set to `off`, empty, or an unrecognized key id | Unset it, or use `/lanes` |
+| `/lanes` reports *No in-flight runs* (and the hotkey does nothing) | Nothing is running | Expected — the browser only opens over live lanes |
+| The lane hotkey (`ctrl+q`, or `alt+l` on Windows and WSL) does nothing | `RPIV_LANES_HOTKEY` is set to `off`, empty, or an unrecognized key id | Unset it, or use `/lanes` |
 | A stage stalls, then reports a per-command timeout | A bash command wedged past the watchdog | Raise `RPIV_BASH_TIMEOUT_MS` (max 1800000) before starting Pi |
 | `/rpiv-models` reports *No models available* | Pi has no provider configured | Run `/login`, or add a provider to `~/.pi/agent/models.json` |
 
 ## Related
 
 `/rpiv-setup` installs the ones marked auto; the rest are standalone
-`pi install npm:@juicesharp/rpiv-<name>`.
+`pi install npm:@juicesharp/rpiv-<name>`. rpiv-advisor is optional: setup lists its install
+command but leaves it to you, and Pi starts without a warning when it is absent.
 
 | Package | Role | Auto |
 | --- | --- | :---: |
@@ -150,7 +151,7 @@ You need no build step and no native dependency.
 | [`@juicesharp/rpiv-args`](https://www.npmjs.com/package/@juicesharp/rpiv-args) | `$1` / `$ARGUMENTS` placeholders in skill bodies | ✓ |
 | [`@juicesharp/rpiv-ask-user-question`](https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question) | Structured questionnaires back to you | ✓ |
 | [`@juicesharp/rpiv-todo`](https://www.npmjs.com/package/@juicesharp/rpiv-todo) | Live task overlay surviving `/reload` | ✓ |
-| [`@juicesharp/rpiv-advisor`](https://www.npmjs.com/package/@juicesharp/rpiv-advisor) | Escalate to a stronger reviewer model | ✓ |
+| [`@juicesharp/rpiv-advisor`](https://www.npmjs.com/package/@juicesharp/rpiv-advisor) | Escalate to a stronger reviewer model | — |
 | [`@juicesharp/rpiv-web-tools`](https://www.npmjs.com/package/@juicesharp/rpiv-web-tools) | Web search + fetch with pluggable providers | ✓ |
 | [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n) | Localization SDK for the rpiv TUI strings | ✓ |
 | [`@juicesharp/rpiv-warp`](https://www.npmjs.com/package/@juicesharp/rpiv-warp) | Warp Blocked badge on parked lane questions | — |

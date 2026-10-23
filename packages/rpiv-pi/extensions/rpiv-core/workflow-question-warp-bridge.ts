@@ -36,9 +36,9 @@
  */
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { isLaneRelayUiContext } from "./lane-relay-ui.js";
-import { type QuestionLifecycleEvent, subscribeQuestionLifecycle } from "./question-lifecycle.js";
-import { isModuleNotFound } from "./utils.js";
+import { isLaneRelayUiContext } from "./lane-relay-ui.ts";
+import { type QuestionLifecycleEvent, subscribeQuestionLifecycle } from "./question-lifecycle.ts";
+import { isModuleNotFound } from "./utils.ts";
 
 /**
  * Process-global guard holding the active lifecycle unsubscribe fn + a ref to the

@@ -20,14 +20,14 @@
  *     slot) is never mutated in place; a changed workflow is a new frozen copy.
  */
 
-import type { Workflow } from "../api.js";
-import { isDispatchingStage, resolveSkill } from "../stage-identity.js";
-import type { LayerOutcome, LoadAccumulator } from "./merge.js";
+import type { Workflow } from "../api.ts";
+import { isDispatchingStage, resolveSkill } from "../stage-identity.ts";
+import type { LayerOutcome, LoadAccumulator } from "./merge.ts";
 
 // `isDispatchingStage` lives beside `resolveSkill` in chain-state.ts (the
 // validator and harvest consume it without reaching into load/); re-exported
 // here for existing consumers.
-export { isDispatchingStage } from "../stage-identity.js";
+export { isDispatchingStage } from "../stage-identity.ts";
 
 export function aliasSkills(w: Workflow, aliases: Record<string, string>): Workflow {
 	if (!aliases || Object.keys(aliases).length === 0) return w;

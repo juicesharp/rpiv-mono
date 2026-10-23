@@ -15,16 +15,16 @@ import type {
 	ToolExecutionStartEvent,
 	TurnEndEvent,
 	TurnStartEvent,
-} from "../types/events.js";
-import { finalizeTelemetrySession } from "./finalize.js";
-import { detectSubAgentType, parentSessionIdFromCtx, summarizeLlmPayload } from "./payload-summary.js";
+} from "../types/events.ts";
+import { finalizeTelemetrySession } from "./finalize.ts";
+import { detectSubAgentType, parentSessionIdFromCtx, summarizeLlmPayload } from "./payload-summary.ts";
 import {
 	currentSubAgentType,
 	llmPayloadMode,
 	requestSeqBySession,
 	setCurrentSessionId,
 	setCurrentSubAgentTypeIfUnset,
-} from "./state.js";
+} from "./state.ts";
 
 /**
  * One row per Pi lifecycle event subscribed via `pi.on(...)`. The `build`

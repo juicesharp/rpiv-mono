@@ -7,8 +7,8 @@
 import { type Api, getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
-import type { ModelsConfigSchema } from "../models-config.js";
-import { buildEffortItems, buildModelItems, INHERIT_VALUE, loadRawConfig, scopeItems } from "./items.js";
+import type { ModelsConfigSchema } from "../models-config.ts";
+import { buildEffortItems, buildModelItems, INHERIT_VALUE, loadRawConfig, scopeItems } from "./items.ts";
 import {
 	applyOverride,
 	CHECK,
@@ -20,7 +20,7 @@ import {
 	SCOPE_STAGES,
 	SCOPES,
 	withCheck,
-} from "./overrides.js";
+} from "./overrides.ts";
 
 const model = (provider: string, id: string, name: string, reasoning = false): Model<Api> =>
 	({ provider, id, name, reasoning }) as unknown as Model<Api>;

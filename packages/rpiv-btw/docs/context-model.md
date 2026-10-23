@@ -13,22 +13,28 @@ lighter-weight side model.
 | --- | --- |
 | Model | `ctx.model`, with credentials from `ctx.modelRegistry.getApiKeyAndHeaders(model)` |
 | System prompt | the bundled `prompts/btw-system.txt`, plus the cross-session hint appendix |
-| Messages | `[...branch clone, ...this-session /btw turns, your question]` |
+| Messages | `[...main-agent context clone, ...this-session /btw turns, your question]` |
 | Tools | `[]` — none, always |
 | Abort signal | a fresh `AbortController` owned by `/btw`, never `ctx.signal` |
 
-## The branch clone
+## The context clone
 
-The first block of messages is a read-only clone of your current session branch,
-so you do not have to re-explain what you have been working on.
+The first block of messages is a read-only clone of the main agent's current
+context, so you do not have to re-explain what you have been working on. It is the
+same context Pi sends the main model: after a compaction, the compaction summary
+plus the kept and newer messages, not the full history the summary replaced. On
+Pi 1.0 and later it also reflects context edits.
 
-- The `message_end` hook takes the snapshot: it reads `ctx.sessionManager.getBranch()`
-  and converts it with `convertToLlm`.
+- The `message_end` hook takes the snapshot: it reads the branch
+  (`ctx.sessionManager.getBranch()`, the session view every supported Pi gives
+  extensions) and serializes it with Pi's own `buildSessionContext`, then
+  `convertToLlm`. Pi's `buildContextEntries` gives the matching entries that
+  budgeting measures.
 - It snapshots **only** on `role === "assistant"` messages, and **only** when
   `stopReason !== "toolUse"` — so mid-tool-call states never become the context.
 - Snapshots are cached per session, keyed by `ctx.sessionManager.getSessionFile()`,
   falling back to `memory:<sessionId>` when there is no session file.
-- Cold start: if no `message_end` has fired yet, `/btw` reads the branch live
+- Cold start: if no `message_end` has fired yet, `/btw` reads the context live
   instead of using a cache.
 
 ### Invalidation
@@ -89,7 +95,8 @@ whitespace-collapsed and truncated to 200 characters.
 - **No disk writes.** History and snapshots live on `globalThis[Symbol.for("rpiv-btw")]`.
   The package's only filesystem access is one read of its own bundled prompt file
   at module init.
-- **No tool use.** The call runs with `tools: []`, so a side question cannot edit
+- **No tool use.** The call runs with `tools: []`, and the main agent's tool
+  declarations are removed from the cloned context, so a side question cannot edit
   a file or run a command even if it wanted to.
 - **No effect on the main session.** `Esc` aborts the `/btw` controller only; the
   main agent's signal is never touched.

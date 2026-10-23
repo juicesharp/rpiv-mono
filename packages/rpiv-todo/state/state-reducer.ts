@@ -1,7 +1,7 @@
-import type { Task, TaskAction, TaskMutationParams, TaskStatus } from "../tool/types.js";
-import { isTransitionValid } from "./invariants.js";
-import type { TaskState } from "./state.js";
-import { detectCycle } from "./task-graph.js";
+import type { Task, TaskAction, TaskMutationParams, TaskStatus } from "../tool/types.ts";
+import { isTransitionValid } from "./invariants.ts";
+import type { TaskState } from "./state.ts";
+import { detectCycle } from "./task-graph.ts";
 
 /**
  * Reducer outcome. Closed tagged union — adding a new action requires extending
@@ -24,6 +24,27 @@ export type Op =
 export interface ApplyResult {
 	state: TaskState;
 	op: Op;
+}
+
+/**
+ * True when `op` changed the task state — the calls whose post-commit snapshot
+ * must be persisted for replay. Reads (`list`/`get`), failures, and a no-effect
+ * `update` leave state untouched. Exhaustive over `Op` (compiler-enforced), so a
+ * new action must decide here whether it persists.
+ */
+export function changesState(op: Op): boolean {
+	switch (op.kind) {
+		case "create":
+		case "delete":
+		case "clear":
+			return true;
+		case "update":
+			return op.changed;
+		case "list":
+		case "get":
+		case "error":
+			return false;
+	}
 }
 
 function errorResult(state: TaskState, message: string): ApplyResult {
@@ -101,15 +122,13 @@ function taskChanged(before: Task, after: Task): boolean {
 }
 
 /**
- * Pure reducer: (state, action, params) → (state, op). Mirrors the
- * `applyTaskMutation` of pre-refactor `todo.ts` minus content/details
- * formatting; the response envelope (`tool/response-envelope.ts`) owns
+ * Pure reducer: (state, action, params) → (state, op). The response envelope (`tool/response-envelope.ts`) owns
  * formatting, the store (`state/store.ts`) owns commit.
  *
  * Validation is in-line: structural guards (`subject required`, `id required`,
  * `at least one mutable field`) plus state-aware checks (transition legality,
  * dangling/deleted blockedBy, self-block, cycles). Decision: validation stays
- * in-reducer — see Plan §Decisions §Decision 2.
+ * in-reducer.
  */
 export function applyTaskMutation(state: TaskState, action: TaskAction, params: TaskMutationParams): ApplyResult {
 	switch (action) {

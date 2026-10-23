@@ -1,19 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { WorkflowHostContext } from "../host.js";
+import type { WorkflowHostContext } from "../host.ts";
 
 // Mock the loader + core runner so the convenience layer is tested in isolation
 // (no jiti, no filesystem, no Pi session runtime).
-vi.mock("../load/index.js", () => ({
+vi.mock("../load/index.ts", () => ({
 	loadWorkflows: vi.fn(),
 	findWorkflow: vi.fn(),
 }));
-vi.mock("./runner.js", () => ({
+vi.mock("./runner.ts", () => ({
 	runWorkflow: vi.fn(),
 }));
 
-import { findWorkflow, loadWorkflows } from "../load/index.js";
-import { runWorkflowByName } from "./by-name.js";
-import { runWorkflow } from "./runner.js";
+import { findWorkflow, loadWorkflows } from "../load/index.ts";
+import { runWorkflowByName } from "./by-name.ts";
+import { runWorkflow } from "./runner.ts";
 
 // Type-only context — runWorkflowByName only reads ctx.cwd and forwards ctx.
 const ctx = { cwd: "/repo" } as unknown as WorkflowHostContext;

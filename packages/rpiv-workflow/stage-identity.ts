@@ -15,9 +15,9 @@
  * `chain-state.ts` re-exports them so its own runtime callers keep one import.
  */
 
-import type { SkillStage, StageDef, StageSchema } from "./api.js";
-import { isJsonSchemaObject, jsonSchemaToStandard } from "./json-schema.js";
-import type { SkillContractMap } from "./skill-contract.js";
+import type { SkillStage, StageDef, StageSchema } from "./api.ts";
+import { isJsonSchemaObject, jsonSchemaToStandard } from "./json-schema.ts";
+import type { SkillContractMap } from "./skill-contract.ts";
 
 /**
  * Resolve the `state.named` key a produces stage appends its `Output`
@@ -31,6 +31,23 @@ import type { SkillContractMap } from "./skill-contract.js";
  */
 export function resolvePublishName(def: StageDef, stageName: string): string {
 	return def.outcome?.name ?? stageName;
+}
+
+/**
+ * The `state.named` key a SIDE-EFFECT stage publishes its `Output` onto, or
+ * `undefined` for the silent majority. Acts stages publish ONLY under an
+ * EXPLICIT outcome name — never the record-key fallback produces stages get:
+ * defaulting would make every `implement`/`commit`-shaped stage suddenly
+ * publish a channel, widening `reads:` semantics for existing graphs. The
+ * `Outcome.name` doc has always promised the named slot for "any stage wired
+ * with this outcome"; the runtime write honoring it only for `produces` left
+ * an acts outcome's channel silently unwritten (a gate folding
+ * `state.named.remediation` read a channel that never existed). Twin of
+ * `resolvePublishName` — the runtime write (`applyCompletedStage`) and the
+ * load-time publish scan (`publishedNamesOf`) both key off this projection.
+ */
+export function actsPublishName(def: StageDef): string | undefined {
+	return def.kind !== "produces" ? def.outcome?.name : undefined;
 }
 
 /**

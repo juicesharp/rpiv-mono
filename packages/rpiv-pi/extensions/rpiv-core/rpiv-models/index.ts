@@ -7,7 +7,7 @@
  *   command   — /rpiv-models command registration
  */
 
-export { registerRpivModelsCommand } from "./command.js";
+export { registerRpivModelsCommand } from "./command.ts";
 export {
 	buildEffortItems,
 	buildModelItems,
@@ -16,7 +16,7 @@ export {
 	RESET_LABEL,
 	RESET_VALUE,
 	scopeItems,
-} from "./items.js";
+} from "./items.ts";
 export {
 	applyOverride,
 	CHECK,
@@ -39,4 +39,4 @@ export {
 	SCOPES,
 	type ScopeDescriptor,
 	withCheck,
-} from "./overrides.js";
+} from "./overrides.ts";

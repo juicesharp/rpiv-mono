@@ -7,6 +7,52 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.13.10] - 2026-10-23
+
+## [2.13.9] - 2026-10-17
+
+### Changed
+
+- Faster extension startup: relative imports now name the published `.ts` files instead of nonexistent `.js` targets, so Pi's loader (jiti) no longer runs fallback resolution for each of them on every launch. Runtime behavior is unchanged. Thanks @ry4nyu for #306, and @szastupov for #304.
+
+## [2.13.8] - 2026-10-12
+
+## [2.13.7] - 2026-10-12
+
+### Fixed
+- `/btw` no longer inherits the main agent's tools. On Pi 1.x the cloned context declares them in its system messages, and providers sent them even with `tools: []`, so a side question could end on a tool call with no answer. The declarations are now stripped; the system prompt text is kept (#295).
+
+## [2.13.6] - 2026-10-12
+
+## [2.13.5] - 2026-10-12
+
+### Fixed
+
+- **`/btw` no longer sends the whole uncompacted conversation after a compaction.** It turned every message on the session branch into context, including the ones a compaction had summarized, but budgeted against the provider's token count for the main agent's compacted context. The budget check passed and then the full history went out, so long or compacted sessions could exceed the model's window and the provider rejected the call. `/btw` still reads only the branch, but now converts it with Pi's own context builder, so it sends the same context as the main model: the compaction summary plus kept and newer messages, with context edits applied on Pi 1.0+. ([#274](https://github.com/juicesharp/rpiv-mono/issues/274))
+- **Context truncation handles system messages on Pi 1.1.** Pi 1.1 added a `system` message role, and `convertToLlm` passes it through to `/btw`'s context. When the largest text block was a system message with string content, truncation split the string into characters, removed nothing and stopped while the request was still over budget. System messages now get their own truncation branch, for both string and text-part content.
+
+## [2.13.4] - 2026-10-11
+
+## [2.13.3] - 2026-10-11
+
+## [2.13.2] - 2026-10-11
+
+## [2.13.1] - 2026-10-11
+
+## [2.13.0] - 2026-10-11
+
+## [2.12.0] - 2026-09-30
+
+## [2.11.0] - 2026-09-21
+
+## [2.10.1] - 2026-09-13
+
+## [2.10.0] - 2026-09-12
+
+## [2.9.0] - 2026-09-01
+
+## [2.8.0] - 2026-08-29
+
 ## [2.7.1] - 2026-08-24
 
 ## [2.7.0] - 2026-08-21

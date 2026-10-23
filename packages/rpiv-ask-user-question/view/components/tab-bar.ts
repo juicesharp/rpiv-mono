@@ -1,13 +1,12 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import type { StatefulView } from "../stateful-view.js";
+import type { StatefulView } from "../stateful-view.ts";
 
 /**
  * Per-tick projection of TabBar state. The selector
  * (`selectTabBarProps`) hoists every render-time derivation
  * (`allAnswered`, `answered`, `isActive`, `submitActive`) into props so
- * `render()` is pure styling. Replaces the prior `setConfig(TabBarConfig)`
- * snowflake and the inline `+ 1` magic at `props-adapter.ts:127`.
+ * `render()` is pure styling.
  */
 export interface TabBarProps {
 	/** One per author-defined question, in order. */

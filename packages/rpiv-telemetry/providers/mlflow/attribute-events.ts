@@ -4,8 +4,8 @@ import type {
 	SessionCompactEvent,
 	TurnEndEvent,
 	TurnStartEvent,
-} from "../../types/events.js";
-import type { MlflowSpanRegistry } from "./span-registry.js";
+} from "../../types/events.ts";
+import type { MlflowSpanRegistry } from "./span-registry.ts";
 
 /**
  * Event kinds that don't get a dedicated child span but contribute typed

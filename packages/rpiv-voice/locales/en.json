@@ -41,5 +41,8 @@
   "settings.hallucination_filter_hint": "Drops silence-segment artifacts. Turn off for single-word dictation.",
 
   "settings.equalizer_label": "Equalizer",
-  "settings.equalizer_hint": "Show the live audio waveform under the transcript. Off by default."
+  "settings.equalizer_hint": "Show the live audio waveform under the transcript. Off by default.",
+
+  "settings.threads_label": "Threads",
+  "settings.threads_hint": "Set numThreads in voice.json; re-run /voice to apply."
 }

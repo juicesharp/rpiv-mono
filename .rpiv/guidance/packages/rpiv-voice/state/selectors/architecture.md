@@ -4,11 +4,11 @@
 Pure projections from `VoiceState` to per-component view-prop shapes. Where the reducer owns state transitions, selectors own state→view shape mapping and are the only place i18n / display formatting is resolved per render tick.
 
 ## Dependencies
-- **`../state.js`** (`VoiceState`, `ScreenKind`)
-- **`../../view/stateful-view.js`** (`ActiveView` — type-only)
+- **`../state.ts`** (`VoiceState`, `ScreenKind`)
+- **`../../view/stateful-view.ts`** (`ActiveView` — type-only)
 - **`../../view/components/*`** (type-only prop shapes: `StatusBarViewProps`, `TranscriptViewProps`, `EqualizerViewProps`, `SettingsFieldViewProps`)
-- **`../i18n-bridge.js`** (`t`, `getActiveLocale`)
-- **`../screen-intent.js`** (`SCREEN_META`, `FooterHintKey`)
+- **`../i18n-bridge.ts`** (`t`, `getActiveLocale`)
+- **`../screen-intent.ts`** (`SCREEN_META`, `FooterHintKey`)
 
 ## Boundary Contract
 - Inputs: `(state: VoiceState, ctx: BindingContext)` — read-only
@@ -21,7 +21,7 @@ Pure projections from `VoiceState` to per-component view-prop shapes. Where the 
 contract.ts       — Types only: BindingContext, PerScreenBindingContext, GlobalSelector<P>, PerScreenSelector<P>
 focus.ts          — Active-view discriminant: selectActiveView(state) → "dictation" | "settings"
 derivations.ts    — Pure helpers not tied to a component (e.g. clipToTerminalHeight with MIN_RENDER_ROWS, MAX_HEIGHT_RATIO)
-projections.ts    — Per-component selectStatusBarProps / selectTranscriptProps / selectEqualizerProps / select{HallucinationFilter,Equalizer,MicReadonly,LanguageReadonly}FieldProps + local hintLabel resolver over FooterHintKey
+projections.ts    — Per-component selectStatusBarProps / selectTranscriptProps / selectEqualizerProps / select{HallucinationFilter,Equalizer,MicReadonly,LanguageReadonly,NumThreadsReadonly}FieldProps + local hintLabel resolver over FooterHintKey
 ```
 
 ## Active-View Discriminant
@@ -48,7 +48,7 @@ export const selectTranscriptProps: GlobalSelector<TranscriptViewProps> = (state
 **None.** Selectors allocate fresh objects every call (e.g., `selectStatusBarProps` builds a new `hints` array). No `reselect`/memo wrapper — projections are cheap, called per frame. Stable layout is achieved by design: `hint` stays present regardless of focus so the settings body height doesn't jitter — the field hides its own hint when inactive (see the comment at `projections.ts:75-78`; `active` itself does track `settingsFocus`).
 
 ## Consumption
-`BindingContext` (in `contract.ts`) references `ActiveView` from `../../view/stateful-view.js` — the binding registry lives in `view/`. `VoiceOverlayPropsAdapter.apply()` (`view/props-adapter.ts:21`) builds `{ activeView: selectActiveView(state) }` and passes it into each binding per render tick; all eight registered bindings are `globalBinding(...)` (`state/voice-session.ts:95-102`), so `kind` is never supplied — `PerScreenSelector`/`PerScreenBindingContext` are currently unconsumed types. Screen-tree choice does not go through `selectActiveView`: `OverlayView.render` reads `state.currentScreen === "settings"` directly (`view/overlay-view.ts:66`); the props adapter is `selectActiveView`'s sole consumer.
+`BindingContext` (in `contract.ts`) references `ActiveView` from `../../view/stateful-view.ts` — the binding registry lives in `view/`. `VoiceOverlayPropsAdapter.apply()` (`view/props-adapter.ts:20-24`) builds `{ activeView: selectActiveView(state) }` and passes it into each binding per render tick; every registered binding is a `globalBinding(...)` (`state/voice-session.ts:98-106`) — including the settings fields (hallucination toggle, equalizer toggle, mic/language/threads readonly rows) and the overlay binding that feeds `OverlayView` its props — so `kind` is never supplied and `PerScreenSelector`/`PerScreenBindingContext` are currently unconsumed types. `OverlayView` implements `StatefulView<OverlayViewProps>`: the screen-tree choice arrives via `setProps` from that binding (it reads its own live state, never canonical state directly), and the props adapter remains `selectActiveView`'s sole consumer.
 
 ## Conventions
 - Naming: `select<Component>Props` for component projections; settings rows use `select<Field>FieldProps` (e.g. `selectHallucinationFilterFieldProps`, `selectMicReadonlyFieldProps`) — there is no `selectSettings*Props`; `select<Concept>` for discriminants (`selectActiveView`)

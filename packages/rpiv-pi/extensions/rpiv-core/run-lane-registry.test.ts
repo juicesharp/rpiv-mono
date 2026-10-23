@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetQuestionLifecycle, subscribeQuestionLifecycle } from "./question-lifecycle.js";
+import { __resetQuestionLifecycle, subscribeQuestionLifecycle } from "./question-lifecycle.ts";
 import {
 	__resetRunLaneRegistry,
 	addStageUsage,
@@ -35,7 +35,7 @@ import {
 	subscribeLanes,
 	sweepRunningUnits,
 	unitNeedsInput,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 /** Minimal LaneSession stub — structural, so the registry needs no real AgentSession. */
 function makeSession(sessionId: string): LaneSession {
@@ -970,7 +970,7 @@ describe("run-lane-registry", () => {
 			// instance (new module-local closures) — but the globalThis slot persists,
 			// so the fresh instance must observe the run recorded via the first.
 			vi.resetModules();
-			const fresh = await import("./run-lane-registry.js");
+			const fresh = await import("./run-lane-registry.ts");
 			expect(fresh.getLane("g-1")).toBeDefined();
 			expect(fresh.listLanes().map((l) => l.runId)).toContain("g-1");
 		});

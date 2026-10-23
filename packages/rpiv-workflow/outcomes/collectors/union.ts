@@ -28,10 +28,10 @@
  * a halt (produces) or a pass-through (side-effect).
  */
 
-import type { Artifact } from "../../handle.js";
-import { throwInvalid } from "../../internal-utils.js";
-import type { ArtifactCollector, CollectResult } from "../../output-spec.js";
-import { defineCollector } from "../../output-spec.js";
+import type { Artifact } from "../../handle.ts";
+import { throwInvalid } from "../../internal-utils.ts";
+import type { ArtifactCollector, CollectResult } from "../../output-spec.ts";
+import { defineCollector } from "../../output-spec.ts";
 
 /** Positional sub-collector snapshots; `undefined` when capture degraded or no sub declared one. */
 export type UnionSnapshot = unknown[] | undefined;

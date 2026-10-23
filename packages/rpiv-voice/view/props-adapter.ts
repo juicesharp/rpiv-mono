@@ -1,7 +1,7 @@
-import type { BindingContext } from "../state/selectors/contract.js";
-import { selectActiveView } from "../state/selectors/focus.js";
-import type { VoiceState } from "../state/state.js";
-import type { BoundGlobalBinding } from "./component-binding.js";
+import type { BindingContext } from "../state/selectors/contract.ts";
+import { selectActiveView } from "../state/selectors/focus.ts";
+import type { VoiceState } from "../state/state.ts";
+import type { BoundGlobalBinding } from "./component-binding.ts";
 
 export interface VoiceOverlayPropsAdapterConfig {
 	tui: { requestRender(): void };

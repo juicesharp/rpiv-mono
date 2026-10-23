@@ -1,9 +1,10 @@
 /**
  * models-picker — filterable select panel for /rpiv-models cascade pickers.
  *
- * Clone of the advisor's showFilterablePicker (advisor-ui.ts:65-115) at
- * Phase-1 zero-cross-imports contract enforcement. Promotion to a shared TUI
- * package (e.g. packages/rpiv-tui/) is queued as a follow-up.
+ * Local clone of the advisor's showFilterablePicker (advisor-ui.ts) — the
+ * zero-cross-imports contract forbids an rpiv-core → rpiv-advisor import.
+ * Promotion to a shared TUI package (e.g. packages/rpiv-tui/) is a candidate
+ * follow-up.
  */
 
 import { DynamicBorder, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";

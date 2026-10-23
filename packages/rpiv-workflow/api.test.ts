@@ -24,9 +24,9 @@ import {
 	takeRouteNote,
 	terminal,
 	type Workflow,
-} from "./api.js";
-import { eq, gt } from "./predicates.js";
-import { typeboxSchema } from "./typebox-adapter.js";
+} from "./api.ts";
+import { eq, gt } from "./predicates.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
 
 // ---------------------------------------------------------------------------
 // defineWorkflow

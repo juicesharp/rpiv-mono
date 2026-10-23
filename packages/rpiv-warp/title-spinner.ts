@@ -16,15 +16,15 @@
  * Title-preservation strategy: the original Warp tab title (e.g.
  * `π - rpiv-mono`, set by Pi at startup) MUST survive the animation
  * round trip — and during the animation, only the FIRST character (the
- * Pi mascot) is swapped for the rotating glyph; the suffix (` - <repo>`)
- * stays put.
+ * Pi mascot) is swapped for the rotating glyph; the suffix (` - <repo>`,
+ * or ` - <session> - <repo>` for a named session) stays put.
  *
  *   on agent_start(suffix)        → CSI 22;0t     (push current title)
  *   while running, every 160ms    → OSC 0         (write `<glyph><suffix>`)
  *   on agent_end                  → CSI 23;0t     (pop — original restored)
  *
- * The suffix is supplied by callers in `index.ts` from `ctx.cwd`
- * (` - ${basename(cwd)}`); on a stop, push/pop restores whatever the
+ * The suffix is supplied by callers in `index.ts` (`titleSuffix`, from the
+ * session name and `ctx.cwd`); on a stop, push/pop restores whatever the
  * terminal had before — typically Pi's `π${suffix}`. Push/pop is
  * supported by Warp, iTerm2, Ghostty, tmux, Linux console; terminals
  * that don't implement it ignore the CSI silently.
@@ -37,7 +37,7 @@
  * `test/setup.ts` invokes it in `beforeEach`.
  */
 
-import { popTitleStack, pushTitleStack, writeOSC0 } from "./warp-notify.js";
+import { popTitleStack, pushTitleStack, writeOSC0 } from "./warp-notify.ts";
 
 // ---------------------------------------------------------------------------
 // Constants — tunable at one site

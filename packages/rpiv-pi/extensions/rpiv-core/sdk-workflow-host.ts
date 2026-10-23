@@ -7,13 +7,16 @@
  * swapped, units run in bounded parallel (`maxConcurrency`), and a fired signal
  * aborts in-flight children.
  *
- * Service sourcing: the host BORROWS only `modelRegistry` (captured
- * from session_start, carrying auth/OAuth state); `authStorage` is defaulted
- * per child from disk. The `resourceLoader` is SUPPLIED per child (not
- * defaulted) so it can filter out launcher-only ambient extensions — see
- * `withoutAmbientExtensions` (A). The per-unit model is resolved through the
- * borrowed registry and applied at child-session creation — NEVER via global
- * `pi.setModel()`.
+ * Service sourcing: the host BORROWS only the launcher's model services —
+ * `modelRegistry` captured from session_start, handed to each child as the
+ * registry's underlying `ModelRuntime` on Pi ≥ 0.80.8 or the registry itself
+ * before (`childModelServices`, pi-compat.ts) — so children share the
+ * launcher's auth state and registered providers. The `resourceLoader` is
+ * SUPPLIED per child (not defaulted) so it can filter out launcher-only ambient
+ * extensions — see `withoutAmbientExtensions` (A). The per-unit model is
+ * resolved through the borrowed registry and applied at child-session creation
+ * — NEVER via global `pi.setModel()`; an explicit key that does not resolve is
+ * a terminal `UnresolvedModelError`, never a silent fallback.
  *
  * Child teardown emits `session_shutdown` BEFORE `dispose()` (B) so loaded
  * extensions run their cleanup; `dispose()` alone only invalidates the runner.
@@ -51,18 +54,19 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { parseModelKey } from "@juicesharp/rpiv-config";
 import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
-import { armBashWatchdog, type BashWatchdog } from "./bash-timeout.js";
-import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { createLaneSessionView } from "./lane-streaming.js";
-import { harvestToolDefs } from "./lane-tool-defs.js";
+import { armBashWatchdog, type BashWatchdog } from "./bash-timeout.ts";
+import { createLaneRelayUiContext } from "./lane-relay-ui.ts";
+import { createLaneSessionView } from "./lane-streaming.ts";
+import { harvestToolDefs } from "./lane-tool-defs.ts";
+import { childModelServices } from "./pi-compat.ts";
 import {
 	captureFinalSnapshot,
 	getLane,
 	SINGLE_UNIT_KEY,
 	setCurrentSession,
 	setLaneSessionFile,
-} from "./run-lane-registry.js";
-import { recordSubagentCompletion } from "./subagent-usage.js";
+} from "./run-lane-registry.ts";
+import { recordSubagentCompletion } from "./subagent-usage.ts";
 
 /**
  * Launcher-only "ambient observer" extensions: they register session-lifecycle
@@ -148,9 +152,9 @@ export function withoutAmbientExtensions(base: LoadExtensionsResult): LoadExtens
 
 /**
  * What the launcher borrows from the live interactive session + the run
- * identity. Sourcing: ONLY `modelRegistry` is borrowed; `authStorage`
- * and `resourceLoader` are NOT (they are absent from this context) — they are
- * defaulted per child by `createAgentSession` from disk.
+ * identity. Sourcing: ONLY the model services (`modelRegistry`, and on
+ * Pi ≥ 0.80.8 the runtime behind it) are borrowed; the `resourceLoader` is
+ * built per child, and settings are read per child from disk.
  *
  * `childSessionsDir` is passed in as a RESOLVED STRING, not imported. The
  * layout helper (`state/paths.ts`) stays internal to rpiv-workflow (alongside
@@ -159,9 +163,14 @@ export function withoutAmbientExtensions(base: LoadExtensionsResult): LoadExtens
  * the dir from cwd+runId and hands rpiv-pi the concrete path.
  */
 export interface SdkWorkflowHostDeps {
-	/** The interactive ctx — observer (ui/sessionManager) + the hasUI source. */
-	live: Pick<WorkflowHostContext, "ui" | "sessionManager" | "hasUI">;
-	/** Borrowed at session_start (carries auth/OAuth state). */
+	/**
+	 * The interactive ctx — observer (sessionManager reads) + the hasUI source.
+	 * Deliberately NOT the toast channel: every `live` member is a pi getter that
+	 * throws stale once the launcher session is replaced/disposed mid-run, so
+	 * toasts route through the raw `uiContext` below instead (see `relayUi`).
+	 */
+	live: Pick<WorkflowHostContext, "sessionManager" | "hasUI">;
+	/** Borrowed at session_start (carries auth/OAuth state + registered providers; see `childModelServices`). */
 	modelRegistry: ModelRegistry;
 	/** The real launcher UI the deferring relay forwards to (captured at session_start). */
 	uiContext: ExtensionUIContext;
@@ -203,6 +212,24 @@ export class FanoutDepthExceededError extends Error {
 	) {
 		super(`rpiv: nested fan-out depth ${depth} exceeds MAX_FANOUT_DEPTH (${max}) — a child fanned out too deeply`);
 		this.name = "FanoutDepthExceededError";
+	}
+}
+
+/**
+ * An explicit per-unit model key did not resolve through the launcher's
+ * registry (malformed key, unknown provider/model). Typed and host-local for the
+ * same reasons as `FanoutDepthExceededError`: it propagates to the engine as an
+ * opaque rejection and the runner records a terminal failure. Thrown BEFORE any
+ * child session is created — omitting the model would let Pi silently pick its
+ * default, running the stage on a model the user never chose. Carries the
+ * offending `key`; the message is operator-grade.
+ */
+export class UnresolvedModelError extends Error {
+	constructor(readonly key: string) {
+		super(
+			`rpiv: model "${key}" is not available on this Pi host — expected "provider/model-id" for a known model; check rpiv-pi models.json (/rpiv-models)`,
+		);
+		this.name = "UnresolvedModelError";
 	}
 }
 
@@ -274,17 +301,20 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 			throw new FanoutDepthExceededError(depth, MAX_FANOUT_DEPTH);
 		}
 
+		// Resolve BEFORE any session exists, so an unresolvable key costs nothing.
+		const model = this.resolveModelKey(options.model?.model);
 		const childEventBus = createEventBus();
 		const resourceLoader = await this.buildChildResourceLoader(childEventBus);
 		const { session } = await createAgentSession({
 			cwd: this.cwd,
-			// Borrow ONLY the registry; authStorage is still defaulted per child
-			// from ~/.pi/agent/auth.json. resourceLoader is SUPPLIED (filtered),
-			// not defaulted, so children skip launcher-only observer extensions.
-			modelRegistry: this.deps.modelRegistry,
+			// Borrow ONLY the launcher's model services (its runtime on Pi ≥ 0.80.8,
+			// its registry before) so the child shares auth + registered providers.
+			// resourceLoader is SUPPLIED (filtered), not defaulted, so children skip
+			// launcher-only observer extensions.
+			...childModelServices(this.deps.modelRegistry),
 			resourceLoader,
 			sessionManager: this.createChildSessionManager(options),
-			model: this.resolveModelKey(options.model?.model),
+			model,
 			thinkingLevel: options.model?.thinking,
 		});
 
@@ -459,7 +489,9 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 	private adapt(session: AgentSession, depth: number, watchdog: BashWatchdog): WorkflowSessionContext {
 		return {
 			cwd: this.cwd,
-			hasUI: this.deps.live.hasUI,
+			// Constructor snapshot, not a fresh `live.hasUI` getter read — adapt
+			// runs mid-run, when the launcher ctx may already be stale.
+			hasUI: this.hasUI,
 			ui: this.relayUi(),
 			maxConcurrency: this.maxConcurrency,
 			// A child may itself fan out — each level increments the depth, bounded
@@ -504,18 +536,30 @@ export class SdkWorkflowHost implements WorkflowHostContext {
 	}
 
 	/** Model key string → registry Model, applied at session creation — never
-	 *  via global `pi.setModel()`. */
+	 *  via global `pi.setModel()`. No key ⇒ undefined (host default); a key that
+	 *  does not resolve ⇒ `UnresolvedModelError`, never a silent default. */
 	private resolveModelKey(key?: string): Model<any> | undefined {
 		if (!key) return undefined;
 		const parsed = parseModelKey(key);
-		return parsed
+		const model = parsed
 			? (this.deps.modelRegistry.find(parsed.provider, parsed.modelId) as Model<any> | undefined)
 			: undefined;
+		if (!model) throw new UnresolvedModelError(key);
+		return model;
 	}
 
+	/**
+	 * Toasts go through the session_start-captured RAW uiContext, never a
+	 * guarded `live.ui` getter read: the stage machinery and audit paths notify
+	 * mid-run — long after `/wf` returned — and pi invalidates every ctx getter
+	 * of the old generation on launcher session replacement (/new, resume,
+	 * /reload, auto-compaction). The raw object survives replacement and still
+	 * points at the persistent TUI, so a floated run's progress/completion
+	 * toasts can't throw the stale-ctx error out of the runner.
+	 */
 	private relayUi() {
 		return {
-			notify: (message: string, level?: "info" | "warning" | "error") => this.deps.live.ui.notify(message, level),
+			notify: (message: string, level?: "info" | "warning" | "error") => this.deps.uiContext.notify(message, level),
 		};
 	}
 }

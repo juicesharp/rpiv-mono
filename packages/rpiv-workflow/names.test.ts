@@ -13,10 +13,10 @@ import {
 	releaseName,
 	resolveRun,
 	stateFilePath,
-} from "./state/index.js";
+} from "./state/index.ts";
 // Deep import: addNameToIndex is deliberately NOT on the state barrels
 // (production code goes through claimName); unit tests exercise it directly.
-import { addNameToIndex } from "./state/names.js";
+import { addNameToIndex } from "./state/names.ts";
 
 let tmpDir: string;
 

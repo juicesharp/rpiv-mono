@@ -1,8 +1,8 @@
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { ASK_USER_QUESTION_TOOL_NAME } from "./ask-user-question.js";
-import factory from "./index.js";
-import { reconcileAskUserQuestionTool, registerAskUserQuestionReconciler } from "./reconcile.js";
+import { ASK_USER_QUESTION_TOOL_NAME } from "./ask-user-question.ts";
+import factory from "./index.ts";
+import { reconcileAskUserQuestionTool, registerAskUserQuestionReconciler } from "./reconcile.ts";
 
 describe("reconcileAskUserQuestionTool", () => {
 	it("strips ask_user_question when !hasUI and the tool is active", () => {

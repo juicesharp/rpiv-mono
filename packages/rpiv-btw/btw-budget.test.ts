@@ -12,9 +12,9 @@ import {
 	BTW_HISTORY_TOKEN_BUDGET,
 	BTW_NO_ANCHOR_SAFETY_FACTOR,
 	type BtwTurn,
-	branchToMessages,
-} from "./btw.js";
-import { BTW_STUB_TEXT, type CappedHistory, capHistory, fitBranch } from "./btw-budget.js";
+	branchToContextMessages,
+} from "./btw.ts";
+import { BTW_STUB_TEXT, type CappedHistory, capHistory, fitBranch } from "./btw-budget.ts";
 
 // toks(n) → a string whose estimateTokens is exactly n (chars/4, length a multiple of 4).
 const toks = (n: number): string => "x".repeat(n * 4);
@@ -226,7 +226,7 @@ const Q = makeUserMessage("question");
 describe("fitBranch — FR1 fast-path parity", () => {
 	it("returns the cached messages by reference when the branch fits (toBe, not toEqual)", () => {
 		const entries = buildSessionEntries([makeUserMessage("u"), makeAssistantMessage({ text: "a" })]);
-		const cached = branchToMessages(entries); // = the messages buildBtwMessages would cache
+		const cached = branchToContextMessages(entries); // = the messages buildBtwMessages would cache
 		const fit = fitBranch({
 			entries,
 			messages: cached,
@@ -243,7 +243,7 @@ describe("fitBranch — FR1 fast-path parity", () => {
 
 	it("does not mutate the cached snapshot array or its messages on the fast path", () => {
 		const entries = buildSessionEntries([makeUserMessage("u"), makeAssistantMessage({ text: "a" })]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const before = structuredClone(cached);
 		fitBranch({
 			entries,
@@ -260,7 +260,7 @@ describe("fitBranch — FR1 fast-path parity", () => {
 describe("fitBranch — FR3 skip guard", () => {
 	it("fast-paths the cached messages when the window is unusable (keepBudget unset)", () => {
 		const entries = buildSessionEntries([makeUserMessage("u")]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		// contextWindow <= maxTokens + RESERVE → available <= 0 → not budgetable
 		const model = makeModel({ contextWindow: 100, maxTokens: 8192 });
 		const fit = fitBranch({
@@ -278,7 +278,7 @@ describe("fitBranch — FR3 skip guard", () => {
 
 	it("populates keepBudget on the skip-guard path (never undefined)", () => {
 		const entries = buildSessionEntries([makeUserMessage("u")]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const fit = fitBranch({
 			entries,
 			messages: cached,
@@ -295,7 +295,7 @@ describe("fitBranch — FR3 budget formula", () => {
 	it("branchKeepBudget = contextWindow - maxTokens - RESERVE - ceil(sys/4) - estimateTokens(Q) - admitted", () => {
 		// Branch small enough to fast-path, so we can assert keepBudget is the window value.
 		const entries = buildSessionEntries([makeUserMessage("u")]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const model = makeModel({ contextWindow: 200000, maxTokens: 8192 });
 		const fit = fitBranch({
 			entries,
@@ -321,7 +321,7 @@ describe("fitBranch — FR2 anchor accounting vs no-anchor fallback", () => {
 			makeAssistantWithUsage("a1", 50000),
 			makeUserMessage("u2"),
 		]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const model = makeModel({ contextWindow: 200000, maxTokens: 8192 });
 		// Force a tiny budget by claiming nearly all available is spoken for.
 		const fit = fitBranch({
@@ -340,7 +340,7 @@ describe("fitBranch — FR2 anchor accounting vs no-anchor fallback", () => {
 		expect(BTW_NO_ANCHOR_SAFETY_FACTOR).toBe(1.2);
 		// No assistant usage anchor (makeAssistantMessage omits usage) → 1.2x sum path taken.
 		const entries = buildSessionEntries([makeUserMessage("u"), makeAssistantMessage({ text: "a" })]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const model = makeModel({ contextWindow: 200000, maxTokens: 8192 });
 		const fit = fitBranch({
 			entries,
@@ -362,7 +362,7 @@ describe("fitBranch — FR2 post-anchor tail accounting", () => {
 	// budget under BOTH metrics (anchor accounting AND raw chars/4) so the trim/stub
 	// machinery — which cuts by raw estimates — visibly engages.
 	const anchoredFit = (entries: SessionEntry[]) => {
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const model = makeModel();
 		const available = model.contextWindow - model.maxTokens - BTW_CONTEXT_RESERVE;
 		return {
@@ -421,7 +421,7 @@ describe("fitBranch — FR5 forward-scan trim", () => {
 			makeUserMessage("u2"),
 			makeAssistantMessage({ text: "a2" }),
 		]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const model = makeModel({ contextWindow: 200000, maxTokens: 8192 });
 		// Budget enough for only the last turn → first turn dropped. admittedEstimate claims
 		// all but ~100 tokens of the window so the huge first turn cannot fit.
@@ -453,7 +453,7 @@ describe("fitBranch — FR5 forward-scan trim", () => {
 			makeUserMessage("fresh turn"),
 			makeAssistantMessage({ text: "ok" }),
 		]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const model = makeModel({ contextWindow: 200000, maxTokens: 8192 });
 		// Claim all but ~100 tokens so the first (tool-bearing) turn cannot survive intact.
 		const available = model.contextWindow - model.maxTokens - BTW_CONTEXT_RESERVE;
@@ -502,7 +502,7 @@ describe("fitBranch — FR5 forward-scan trim", () => {
 				makeAssistantMessage({ text: "after-compaction-a" }),
 			]),
 		];
-		const cached = branchToMessages(entries.filter((e) => e.type === "message"));
+		const cached = branchToContextMessages(entries.filter((e) => e.type === "message"));
 		const model = makeModel({ contextWindow: 200000, maxTokens: 8192 });
 		const fit = fitBranch({
 			entries,
@@ -526,7 +526,7 @@ describe("fitBranch — FR5/FR6 no-cut-possible fallback", () => {
 			text: "o".repeat(8000),
 		});
 		const entries = buildSessionEntries([toolResultOnly]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const model = makeModel({ contextWindow: 200000, maxTokens: 8192 });
 		const fit = fitBranch({
 			entries,
@@ -548,7 +548,7 @@ describe("fitBranch — FR6 tool-result stubbing + terminal truncation", () => {
 			makeAssistantMessage({ text: "a", toolCalls: [{ id: "c1", name: "bash", arguments: {} }] }),
 			makeToolResult({ toolCallId: "c1", toolName: "bash", text: big, isError: true }),
 		]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const model = makeModel({ contextWindow: 200000, maxTokens: 8192 });
 		// Claim all but ~300 tokens: the 20k-char toolResult cannot fit, but its stub can.
 		const available = model.contextWindow - model.maxTokens - BTW_CONTEXT_RESERVE;
@@ -577,7 +577,7 @@ describe("fitBranch — FR6 tool-result stubbing + terminal truncation", () => {
 			makeAssistantMessage({ text: "a", toolCalls: [{ id: "c1", name: "bash", arguments: {} }] }),
 			makeToolResult({ toolCallId: "c1", toolName: "bash", text: "x".repeat(20000) }),
 		]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const before = structuredClone(cached);
 		const model = makeModel();
 		// Force the stubbing path (see above) — a fast-path pass would assert nothing.
@@ -597,7 +597,7 @@ describe("fitBranch — FR6 tool-result stubbing + terminal truncation", () => {
 	it("terminal truncation engages when stubbing is insufficient (marker present)", () => {
 		// A single gigantic user text block (no toolResult to stub) → terminal truncation.
 		const entries = buildSessionEntries([makeUserMessage("x".repeat(60000))]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const model = makeModel({ contextWindow: 200000, maxTokens: 8192 });
 		// Claim all but ~300 tokens: the 60k-char message must be cut down to fit.
 		const available = model.contextWindow - model.maxTokens - BTW_CONTEXT_RESERVE;
@@ -615,12 +615,42 @@ describe("fitBranch — FR6 tool-result stubbing + terminal truncation", () => {
 		// Budget adherence: the truncated result actually fits the remaining budget.
 		expect(fit.messages.reduce((sum, m) => sum + estimateTokens(m), 0)).toBeLessThanOrEqual(fit.keepBudget);
 	});
+
+	it.each([
+		["string", "x".repeat(60000)],
+		["text-part", [{ type: "text" as const, text: "x".repeat(60000) }]],
+	])(
+		"terminal truncation rewrites a system message with %s content (Pi ≥ 1.1 passes them through)",
+		(_label, content) => {
+			// The largest block is a system message; before it had its own arm, its string content
+			// was spread into characters, nothing shrank, and truncation stopped over budget.
+			const entries = buildSessionEntries([makeUserMessage("y".repeat(60000))]);
+			const cached = [
+				{ role: "system", content, timestamp: 0 },
+				...branchToContextMessages(entries),
+			] as unknown as ReturnType<typeof branchToContextMessages>;
+			const model = makeModel({ contextWindow: 200000, maxTokens: 8192 });
+			const available = model.contextWindow - model.maxTokens - BTW_CONTEXT_RESERVE;
+			const fit = fitBranch({
+				entries,
+				messages: cached,
+				model,
+				systemPrompt: SYS,
+				question: Q,
+				admittedEstimate: available - 300,
+			});
+			expect(fit.stubbed).toBe(true);
+			expect(fit.messages[0].role).toBe("system");
+			expect(JSON.stringify(fit.messages[0])).toContain("characters truncated");
+			expect(fit.messages.reduce((sum, m) => sum + estimateTokens(m), 0)).toBeLessThanOrEqual(fit.keepBudget);
+		},
+	);
 });
 
 describe("fitBranch — keepBudget contract (Risk r1, for Phase 3)", () => {
 	it("keepBudget is populated on the default (fast-path) path", () => {
 		const entries = buildSessionEntries([makeUserMessage("u")]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const fit = fitBranch({
 			entries,
 			messages: cached,
@@ -639,7 +669,7 @@ describe("fitBranch — keepBudget contract (Risk r1, for Phase 3)", () => {
 			makeAssistantMessage({ text: "a ".repeat(2000) }),
 			makeUserMessage("u2"),
 		]);
-		const cached = branchToMessages(entries);
+		const cached = branchToContextMessages(entries);
 		const model = makeModel({ contextWindow: 100, maxTokens: 8192 }); // unusable window
 		// keepBudget set → skip guard does NOT fire; trim/stub to 1 token.
 		const fit = fitBranch({
@@ -656,7 +686,7 @@ describe("fitBranch — keepBudget contract (Risk r1, for Phase 3)", () => {
 	});
 });
 
-// `branchToMessages` is imported from ./btw.js (it is the single
+// `branchToContextMessages` is imported from ./btw.js (it is the single
 // fast-path entry→LLM conversion seam). The fitBranch tests need a cached-`messages`
-// array identical to what readBranchSnapshot caches, so the production seam is reused
+// array identical to what readSnapshot caches, so the production seam is reused
 // directly rather than re-implemented here.

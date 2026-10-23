@@ -21,7 +21,7 @@ import {
 	ModelInstallError,
 	removeModelInstall,
 	WHISPER_BASE_DIR,
-} from "./model-download.js";
+} from "./model-download.ts";
 
 describe("isModelDownloaded", () => {
 	it("returns true when sentinel file exists", () => {

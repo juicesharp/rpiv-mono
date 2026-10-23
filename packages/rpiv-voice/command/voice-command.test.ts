@@ -70,14 +70,14 @@ const mocks = vi.hoisted(() => {
 	};
 });
 
-vi.mock("./splash-runner.js", () => ({
+vi.mock("./splash-runner.ts", () => ({
 	runWithSplash: vi.fn(async (_ctx, _config, work) => {
 		const controller = { setPhase: vi.fn() };
 		return await work(controller);
 	}),
 }));
 
-vi.mock("../audio/model-download.js", () => ({
+vi.mock("../audio/model-download.ts", () => ({
 	ensureModelDownloaded: mocks.ensureModelDownloaded,
 	isModelDownloaded: mocks.isModelDownloaded,
 	assertModelIntact: mocks.assertModelIntact,
@@ -86,19 +86,19 @@ vi.mock("../audio/model-download.js", () => ({
 	ModelInstallError: mocks.ModelInstallError,
 }));
 
-vi.mock("../audio/stt-engine.js", () => ({ createSttEngine: mocks.createSttEngine }));
+vi.mock("../audio/stt-engine.ts", () => ({ createSttEngine: mocks.createSttEngine }));
 
-vi.mock("../audio/mic-source.js", () => ({
+vi.mock("../audio/mic-source.ts", () => ({
 	createMic: mocks.createMic,
 	TARGET_SAMPLE_RATE: 16000,
 	FRAMES_PER_BUFFER: 1600,
 }));
 
-vi.mock("../config/voice-config.js", async (importOriginal) => {
+vi.mock("../config/voice-config.ts", async (importOriginal) => {
 	// Keep the real module surface (including `__resetState`, which the repo-
 	// wide test/setup.ts beforeEach calls) and only stub the two functions the
 	// voice-command file consumes.
-	const actual = await importOriginal<typeof import("../config/voice-config.js")>();
+	const actual = await importOriginal<typeof import("../config/voice-config.ts")>();
 	return {
 		...actual,
 		loadVoiceConfig: vi.fn(() => ({})),
@@ -106,13 +106,13 @@ vi.mock("../config/voice-config.js", async (importOriginal) => {
 	};
 });
 
-vi.mock("./pipeline-runner.js", () => ({ startDictationPipeline: mocks.startDictationPipeline }));
+vi.mock("./pipeline-runner.ts", () => ({ startDictationPipeline: mocks.startDictationPipeline }));
 
-vi.mock("../state/voice-session.js", () => ({ VoiceSession: mocks.VoiceSession }));
+vi.mock("../state/voice-session.ts", () => ({ VoiceSession: mocks.VoiceSession }));
 
 // `t(key, fallback)` returns the KEY so notify-call assertions can match
 // against the canonical i18n key instead of the English copy.
-vi.mock("../state/i18n-bridge.js", () => ({
+vi.mock("../state/i18n-bridge.ts", () => ({
 	t: (key: string, _fallback: string) => key,
 	getActiveLocale: mocks.getActiveLocale,
 	I18N_NAMESPACE: "@juicesharp/rpiv-voice",
@@ -132,7 +132,8 @@ const {
 	sessionState,
 } = mocks;
 
-import { registerVoiceCommand, VOICE_COMMAND_NAME } from "./voice-command.js";
+import { loadVoiceConfig } from "../config/voice-config.ts";
+import { registerVoiceCommand, VOICE_COMMAND_NAME } from "./voice-command.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 type Handler = (args: string, ctx: unknown) => Promise<void>;
@@ -174,6 +175,16 @@ function makeCtx(overrides: { notify?: ReturnType<typeof vi.fn>; pasteToEditor?:
 		},
 	};
 	return { ctx, notify, pasteToEditor };
+}
+
+// Controllably-settled promise for driving the mocked pipeline's
+// finalTranscriptPromise from a test.
+function makeDrain<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((res) => {
+		resolve = res;
+	});
+	return { promise, resolve };
 }
 
 // ── Existing smoke coverage ─────────────────────────────────────────────────
@@ -410,5 +421,196 @@ describe("handleVoiceCommand — happy path", () => {
 		sessionState.done?.({ intent: "cancel", transcript: "" });
 		await run;
 		expect(ensureModelDownloaded).toHaveBeenCalledOnce();
+	});
+});
+
+// ── numThreads wiring: one config load → engine construction ────────────────
+describe("handleVoiceCommand — numThreads wiring", () => {
+	beforeEach(() => {
+		isModelDownloaded.mockReturnValue(true);
+		assertModelIntact.mockReset();
+		createSttEngine.mockReset().mockResolvedValue({
+			recognize: vi.fn(async () => ""),
+			release: sttEngineRelease,
+		});
+		createMic.mockReset().mockResolvedValue({ on: vi.fn(), once: vi.fn(), stop: vi.fn() });
+		startDictationPipeline.mockClear();
+		sessionState.done = undefined;
+		vi.mocked(loadVoiceConfig).mockClear();
+	});
+
+	async function runOnce(): Promise<void> {
+		const { handler } = captureHandler();
+		const { ctx } = makeCtx();
+		const run = handler("", ctx);
+		await waitForSessionDone();
+		sessionState.done?.({ intent: "cancel", transcript: "" });
+		await run;
+	}
+
+	function lastEngineConfig(): { numThreads?: number } | undefined {
+		// `createSttEngine` is hoisted-typed without params, so vi.fn's typing
+		// sees `mock.calls` as `[][]` — reach the runtime config via the same
+		// unknown cast the language-hint suite uses.
+		const lastCall = createSttEngine.mock.calls.at(-1) as unknown as Array<{ numThreads?: number }>;
+		return lastCall?.[0];
+	}
+
+	it("loads the config exactly once per invocation, before engine construction", async () => {
+		await runOnce();
+		const loadVoiceConfigMock = vi.mocked(loadVoiceConfig);
+		expect(loadVoiceConfigMock).toHaveBeenCalledOnce();
+		expect(loadVoiceConfigMock.mock.invocationCallOrder[0]).toBeLessThan(createSttEngine.mock.invocationCallOrder[0]);
+	});
+
+	it("threads a valid numThreads (8) into engine construction", async () => {
+		vi.mocked(loadVoiceConfig).mockReturnValueOnce({ numThreads: 8 });
+		await runOnce();
+		expect(lastEngineConfig()?.numThreads).toBe(8);
+	});
+
+	it("routes an invalid numThreads ('eight') through the real decoder to 4", async () => {
+		// The importOriginal spread in the voice-config mock keeps
+		// `resolveNumThreads` real, so "eight" exercises the production
+		// decoder, not a stub.
+		vi.mocked(loadVoiceConfig).mockReturnValueOnce({ numThreads: "eight" as unknown as number });
+		await runOnce();
+		expect(lastEngineConfig()?.numThreads).toBe(4);
+	});
+});
+
+// ── Commit drain & teardown ordering ────────────────────────────────────────
+describe("handleVoiceCommand — commit drain & teardown ordering", () => {
+	beforeEach(() => {
+		isModelDownloaded.mockReturnValue(true);
+		assertModelIntact.mockReset();
+		createSttEngine.mockReset().mockResolvedValue({
+			recognize: vi.fn(async () => ""),
+			release: sttEngineRelease,
+		});
+		createMic.mockReset().mockResolvedValue({ on: vi.fn(), once: vi.fn(), stop: vi.fn() });
+		// mockClear keeps the hoisted default implementation (finalTranscript-
+		// Promise pre-resolved to "") that every non-overridden commit needs.
+		startDictationPipeline.mockClear();
+		sttEngineRelease.mockClear();
+		sessionState.done = undefined;
+	});
+
+	// Per-test drain control: override the pipeline mock for exactly one call.
+	// Returns the handle so tests can assert on stop() ordering.
+	function overrideDrain(promise: Promise<string>) {
+		const handle = {
+			finalTranscriptPromise: promise,
+			isPaused: () => false as const,
+			setPaused: vi.fn(),
+			setHallucinationFilterEnabled: vi.fn(),
+			stop: vi.fn(),
+		};
+		startDictationPipeline.mockImplementationOnce(() => handle);
+		return handle;
+	}
+
+	async function startRun() {
+		const { handler } = captureHandler();
+		const { ctx, pasteToEditor } = makeCtx();
+		const run = handler("", ctx);
+		await waitForSessionDone();
+		return { pasteToEditor, run };
+	}
+
+	it("pastes the drained transcript when it extends beyond the commit merge", async () => {
+		const drain = makeDrain<string>();
+		overrideDrain(drain.promise);
+		const { pasteToEditor, run } = await startRun();
+		// Reducer merge = committed finals + visible partial ("hello wor").
+		sessionState.done?.({ intent: "commit", transcript: "hello wor" });
+		drain.resolve("hello world"); // drain-time final extends the merge
+		await run;
+		expect(pasteToEditor).toHaveBeenCalledWith("hello world");
+	});
+
+	it("keeps the commit merge when the drain collapses to prior finals (drain-time rejection)", async () => {
+		// A drain-time decode error dispatches empty text, so the drain
+		// collapses to the prior finals — which the merge already extends.
+		overrideDrain(Promise.resolve("first sentence"));
+		const { pasteToEditor, run } = await startRun();
+		sessionState.done?.({ intent: "commit", transcript: "first sentence second senten" });
+		await run;
+		// The visible partial "second senten" must NOT be dropped.
+		expect(pasteToEditor).toHaveBeenCalledWith("first sentence second senten");
+	});
+
+	it("falls back to the reducer merge on an empty drain", async () => {
+		// Hoisted default: finalTranscriptPromise = Promise.resolve("").
+		const { pasteToEditor, run } = await startRun();
+		sessionState.done?.({ intent: "commit", transcript: "merge text" });
+		await run;
+		expect(pasteToEditor).toHaveBeenCalledWith("merge text");
+	});
+
+	it("returns on cancel without awaiting the drain (held drain must not hang the handler)", async () => {
+		const drain = makeDrain<string>(); // never resolved
+		overrideDrain(drain.promise);
+		const { pasteToEditor, run } = await startRun();
+		sessionState.done?.({ intent: "cancel", transcript: "" });
+		await Promise.race([
+			run,
+			new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error("handler hung on the cancel drain")), 250),
+			),
+		]);
+		expect(pasteToEditor).not.toHaveBeenCalled();
+		expect(sttEngineRelease).toHaveBeenCalledOnce(); // immediate release, no drain await
+	});
+
+	it("stops the mic while the commit drain is still pending (drain-then-abort ordering — review I2)", async () => {
+		const drain = makeDrain<string>();
+		const handle = overrideDrain(drain.promise);
+		const { run } = await startRun();
+		sessionState.done?.({ intent: "commit", transcript: "merge" });
+
+		// stop() must fire to end the mic BEFORE the drain settles — it is what
+		// triggers the drain; the abort now comes only after.
+		await new Promise<void>((r) => setImmediate(r));
+		expect(handle.stop).toHaveBeenCalledOnce();
+
+		drain.resolve("merge");
+		await run;
+	});
+
+	it("bounds the commit drain: a hung drain falls back to the reducer merge (review I1)", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout"] });
+		try {
+			const drain = makeDrain<string>(); // never resolved — simulated park
+			overrideDrain(drain.promise);
+			const { pasteToEditor, run } = await startRun();
+			sessionState.done?.({ intent: "commit", transcript: "merge text" });
+
+			await vi.advanceTimersByTimeAsync(10_000);
+			await run;
+			expect(pasteToEditor).toHaveBeenCalledWith("merge text");
+			expect(sttEngineRelease).toHaveBeenCalledOnce();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("releases the engine only after the commit drain settles (invocationCallOrder)", async () => {
+		const drain = makeDrain<string>();
+		overrideDrain(drain.promise);
+		const drainSettled = vi.fn();
+		void drain.promise.then(drainSettled); // registered before the teardown's await
+		const { run } = await startRun();
+		sessionState.done?.({ intent: "commit", transcript: "merge text" });
+
+		// Parked on the drain: a macrotask later, release must not have run.
+		await new Promise<void>((r) => setImmediate(r));
+		expect(sttEngineRelease).not.toHaveBeenCalled();
+
+		drain.resolve("merge text"); // no extension → merge kept
+		await run;
+		expect(sttEngineRelease).toHaveBeenCalledOnce();
+		expect(drainSettled).toHaveBeenCalledOnce();
+		expect(drainSettled.mock.invocationCallOrder[0]).toBeLessThan(sttEngineRelease.mock.invocationCallOrder[0]);
 	});
 });

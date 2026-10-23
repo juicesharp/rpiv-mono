@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { verifyShipManifest } from "./manifest.js";
+import { verifyShipManifest } from "./manifest.ts";
 
 /**
  * Builds a throwaway package dir: `package.json` with the given `files` array

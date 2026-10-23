@@ -15,7 +15,7 @@ export type {
 	StageStatus,
 	WorkflowHeader,
 	WorkflowStage,
-} from "./state.js";
+} from "./state.ts";
 export {
 	appendHeader,
 	appendLoopCap,
@@ -44,4 +44,4 @@ export {
 	stateFilePath,
 	summarizeRun,
 	VALID_NAME,
-} from "./state.js";
+} from "./state.ts";

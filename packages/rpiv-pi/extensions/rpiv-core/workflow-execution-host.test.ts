@@ -15,9 +15,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const registerWorkflowExecutionHost = vi.fn();
 vi.mock("@juicesharp/rpiv-workflow/startup", () => ({ registerWorkflowExecutionHost }));
 
-import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { SINGLE_UNIT_KEY } from "./run-lane-registry.js";
-import { registerWorkflowExecutionHostProviderHook } from "./workflow-execution-host.js";
+import { createLaneRelayUiContext } from "./lane-relay-ui.ts";
+import { SINGLE_UNIT_KEY } from "./run-lane-registry.ts";
+import { registerWorkflowExecutionHostProviderHook } from "./workflow-execution-host.ts";
 
 type SessionStartHandler = (ev: unknown, ctx: unknown) => unknown | Promise<unknown>;
 

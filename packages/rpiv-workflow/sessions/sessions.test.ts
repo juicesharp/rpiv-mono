@@ -25,14 +25,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StageDef } from "../api.js";
-import { LifecycleDispatcher } from "../events.js";
-import { WorkflowAbortError } from "../internal-utils.js";
-import type { Output } from "../output.js";
-import { DEFAULT_TRIGGER } from "../triggers.js";
-import type { RunState, StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
-import { bashStrikesRemaining } from "./bash-strikes.js";
-import { classifyAndHandleAbort } from "./sessions.js";
+import type { StageDef } from "../api.ts";
+import { LifecycleDispatcher } from "../events.ts";
+import { WorkflowAbortError } from "../internal-utils.ts";
+import type { Output } from "../output.ts";
+import { DEFAULT_TRIGGER } from "../triggers.ts";
+import type { RunState, StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.ts";
+import { bashStrikesRemaining } from "./bash-strikes.ts";
+import { classifyAndHandleAbort } from "./sessions.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures — the minimal slice of sessions.test.ts's wiring the classifier needs

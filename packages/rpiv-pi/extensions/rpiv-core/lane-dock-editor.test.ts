@@ -1,8 +1,8 @@
 import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type DockDecisionContext, type DockKey, decideDockAction, LaneDockEditor } from "./lane-dock-editor.js";
-import { __resetRunLaneRegistry, listLanes, recordRun, retireRun } from "./run-lane-registry.js";
+import { type DockDecisionContext, type DockKey, decideDockAction, LaneDockEditor } from "./lane-dock-editor.ts";
+import { __resetRunLaneRegistry, listLanes, recordRun, retireRun } from "./run-lane-registry.ts";
 
 /** Base context: prompt empty, no autocomplete, two rows. */
 function ctx(overrides: Partial<DockDecisionContext> = {}): DockDecisionContext {

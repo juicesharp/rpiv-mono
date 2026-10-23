@@ -1,18 +1,18 @@
 import { flushTraces, init } from "@mlflow/core";
-import { type MlflowConfig, resolveMlflowConfig } from "../../config.js";
-import type { TelemetryEvent } from "../../types/events.js";
-import type { TelemetryProvider } from "../../types/provider.js";
-import { onAttributeEvent } from "./attribute-events.js";
-import { onLlmRequestEnd, onLlmRequestStart, onMessageEnd } from "./llm-spans.js";
-import { MLFLOW_PROVIDER_META } from "./meta.js";
-import { onSessionShutdown } from "./session-shutdown.js";
-import { MlflowSpanRegistry } from "./span-registry.js";
-import { onSubAgentEvent } from "./subagent-spans.js";
-import { onToolExecutionEnd, onToolExecutionStart } from "./tool-spans.js";
-import { onAgentEnd, onAgentStart } from "./turn-spans.js";
+import { type MlflowConfig, resolveMlflowConfig } from "../../config.ts";
+import type { TelemetryEvent } from "../../types/events.ts";
+import type { TelemetryProvider } from "../../types/provider.ts";
+import { onAttributeEvent } from "./attribute-events.ts";
+import { onLlmRequestEnd, onLlmRequestStart, onMessageEnd } from "./llm-spans.ts";
+import { MLFLOW_PROVIDER_META } from "./meta.ts";
+import { onSessionShutdown } from "./session-shutdown.ts";
+import { MlflowSpanRegistry } from "./span-registry.ts";
+import { onSubAgentEvent } from "./subagent-spans.ts";
+import { onToolExecutionEnd, onToolExecutionStart } from "./tool-spans.ts";
+import { onAgentEnd, onAgentStart } from "./turn-spans.ts";
 
 // META lives in ./meta.js (no @mlflow/core); re-exported to keep the import surface.
-export { MLFLOW_PROVIDER_META } from "./meta.js";
+export { MLFLOW_PROVIDER_META } from "./meta.ts";
 
 // ---------------------------------------------------------------------------
 // MlflowProvider — per-turn traces with nested tool + llm-request spans

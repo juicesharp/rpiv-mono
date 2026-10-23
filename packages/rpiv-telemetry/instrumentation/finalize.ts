@@ -1,6 +1,6 @@
-import { shutdownTelemetryDispatcher } from "../dispatcher.js";
-import { flushOrphanSubAgents } from "./orphan-flush.js";
-import { teardownTelemetry } from "./state.js";
+import { shutdownTelemetryDispatcher } from "../dispatcher.ts";
+import { flushOrphanSubAgents } from "./orphan-flush.ts";
+import { teardownTelemetry } from "./state.ts";
 
 /**
  * Final-event window during session shutdown. Order matters:

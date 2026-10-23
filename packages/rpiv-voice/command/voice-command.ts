@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { createMic, type DecibriLike } from "../audio/mic-source.js";
+import { appendErrorLog } from "../audio/error-log.ts";
+import { createMic, type DecibriLike } from "../audio/mic-source.ts";
 import {
 	assertModelIntact,
 	ensureModelDownloaded,
@@ -7,16 +8,21 @@ import {
 	isModelDownloaded,
 	ModelInstallError,
 	removeModelInstall,
-} from "../audio/model-download.js";
-import { createSttEngine, type SttEngine } from "../audio/stt-engine.js";
-import { isHallucinationFilterEnabled, loadVoiceConfig } from "../config/voice-config.js";
-import { getActiveLocale, t } from "../state/i18n-bridge.js";
-import type { VoiceResult } from "../state/state-reducer.js";
-import { VoiceSession } from "../state/voice-session.js";
-import type { SplashPhase } from "../view/components/splash-view.js";
-import { STATUS_BAR_PULSE_FRAME_INTERVAL_MS } from "../view/components/status-bar-view.js";
-import { startDictationPipeline } from "./pipeline-runner.js";
-import { runWithSplash } from "./splash-runner.js";
+} from "../audio/model-download.ts";
+import { createSttEngine, type SttEngine } from "../audio/stt-engine.ts";
+import {
+	isHallucinationFilterEnabled,
+	loadVoiceConfig,
+	resolveNumThreads,
+	type VoiceConfig,
+} from "../config/voice-config.ts";
+import { getActiveLocale, t } from "../state/i18n-bridge.ts";
+import type { VoiceResult } from "../state/state-reducer.ts";
+import { VoiceSession } from "../state/voice-session.ts";
+import type { SplashPhase } from "../view/components/splash-view.ts";
+import { STATUS_BAR_PULSE_FRAME_INTERVAL_MS } from "../view/components/status-bar-view.ts";
+import { type PipelineHandle, startDictationPipeline } from "./pipeline-runner.ts";
+import { runWithSplash } from "./splash-runner.ts";
 
 export const VOICE_COMMAND_NAME = "voice";
 
@@ -56,6 +62,13 @@ function whisperLanguageForLocale(locale: string | undefined): string | undefine
 	return isWhisperSupported(base) ? base : undefined;
 }
 
+// Upper bound on the commit drain: mic shutdown plus one final Whisper decode
+// of a sub-12 s segment (typically well under a second). A hung native decode
+// or a mic that never emits a terminal event must not park the handler forever
+// with the overlay already closed — on timeout the reducer's commit merge,
+// already the floor, is pasted as-is and a breadcrumb lands in errors.log.
+const COMMIT_DRAIN_TIMEOUT_MS = 10_000;
+
 const SPLASH_INITIAL_ENGINE: SplashPhase = { kind: "loading_engine" };
 function splashInitialDownload(): SplashPhase {
 	return { kind: "downloading", message: t("splash.preparing", "Preparing model…") };
@@ -90,16 +103,23 @@ async function handleVoiceCommand(ctx: ExtensionCommandContext): Promise<void> {
 		return;
 	}
 
-	const preflight = await runPreflight(ctx);
+	// One config snapshot per invocation: engine construction (numThreads) and
+	// the dictation session (VoiceSession's persistedConfig, the hallucination
+	// filter default) must read the same load, so it happens once, here.
+	// Settings saves are the exception — they re-read the file at save time so
+	// mid-session hand edits of JSON-only keys round-trip.
+	const persistedConfig = loadVoiceConfig();
+
+	const preflight = await runPreflight(ctx, persistedConfig);
 	if (!preflight) return;
 
-	const result = await runDictationSession(ctx, preflight.sttEngine, preflight.mic);
+	const result = await runDictationSession(ctx, preflight.sttEngine, preflight.mic, persistedConfig);
 	if (result.intent === "commit" && result.transcript) {
 		ctx.ui.pasteToEditor(result.transcript);
 	}
 }
 
-async function runPreflight(ctx: ExtensionCommandContext): Promise<Preflight | null> {
+async function runPreflight(ctx: ExtensionCommandContext, persistedConfig: VoiceConfig): Promise<Preflight | null> {
 	try {
 		return await runWithSplash<Preflight>(
 			ctx,
@@ -151,6 +171,7 @@ async function runPreflight(ctx: ExtensionCommandContext): Promise<Preflight | n
 						decoderPath: paths.decoderPath,
 						tokensPath: paths.tokensPath,
 						language: whisperLanguageForLocale(getActiveLocale()),
+						numThreads: resolveNumThreads(persistedConfig),
 					});
 				} catch (e) {
 					// Preserve the inner stage tag (e.g. "stale_install") instead of
@@ -209,17 +230,11 @@ async function runDictationSession(
 	ctx: ExtensionCommandContext,
 	sttEngine: SttEngine,
 	mic: DecibriLike,
+	persistedConfig: VoiceConfig,
 ): Promise<VoiceResult> {
 	const controller = new AbortController();
-	const persistedConfig = loadVoiceConfig();
 
-	let pipelineHandle:
-		| {
-				setPaused: (v: boolean) => void;
-				setHallucinationFilterEnabled: (v: boolean) => void;
-				stop: () => void;
-		  }
-		| undefined;
+	let pipelineHandle: PipelineHandle | undefined;
 	let pulseTick: ReturnType<typeof setInterval> | undefined;
 
 	const result = await ctx.ui.custom<VoiceResult>((tui, theme, _kb, done) => {
@@ -245,7 +260,52 @@ async function runDictationSession(
 	});
 
 	if (pulseTick) clearInterval(pulseTick);
+	let finalResult: VoiceResult = result;
+	if (result.intent === "commit") {
+		// Commit-drain merge floor. The reducer's commit merge — committed
+		// finals plus the visible partial (`state.partialTranscript`, an
+		// accumulator in neither pipeline store) — is the floor.
+		// finalTranscriptPromise resolves only after the whole finals chain
+		// settles, so the drained text equals the committed finals plus the
+		// drain-time final only when that final was accepted; on
+		// hallucination/RMS disagreement or a drain-time decode error the drain
+		// collapses to the prior finals — text the merge already extends.
+		// Replace the merge only when the drain extends beyond it as text; an
+		// empty drain fails `if (drained)` outright.
+		//
+		// Ordering: stop the mic and drain BEFORE aborting. The drain-time
+		// final is the one decode whose outcome the user consumes; the pipeline
+		// treats an aborted signal as cancel teardown (it suppresses error
+		// breadcrumbs and skips stranded decode work), so the commit drain must
+		// run while the signal is live. Cancel inverts this: the reducer aborts
+		// first and the pipeline short-circuits the drain fire-and-forget.
+		pipelineHandle?.stop();
+		const drained = await boundedDrain(pipelineHandle?.finalTranscriptPromise);
+		if (drained && !result.transcript.startsWith(drained)) {
+			finalResult = { ...result, transcript: drained };
+		}
+	}
 	if (!controller.signal.aborted) controller.abort();
 	sttEngine.release();
-	return result;
+	return finalResult;
+}
+
+// Bounds the commit-drain await so a mic that never emits a terminal event or
+// a hung native decode cannot park the handler after the overlay closed.
+// Resolves `undefined` on timeout — the caller then keeps the reducer merge.
+async function boundedDrain(drain: Promise<string> | undefined): Promise<string | undefined> {
+	if (!drain) return undefined;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<undefined>((resolve) => {
+		timer = setTimeout(() => resolve(undefined), COMMIT_DRAIN_TIMEOUT_MS);
+	});
+	try {
+		const drained = await Promise.race([drain, timeout]);
+		if (drained === undefined) {
+			appendErrorLog("stt.drain", new Error(`commit drain timed out after ${COMMIT_DRAIN_TIMEOUT_MS}ms`));
+		}
+		return drained;
+	} finally {
+		clearTimeout(timer);
+	}
 }

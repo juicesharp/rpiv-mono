@@ -5,9 +5,9 @@
  * `effectiveLoopOf`). Runner-free — safe on `registration`.
  */
 
-import type { AssessLoop, VerifySpec } from "../api.js";
-import { assertShape } from "../judge.js";
-import { judgeSlotShapeIssues, VERIFY_LOOP_DEFAULTS } from "./constructors.js";
+import type { AssessLoop, VerifySpec } from "../api.ts";
+import { assertShape } from "../judge.ts";
+import { judgeSlotShapeIssues, VERIFY_LOOP_DEFAULTS } from "./constructors.ts";
 
 /**
  * Per-stage post-condition judge: after each attempt of the stage completes,

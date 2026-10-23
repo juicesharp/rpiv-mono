@@ -1,6 +1,6 @@
-import type { BindingContext, GlobalSelector } from "../state/selectors/contract.js";
-import type { VoiceState } from "../state/state.js";
-import type { StatefulView } from "./stateful-view.js";
+import type { BindingContext, GlobalSelector } from "../state/selectors/contract.ts";
+import type { VoiceState } from "../state/state.ts";
+import type { StatefulView } from "./stateful-view.ts";
 
 export interface ComponentBinding<P> {
 	readonly component: StatefulView<P>;

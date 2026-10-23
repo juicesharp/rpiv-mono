@@ -16,9 +16,9 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { SelectItem } from "@earendil-works/pi-tui";
-import type { ModelsConfigSchema, ModelThinkingLevelValue } from "../models-config.js";
-import { bundledAgentNames, loadWorkflowMap, skillCommandNames } from "../models-config-sources.js";
-import { showFilterablePicker } from "../models-picker.js";
+import type { ModelsConfigSchema, ModelThinkingLevelValue } from "../models-config.ts";
+import { bundledAgentNames, loadWorkflowMap, skillCommandNames } from "../models-config-sources.ts";
+import { showFilterablePicker } from "../models-picker.ts";
 
 // ---------------------------------------------------------------------------
 // Scope constants

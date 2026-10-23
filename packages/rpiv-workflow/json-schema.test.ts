@@ -12,9 +12,9 @@ import {
 	jsonSchemaConverter,
 	jsonSchemaToStandard,
 	validateToJsonSchemaIssues,
-} from "./json-schema.js";
-import { isSchemaCompatible } from "./schema-compat.js";
-import { typeboxSchema } from "./typebox-adapter.js";
+} from "./json-schema.ts";
+import { isSchemaCompatible } from "./schema-compat.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
 
 // ---------------------------------------------------------------------------
 // isJsonSchemaObject

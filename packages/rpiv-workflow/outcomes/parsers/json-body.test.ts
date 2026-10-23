@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { fs as fsHandle, opaque } from "../../handle.js";
-import type { ParseContext } from "../../output-spec.js";
-import { jsonBodyParser } from "./json-body.js";
+import { fs as fsHandle, opaque } from "../../handle.ts";
+import type { ParseContext } from "../../output-spec.ts";
+import { jsonBodyParser } from "./json-body.ts";
 
 const ctxOf = (cwd: string, artifacts: ParseContext["artifacts"]): ParseContext => ({
 	cwd,

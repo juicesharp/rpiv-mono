@@ -7,7 +7,7 @@
 
 import type { GuidanceFields } from "@juicesharp/rpiv-config";
 import { configPath, loadJsonConfigWithLegacyFallback, saveJsonConfig } from "@juicesharp/rpiv-config";
-import { EFFORT_ORDINAL, type GradedEffort } from "./messages.js";
+import { EFFORT_ORDINAL, type GradedEffort } from "./messages.ts";
 
 const ADVISOR_CONFIG_PATH = configPath("rpiv-advisor", "advisor.json");
 

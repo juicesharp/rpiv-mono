@@ -1,4 +1,4 @@
-import type { Task } from "../tool/types.js";
+import type { Task } from "../tool/types.ts";
 
 /**
  * Detect whether merging `newBlockedBy` into `taskId`'s `blockedBy` set would

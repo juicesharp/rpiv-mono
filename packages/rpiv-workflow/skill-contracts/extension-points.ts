@@ -5,9 +5,9 @@
  * both anchored on `Symbol.for` global slots (same pattern as `registry.ts`).
  */
 
-import type { Workflow } from "../api.js";
-import { globalSlot } from "../internal-utils.js";
-import type { CompositionComparator, SkillContractMap } from "../skill-contract.js";
+import type { Workflow } from "../api.ts";
+import { globalSlot } from "../internal-utils.ts";
+import type { CompositionComparator, SkillContractMap } from "../skill-contract.ts";
 
 const COMPARATORS_KEY = Symbol.for("@juicesharp/rpiv-workflow:composition-comparators");
 const DERIVERS_KEY = Symbol.for("@juicesharp/rpiv-workflow:outcome-derivers");

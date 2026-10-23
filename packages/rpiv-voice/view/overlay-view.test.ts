@@ -1,9 +1,9 @@
 import type { Component } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 
-import { initialVoiceState, type VoiceState } from "../state/state.js";
-import { OverlayView } from "./overlay-view.js";
-import type { ScreenContentStrategy } from "./screen-content-strategy.js";
+import { initialVoiceState, type VoiceState } from "../state/state.ts";
+import { OverlayView } from "./overlay-view.ts";
+import type { ScreenContentStrategy } from "./screen-content-strategy.ts";
 
 // Minimal fake Component: emits a fixed line per call. The OverlayView
 // pipeline pours these through pi-tui's Container, which preserves line count

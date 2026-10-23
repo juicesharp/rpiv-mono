@@ -16,8 +16,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerVoiceCommand } from "./command/voice-command.js";
-import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
+import { registerVoiceCommand } from "./command/voice-command.ts";
+import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
 
 type I18nLoader = {
 	registerLocalesFromDir: (namespace: string, packageUrl: string, options?: { label?: string }) => void;

@@ -32,8 +32,8 @@ vi.mock("@earendil-works/pi-ai/compat", async (importOriginal) => {
 // getRuntimeCompleteSimple stays REAL: mock hosts have no `runtime` slot, so
 // tests default to the legacy path, and runtime-facade tests opt in by
 // defining a `runtime` slot on ctx.modelRegistry.
-vi.mock("./pi-compat.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("./pi-compat.js")>();
+vi.mock("./pi-compat.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./pi-compat.ts")>();
 	return {
 		getRuntimeCompleteSimple: actual.getRuntimeCompleteSimple,
 		loadCompleteSimple: vi.fn(),
@@ -57,8 +57,8 @@ import {
 	registerInvalidationHooks,
 	registerMessageEndSnapshot,
 	userMessageText,
-} from "./btw.js";
-import { loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.js";
+} from "./btw.ts";
+import { loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.ts";
 
 // Pins the substring `isStaleCtxError` matches in pi-core's invalidated-proxy error.
 const STALE_CTX_MESSAGE = "This extension ctx is stale after session replacement or reload.";

@@ -13,9 +13,9 @@
  */
 
 import { appendFileSync, mkdirSync } from "node:fs";
-import { formatError } from "../internal-utils.js";
-import { runsDir, stateFilePath } from "./paths.js";
-import type { LoopCapRow, RoutingDecision, WorkflowHeader, WorkflowStage } from "./state.js";
+import { formatError } from "../internal-utils.ts";
+import { runsDir, stateFilePath } from "./paths.ts";
+import type { LoopCapRow, RoutingDecision, WorkflowHeader, WorkflowStage } from "./state.ts";
 
 /**
  * Shared append primitive: ensure the runs directory exists, then

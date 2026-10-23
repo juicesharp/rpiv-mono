@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { RecordingStatus } from "../../state/state.js";
-import type { StatefulView } from "../stateful-view.js";
+import type { RecordingStatus } from "../../state/state.ts";
+import type { StatefulView } from "../stateful-view.ts";
 
 const COLOR_ACCENT = "accent";
 const COLOR_DIM = "dim";

@@ -6,8 +6,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { isAbortError, WorkflowConfigError } from "./internal-utils.js";
-import { Semaphore } from "./semaphore.js";
+import { isAbortError, WorkflowConfigError } from "./internal-utils.ts";
+import { Semaphore } from "./semaphore.ts";
 
 /** A manually-resolvable promise — the test controls when each task settles. */
 function deferred<T = void>() {

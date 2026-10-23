@@ -1,12 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadTelemetryConfig } from "../config.js";
-import { dispatchTelemetryEvent } from "../dispatcher.js";
-import { registerConfiguredProviders } from "../providers/index.js";
-import { PI_HANDLERS } from "./pi-handlers.js";
-import { eventBusUnsubscribers, setLlmPayloadMode } from "./state.js";
-import { handleSubAgentBusEvent, SUBAGENT_HANDLERS } from "./subagent-handlers.js";
+import { loadTelemetryConfig } from "../config.ts";
+import { dispatchTelemetryEvent } from "../dispatcher.ts";
+import { registerConfiguredProviders } from "../providers/index.ts";
+import { PI_HANDLERS } from "./pi-handlers.ts";
+import { eventBusUnsubscribers, setLlmPayloadMode } from "./state.ts";
+import { handleSubAgentBusEvent, SUBAGENT_HANDLERS } from "./subagent-handlers.ts";
 
-export { teardownTelemetry } from "./state.js";
+export { teardownTelemetry } from "./state.ts";
 
 /**
  * Wire rpiv-telemetry into Pi.

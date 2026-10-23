@@ -17,8 +17,8 @@ import {
 	type StageDef,
 	type VerifySpec,
 	type Workflow,
-} from "./api.js";
-import { type Judge, judge, marksCanonicalFold, type NamedOutcome } from "./judge.js";
+} from "./api.ts";
+import { type Judge, judge, marksCanonicalFold, type NamedOutcome } from "./judge.ts";
 import {
 	all,
 	any,
@@ -38,9 +38,9 @@ import {
 	panelSpecOf,
 	synthesizeVerifyLoop,
 	verify,
-} from "./loop-constructors.js";
-import type { Output } from "./output.js";
-import { eq, gt } from "./predicates.js";
+} from "./loop-constructors.ts";
+import type { Output } from "./output.ts";
+import { eq, gt } from "./predicates.ts";
 
 const verdictOutcome = { name: "verdict" } as Judge["outcome"];
 
@@ -180,6 +180,18 @@ describe("fanout() / iterate() / assess() constructors", () => {
 		expect(() => fanout({ units: () => [], concurrency: -2 })).toThrow(/concurrency must be an integer >= 1/);
 	});
 
+	it("fanout() rejects non-integer / < 1 retryHaltedUnits", () => {
+		expect(() => fanout({ units: () => [], retryHaltedUnits: 0 })).toThrow(
+			/retryHaltedUnits must be an integer >= 1/,
+		);
+		expect(() => fanout({ units: () => [], retryHaltedUnits: 1.5 })).toThrow(
+			/retryHaltedUnits must be an integer >= 1/,
+		);
+		expect(() => fanout({ units: () => [], retryHaltedUnits: -2 })).toThrow(
+			/retryHaltedUnits must be an integer >= 1/,
+		);
+	});
+
 	it("loop max throws on non-integer / < 1", () => {
 		expect(() => fanout({ units: () => [], max: 0 })).toThrow(/max must be an integer >= 1/);
 		expect(() => iterate({ next: () => null, max: 1.5 })).toThrow(/max must be an integer >= 1/);
@@ -213,6 +225,16 @@ describe("fanout() / iterate() / assess() constructors", () => {
 	it("fanout() carries an explicit depArtifactFlag (and omits it by default)", () => {
 		expect(fanout({ units: () => [], depArtifactFlag: "--upstream" }).depArtifactFlag).toBe("--upstream");
 		expect(fanout({ units: () => [] }).depArtifactFlag).toBeUndefined();
+	});
+
+	it("fanout() carries haltWhenAllFailed (and omits it by default)", () => {
+		expect(fanout({ units: () => [], haltWhenAllFailed: true }).haltWhenAllFailed).toBe(true);
+		expect(fanout({ units: () => [] }).haltWhenAllFailed).toBeUndefined();
+	});
+
+	it("fanout() carries an explicit retryHaltedUnits (and omits it by default)", () => {
+		expect(fanout({ units: () => [], retryHaltedUnits: 2 }).retryHaltedUnits).toBe(2);
+		expect(fanout({ units: () => [] }).retryHaltedUnits).toBeUndefined();
 	});
 
 	it("assess() throws on a non-function done / feedForward", () => {

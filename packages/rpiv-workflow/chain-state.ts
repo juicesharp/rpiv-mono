@@ -11,18 +11,18 @@
  * `internal-utils.ts`; anything in this file is workflow-chain domain logic.
  */
 
-import type { PromptFn, StageDef } from "./api.js";
-import { type Artifact, handleToString } from "./handle.js";
-import { isFailedOutput, type Output } from "./output.js";
-import { readName, readsAll } from "./stage-def.js";
-import { resolvePublishName } from "./stage-identity.js";
-import type { RunState } from "./types.js";
+import type { PromptFn, StageDef } from "./api.ts";
+import { type Artifact, handleToString } from "./handle.ts";
+import { isFailedOutput, type Output } from "./output.ts";
+import { readName, readsAll } from "./stage-def.ts";
+import { actsPublishName, resolvePublishName } from "./stage-identity.ts";
+import type { RunState } from "./types.ts";
 
 // Stage-identity projections live in the dependency-free `stage-identity.ts`
 // leaf so the load-time validators can consume them without importing this
 // runtime-state module. Re-exported here so this module's own runtime callers
 // (runner/*, registration) keep a single chain-state import.
-export { isDispatchingStage, resolvePublishName, resolveSkill } from "./stage-identity.js";
+export { isDispatchingStage, resolvePublishName, resolveSkill } from "./stage-identity.ts";
 
 /**
  * Canonical accessor for "the primary artifact the chain is currently
@@ -194,6 +194,22 @@ export function applyCompletedStage(state: RunState, def: StageDef, stageName: s
 		}
 		slot.push(output);
 		return;
+	}
+	// A side-effect stage with an EXPLICITLY NAMED outcome publishes onto that
+	// channel too (`actsPublishName` — explicit name only, never the record-key
+	// fallback), honoring the `Outcome.name` contract for acts stages. Without
+	// this, a gate folding an acts outcome's channel (validate-fix's
+	// `remediation` digest — the fix-round count AND the unchanged-tree stop)
+	// read a channel no code path ever wrote. The rolling primary stays
+	// governed by the acts rules below — a side-effect outcome never rolls it.
+	const actsKey = actsPublishName(def);
+	if (actsKey !== undefined) {
+		let slot = state.named[actsKey];
+		if (!slot) {
+			slot = [];
+			state.named[actsKey] = slot;
+		}
+		slot.push(output);
 	}
 	clearPrimaryForActs(state, def);
 }

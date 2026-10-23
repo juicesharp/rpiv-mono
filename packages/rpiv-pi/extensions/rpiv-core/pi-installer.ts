@@ -8,7 +8,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { EXIT_TIMEOUT, SIGKILL_GRACE_MS } from "./constants.js";
+import { EXIT_TIMEOUT, SIGKILL_GRACE_MS } from "./constants.ts";
 
 export interface PiInstallResult {
 	code: number;

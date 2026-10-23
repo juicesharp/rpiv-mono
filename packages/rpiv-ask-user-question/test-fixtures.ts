@@ -1,13 +1,13 @@
 import { vi } from "vitest";
-import type { QuestionnaireState } from "./state/state.js";
-import type { ApplyContext } from "./state/state-reducer.js";
-import type { QuestionData } from "./tool/types.js";
-import type { MultiSelectView, MultiSelectViewProps } from "./view/components/multi-select-view.js";
-import type { PreviewPane, PreviewPaneProps } from "./view/components/preview/preview-pane.js";
-import type { SubmitPickerProps } from "./view/components/submit-picker.js";
-import type { WrappingSelectItem } from "./view/components/wrapping-select.js";
-import type { StatefulView } from "./view/stateful-view.js";
-import type { TabComponents } from "./view/tab-components.js";
+import type { QuestionnaireState } from "./state/state.ts";
+import type { ApplyContext } from "./state/state-reducer.ts";
+import type { QuestionData } from "./tool/types.ts";
+import type { MultiSelectView, MultiSelectViewProps } from "./view/components/multi-select-view.ts";
+import type { PreviewPane, PreviewPaneProps } from "./view/components/preview/preview-pane.ts";
+import type { SubmitPickerProps } from "./view/components/submit-picker.ts";
+import type { WrappingSelectItem } from "./view/components/wrapping-select.ts";
+import type { StatefulView } from "./view/stateful-view.ts";
+import type { TabComponents } from "./view/tab-components.ts";
 
 export const itemsRegular: ReadonlyArray<WrappingSelectItem> = [
 	{ kind: "option", label: "A" },
@@ -129,6 +129,7 @@ export function makeMultiSelectViewProps(
 		rows,
 		other: {
 			active: otherActive,
+			checked: inputBuffer.trim().length > 0,
 			inputMode: (over.inputMode ?? false) && otherActive,
 			inputBuffer,
 			inputCursorOffset: over.inputCursorOffset,
@@ -151,6 +152,7 @@ export function makeMultiSelectPropsFromState(
 		rows,
 		other: {
 			active: focused && state.optionIndex === question.options.length,
+			checked: false,
 			inputMode: state.inputMode,
 			inputBuffer: "",
 			inputCursorOffset: undefined,

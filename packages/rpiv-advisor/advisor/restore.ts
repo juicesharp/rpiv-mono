@@ -6,17 +6,17 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { modelKey, parseModelKey } from "@juicesharp/rpiv-config";
-import { loadAdvisorConfig, validateDisabledForModels } from "./config.js";
-import { reconcileAdvisorTool } from "./handlers.js";
+import { loadAdvisorConfig, validateDisabledForModels } from "./config.ts";
+import { reconcileAdvisorTool } from "./handlers.ts";
 import {
 	ADVISOR_TOOL_NAME,
 	EFFORT_ORDINAL,
 	errModelUnavailable,
 	msgAdvisorRestored,
 	msgAdvisorRestoredInactive,
-} from "./messages.js";
-import { isExecutorBlocked, setDisabledForModels } from "./policy.js";
-import { setAdvisorEffort, setAdvisorModel } from "./state.js";
+} from "./messages.ts";
+import { isExecutorBlocked, setDisabledForModels } from "./policy.ts";
+import { setAdvisorEffort, setAdvisorModel } from "./state.ts";
 
 /**
  * Module-local "already announced" latch. Pi fires `session_start` for every

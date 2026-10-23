@@ -27,14 +27,14 @@
  * Validation-exhausted from promotion halts exactly as live does.
  */
 
-import { MSG_RESUME_PROMOTED, MSG_RESUME_REATTACHED, REATTACH_PROMPT } from "../messages.js";
-import { readBranch, readSessionRef } from "../transcript.js";
-import type { StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
-import { produceAndValidateOutput } from "./extraction.js";
-import { haltStageWithValidationFailure } from "./halt-routing.js";
-import { postStage } from "./sessions.js";
-import { branchOffsetFor, resendIntoChild } from "./spawn.js";
-import { recordStageSuccess } from "./success-persist.js";
+import { MSG_RESUME_PROMOTED, MSG_RESUME_REATTACHED, REATTACH_PROMPT } from "../messages.ts";
+import { readBranch, readSessionRef } from "../transcript.ts";
+import type { StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.ts";
+import { produceAndValidateOutput } from "./extraction.ts";
+import { haltStageWithValidationFailure } from "./halt-routing.ts";
+import { postStage } from "./sessions.ts";
+import { branchOffsetFor, resendIntoChild } from "./spawn.ts";
+import { recordStageSuccess } from "./success-persist.ts";
 
 // Same two-ctx split as `postStage`: `observerCtx` is the long-lived launcher/observer
 // (user-facing notifications + record + the chain continuation that spawns the

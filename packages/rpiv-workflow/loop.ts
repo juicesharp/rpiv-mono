@@ -36,16 +36,18 @@
  * no-op (pinned behavior).
  */
 
-import type { AssessLoop, LoopDef } from "./api.js";
-import { applyCompletedStage } from "./chain-state.js";
-import { lifecycleCtxFor, skillStageRef } from "./events.js";
-import { nowIso } from "./internal-utils.js";
-import { type AnyJudge, isPanel, type PanelJudge } from "./judge.js";
-import { panelVerdictChannel, panelVerdictDef } from "./loop-constructors.js";
+import type { AssessLoop, LoopDef } from "./api.ts";
+import { applyCompletedStage } from "./chain-state.ts";
+import { lifecycleCtxFor, skillStageRef } from "./events.ts";
+import { nowIso } from "./internal-utils.ts";
+import { type AnyJudge, isPanel, type PanelJudge } from "./judge.ts";
+import { panelVerdictChannel, panelVerdictDef } from "./loop-constructors.ts";
 import {
 	advanceCursor,
+	allFanoutSlotsFailed,
 	buildUnitSession,
 	foldFanoutCompletion,
+	isHaltWhenAllFailed,
 	type LoopCursor,
 	type LoopDeps,
 	type LoopEntry,
@@ -53,11 +55,11 @@ import {
 	type NextStep,
 	presentedKindOf,
 	sequentialStrategyOf,
-} from "./loop-kinds.js";
-import { runFanoutGeneration } from "./loop-parallel.js";
-import { MSG_LOOP_CAP_ADVANCE, MSG_LOOP_ZERO_UNITS } from "./messages.js";
-import { appendLoopCap } from "./state/index.js";
-import type { RunContext, WorkflowHostContext } from "./types.js";
+} from "./loop-kinds.ts";
+import { runFanoutGeneration } from "./loop-parallel.ts";
+import { MSG_LOOP_CAP_ADVANCE, MSG_LOOP_ZERO_UNITS } from "./messages.ts";
+import { appendLoopCap } from "./state/index.ts";
+import type { RunContext, WorkflowHostContext } from "./types.ts";
 
 /**
  * The loop-entry announcement — `onStageStart` then `onLoopStart` with the
@@ -319,6 +321,18 @@ async function finishLoop(
 	run: RunContext,
 	deps: LoopDeps,
 ): Promise<void> {
+	// haltWhenAllFailed — the SINGLE spelling of the all-failed generation-close
+	// halt. It lives here (never a loop-parallel gate twin) because finishLoop is
+	// the one funnel every closing path reaches: the live under-cap finalTail, the
+	// live over-cap `onCap: "advance"` tail (hitCap → finishLoop), the resume
+	// re-dispatch tail (runFanoutResume), and the resume all-filled early tail
+	// (runFanoutGeneration's order.length === 0 shortcut bypasses the
+	// post-dispatch gates). Strict predicate: an over-cap-advancing generation
+	// never qualifies (beyond-cap slots stay unfilled).
+	if (isHaltWhenAllFailed(e.loop) && allFanoutSlotsFailed(cursor)) {
+		await deps.haltLoopWhenAllFailed(hostCtx, run, e, cursor.filledCount ?? 0, cursor.slots?.length ?? 0);
+		return;
+	}
 	projectResult(e.loop, e.entryPair, cursor, run.state);
 	if (isZeroUnitPullLoop(cursor, e.loop)) {
 		hostCtx.ui.notify(MSG_LOOP_ZERO_UNITS(e.skill), "warning");

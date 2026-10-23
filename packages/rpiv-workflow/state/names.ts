@@ -21,9 +21,9 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { formatError } from "../internal-utils.js";
-import { namesFilePath, runsDir, stateFilePath } from "./paths.js";
-import { enumerateRunIds, readFirstJsonlLine } from "./raw.js";
+import { formatError } from "../internal-utils.ts";
+import { namesFilePath, runsDir, stateFilePath } from "./paths.ts";
+import { enumerateRunIds, readFirstJsonlLine } from "./raw.ts";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -18,8 +18,8 @@ import {
 	registerWorkflowExecutionHost,
 	type WorkflowExecution,
 	type WorkflowExecutionProvider,
-} from "./execution-host.js";
-import type { WorkflowHostContext } from "./host.js";
+} from "./execution-host.ts";
+import type { WorkflowHostContext } from "./host.ts";
 
 // A minimal provider: createHost echoes the observer back as the executor — the
 // seam never inspects the host, it only stores/returns the provider.
@@ -66,7 +66,7 @@ describe("execution-host seam", () => {
 	it("survives a re-import of the module (process-global slot)", async () => {
 		const provider = fakeProvider();
 		registerWorkflowExecutionHost(provider);
-		const reimported = await import("./execution-host.js");
+		const reimported = await import("./execution-host.ts");
 		expect(reimported.getWorkflowExecutionProvider()).toBe(provider);
 	});
 });

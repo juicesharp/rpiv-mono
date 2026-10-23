@@ -10,10 +10,11 @@
  * linear.app) pass their own RegExp.
  */
 
-import { url } from "../../handle.js";
-import type { ArtifactCollector } from "../../output-spec.js";
-import { requireOpt } from "./require-opt.js";
-import { textScanCollector } from "./text-scan.js";
+import { url } from "../../handle.ts";
+import type { ArtifactCollector } from "../../output-spec.ts";
+import { requireOpt } from "./require-opt.ts";
+import { textScanCollector } from "./text-scan.ts";
+import type { ToolCall } from "./tool-call.ts";
 
 /**
  * Conservative URL matcher — `https?://` plus non-whitespace, stopping
@@ -26,6 +27,8 @@ const DEFAULT_URL_PATTERN = /\bhttps?:\/\/[^\s<>"'`]+[^\s<>"'`.,;:!?)\]}]/g;
 export interface UrlCollectorOpts {
 	/** Override the default URL pattern (e.g. narrow to one host). */
 	pattern?: RegExp;
+	/** Narrows the tool-argument fallback to matching tool calls (see `textScanCollector`). */
+	match?: (tc: ToolCall) => boolean;
 }
 
 export function urlCollector(opts: UrlCollectorOpts = {}): ArtifactCollector {
@@ -36,5 +39,5 @@ export function urlCollector(opts: UrlCollectorOpts = {}): ArtifactCollector {
 		opts.pattern === undefined || opts.pattern instanceof RegExp,
 	);
 	const pattern = opts.pattern ?? DEFAULT_URL_PATTERN;
-	return textScanCollector({ pattern, toHandle: url, noun: "URL" });
+	return textScanCollector({ pattern, toHandle: url, noun: "URL", match: opts.match });
 }

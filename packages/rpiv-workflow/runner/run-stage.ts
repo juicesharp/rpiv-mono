@@ -20,48 +20,49 @@
  * JSONL failure row via failure.ts.
  */
 
-import type { StageDef, Unit } from "../api.js";
-import { auditCtxFor, failedArgs, notifyPartialArtifacts, recordFatalFailure, runIdentityOf } from "../audit.js";
-import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../chain-state.js";
-import { lifecycleCtxFor, skillStageRef } from "../events.js";
-import { failureMemoSuffix } from "../failure-memos.js";
-import { formatError } from "../internal-utils.js";
-import { announceLoopStart, runLoop } from "../loop.js";
-import { freezesEntryArgsOf } from "../loop-constructors.js";
-import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.js";
-import { ensureUnitDeps } from "../loop-waves.js";
+import type { StageDef, Unit } from "../api.ts";
+import { auditCtxFor, failedArgs, notifyPartialArtifacts, recordFatalFailure, runIdentityOf } from "../audit.ts";
+import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../chain-state.ts";
+import { lifecycleCtxFor, skillStageRef } from "../events.ts";
+import { failureMemoSuffix } from "../failure-memos.ts";
+import { formatError } from "../internal-utils.ts";
+import { announceLoopStart, runLoop } from "../loop.ts";
+import { freezesEntryArgsOf } from "../loop-constructors.ts";
+import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.ts";
+import { ensureUnitDeps } from "../loop-waves.ts";
 import {
+	FAIL_FANOUT_ALL_FAILED,
 	FAIL_LOOP_CAP_HALT,
 	FAIL_VALIDATE_GATE_SKIPPED,
 	FAIL_VERIFY_FAILED,
 	MSG_CONTINUE_FALLBACK,
 	MSG_RESUME_SESSION_FALLBACK,
 	MSG_SNAPSHOT_FAILED,
-} from "../messages.js";
+} from "../messages.ts";
 import {
 	continueStageSession,
 	executeStageSession,
 	locateSessionFile,
 	reattachStageSession,
-} from "../sessions/index.js";
-import { forkChildSession, reattachChildSession } from "../sessions/spawn.js";
-import type { SkillContractMap } from "../skill-contract.js";
-import { effectiveOutputSchemaOf } from "../stage-identity.js";
-import type { WorkflowStage } from "../state/index.js";
-import type { RunContext, RunState, StageSessionContext, WorkflowHostContext } from "../types.js";
-import { resolveDigest } from "../worktree-digest.js";
-import { advanceChain, type ChainDeps } from "./chain-advance.js";
-import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow, withStageEntryGuard } from "./failure.js";
-import { ensureContractInputValid, ensureInputValid } from "./input-validation.js";
-import { ensureLoopNotContinue, runLoopPreflights, runSingleStagePreflights } from "./preflight.js";
-import { type ResolvedStage, resolveStage } from "./resolve-stage.js";
-import { runScript } from "./script-stage.js";
+} from "../sessions/index.ts";
+import { forkChildSession, reattachChildSession } from "../sessions/spawn.ts";
+import type { SkillContractMap } from "../skill-contract.ts";
+import { effectiveOutputSchemaOf } from "../stage-identity.ts";
+import type { WorkflowStage } from "../state/index.ts";
+import type { RunContext, RunState, StageSessionContext, WorkflowHostContext } from "../types.ts";
+import { resolveDigest } from "../worktree-digest.ts";
+import { advanceChain, type ChainDeps } from "./chain-advance.ts";
+import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow, withStageEntryGuard } from "./failure.ts";
+import { ensureContractInputValid, ensureInputValid } from "./input-validation.ts";
+import { ensureLoopNotContinue, runLoopPreflights, runSingleStagePreflights } from "./preflight.ts";
+import { type ResolvedStage, resolveStage } from "./resolve-stage.ts";
+import { runScript } from "./script-stage.ts";
 
 // Re-exported for the package barrel + existing consumers; the class itself
 // lives in the leaf errors.ts so preflight/input-validation can throw it
 // without importing this module back.
-export { StagePreflightError } from "./errors.js";
-export type { ResolvedStage } from "./resolve-stage.js";
+export { StagePreflightError } from "./errors.ts";
+export type { ResolvedStage } from "./resolve-stage.ts";
 
 // ---------------------------------------------------------------------------
 // Walk composition — the ONE place the mutual recursion is wired
@@ -205,7 +206,7 @@ function buildSingleStageSession(
 		skillContracts: run.skillContracts,
 		stageIndex: idx,
 		snapshot: prep.snapshot,
-		model: run.resolveModel?.({ stage: stage.name, skill: stage.skill }),
+		model: run.resolveModel?.({ workflow: run.workflow.name, stage: stage.name, skill: stage.skill }),
 		signal: run.signal,
 		readSessionBranch: run.readSessionBranch,
 		worktreeDigest: run.worktreeDigest,
@@ -524,6 +525,7 @@ export function buildLoopDeps(): LoopDeps {
 		advanceAfter: (freshCtx, name, completedIdx, ctx) => advance(freshCtx, name, completedIdx, ctx),
 		captureSnapshot: (ctx, name, def, i, r) => captureStageSnapshot(ctx, name, def, i, r),
 		haltLoop,
+		haltLoopWhenAllFailed,
 		// Mid-flight run abort at the loop seam → FAIL_WORKFLOW_ABORTED.
 		recordAborted: (hostCtx, name, run) => recordAbortedAtSeam(hostCtx, name, run).then(() => undefined),
 		// Unexpected worker rejection → terminal-failure row, no re-throw. The
@@ -548,6 +550,27 @@ export async function haltLoop(
 ): Promise<void> {
 	const args = e.def.verify ? failedArgs(FAIL_VERIFY_FAILED(e.name, cap)) : failedArgs(FAIL_LOOP_CAP_HALT(count, cap));
 	await haltChain(hostCtx, run, e.name, e.name, args);
+}
+
+/**
+ * Terminal failure when a `haltWhenAllFailed` fanout generation closes with
+ * every declared slot a failed sentinel (strict all-filled-all-failed). Fired
+ * ONCE at the generation close — `finishLoop`'s single spelling (loop.ts),
+ * never per-unit. Parent-attributed, sessionless, unit-field-free — the exact
+ * `haltLoop` recording shape, so the resume fold's halt-marker predicate
+ * (`isOpenFanoutHaltMarker`) keeps the generation open and a later resume
+ * re-derives the halt deterministically with zero new resume code.
+ * `recordFatalFailure`'s first-failure-wins guard makes it safe beside
+ * concurrent sibling collect-all soft-halt rows.
+ */
+export async function haltLoopWhenAllFailed(
+	hostCtx: WorkflowHostContext,
+	run: RunContext,
+	e: Pick<LoopEntry, "name" | "skill">,
+	failed: number,
+	total: number,
+): Promise<void> {
+	await haltChain(hostCtx, run, e.name, e.name, failedArgs(FAIL_FANOUT_ALL_FAILED(e.skill, failed, total)));
 }
 
 /** Runs whose snapshot-failure warning already fired — one notify per run, not per stage/unit. */

@@ -9,7 +9,7 @@ File-based routing layer for the Astro 5 static site. Each `.astro`/`.ts` file u
 - **`../layouts/Base.astro`**: HTML shell, SEO meta, JSON-LD article graph
 - **`../../lib/posts`**: `getAllPosts`, `getPublishedPosts`, `computeReadingTime` (the only callers of `getCollection("posts")`)
 - **`../../lib/docs`**: `DOCS_ROOT_ID`, `getPublishedDocs` — `docs/index.astro` and the `docs/[...slug]` catch-all
-- **`../../lib/agents`, `../../lib/skills`, `../../lib/inlineMd`**: `getAgentsByTier`/`getAgent`/`getAgentSpec`/`tier`/`TIER_BY_NAME`, `getAllSkills`/`getSkill`/`getSkillSpec`, `inlineMd` — the four `docs/reference` pages
+- **`../../lib/agents`, `../../lib/skills`, `../../lib/inlineMd`**: `getAgentsByTier`/`getAgent`/`getAgentSpec`/`CapabilityTier`/`TIER_BY_NAME`/`tier`, `getAllSkills`/`getSkill`/`getSkillSpec`, `inlineMd` — the four `docs/reference` pages (`TIER_BY_NAME` is consumed only by `agents/[slug].astro`)
 - **`../components/*`**: Nav, ScrollIndicator, AltHero, AltThesis, Install, AltFirstRun, WorkflowCatalog, InsideBuild, AltSurface, SiblingGrid, AltModels, AltRoadmap, SetupTrace; `blog/index.astro` adds SumiInk; docs pages get Search, DocsSidebar, DocsToc via `DocsLayout`
 
 ## Module Structure

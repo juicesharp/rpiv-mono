@@ -2,6 +2,95 @@
 
 ## [Unreleased]
 
+## [2.13.10] - 2026-10-23
+
+## [2.13.9] - 2026-10-17
+
+### Changed
+
+- Faster extension startup: relative imports now name the published `.ts` files instead of nonexistent `.js` targets, so Pi's loader (jiti) no longer runs fallback resolution for each of them on every launch. Runtime behavior is unchanged. Thanks @ry4nyu for #306, and @szastupov for #304.
+- TypeScript projects that type-check this package's sources with `tsc` now need `allowImportingTsExtensions: true` (with `noEmit` or `emitDeclarationOnly`); without it `tsc` reports TS5097 on the `.ts` import paths. Pi itself loads the sources through jiti and is unaffected.
+
+## [2.13.8] - 2026-10-12
+
+## [2.13.7] - 2026-10-12
+
+## [2.13.6] - 2026-10-12
+
+### Fixed
+
+- **Overlay files can import the authoring DSL and `typebox` in a standard Pi install.** `config.ts` and `packs/*.ts` overlays are loaded by rpiv-workflow's own jiti, outside Pi's extension module mapping, so `import … from "@juicesharp/rpiv-workflow"` failed with `Cannot find module`, and so did `typebox`, which Pi provides to extensions rather than installing. It only worked when another package happened to leave a physical `typebox` in `node_modules`. The overlay loader now maps `@juicesharp/rpiv-workflow` (and `/registration`, `/startup`, `/runner`) to the running package and `typebox` (`/value`, `/compile`) to the copy Pi supplies, the same way Pi's loader does for extensions. ([#298](https://github.com/juicesharp/rpiv-mono/issues/298))
+
+## [2.13.5] - 2026-10-12
+
+## [2.13.4] - 2026-10-11
+
+## [2.13.3] - 2026-10-11
+
+## [2.13.2] - 2026-10-11
+
+## [2.13.1] - 2026-10-11
+
+## [2.13.0] - 2026-10-11
+
+### Fixed
+
+- **A budget-exhausted gate halt no longer tells the user to resume.** `FAIL_GATE_STOP` previously printed "fix and resume with `/wf @<runId>`" for every gate stop. That is correct for a `match`-no-fallback stop (resume re-grades the repaired tree and routes onward), but wrong for a meta unit-graph exhaustion halt: the round/generation counters are derived from the persisted trail and nothing in the resume path resets them, so `/wf @<id>` re-reads the spent budget and re-decides the identical stop — an observed "cannot restart" dead end. `FAIL_GATE_STOP` now recognizes the exhaustion vocabulary (`N/M rounds spent`, `the same failures survived a correction`, `<unit> FATAL — …`, `integrity stop`) and, for those, points at a fresh run instead of resume and drops the "matched no branch" phrasing (wrong for a halt that routed to `stop` deliberately). `match`-no-fallback stops keep the resume remedy unchanged.
+
+## [2.12.0] - 2026-09-30
+
+### Fixed
+
+- **`typebox` is declared as a `peerDependencies: "*"` entry, no longer a `dependencies` entry.** Pi provides `typebox` to extensions and aliases the bare specifier to its own bundled copy at load time, so the copy this manifest installed was dead weight at best and a second live instance at worst. Pi 0.99.1 warns at every startup about the old shape ("Host-provided extension packages must be declared in peerDependencies with a \"*\" range, not dependencies: typebox"); this clears it once the release is installed. Contributed in #282; reported in #266, #268, #272 and #277.
+
+## [2.11.0] - 2026-09-21
+
+## [2.10.1] - 2026-09-13
+
+## [2.10.0] - 2026-09-12
+
+### Fixed
+
+- **The tool-argument fallback now reads the branch shape Pi actually emits.** `iterToolUses` (the walker behind `textScanCollector`/`transcriptPathCollector`'s fallback and `toolCallCollector`) recognised only `{ type: "tool_use", input }` — the Anthropic wire spelling — while `@earendil-works/pi-ai` emits `{ type: "toolCall", arguments }` and every persisted session carries that shape. In production the fallback therefore never fired and `toolCallCollector` never yielded: a stage that wrote its artifact through the `write` tool but omitted the path from its closing message still fataled with "scanned assistant text and tool-call arguments" (run 2026-09-08_16-29-43-b393, code (phase 7/8) — a complete 68 KB elaboration re-done from scratch). Both spellings are now normalised to `{ name, input }`; the collector fixtures gained the live shape beside the old one.
+- **`/wf <flags> <workflow>` previews that workflow instead of the generic list.** The preview branch re-tested the RAW line against the workflow names, so a bare workflow token beside any flag (`/wf --max-jumps 6 review`, `/wf review --name r1`) fell through to the full listing. `parseArgs` now returns a `preview` kind — decided on the flag-stripped residual: empty ⇒ the listing, exactly one workflow name ⇒ that workflow's details — and a `run` always carries non-empty input; the command layer never re-reads the raw line. A malformed `--name` on a preview still refuses, as before.
+- **A repeated `/wf` flag no longer hijacks workflow resolution.** `/wf --max-jumps 6 --max-jumps 9 research fix X` stripped the first `--max-jumps` and skipped the second, leaving `--max-jumps 9 research fix X` as the residual — `--max-jumps` is not a workflow name, so the whole line (the intended `research` token included) ran as prompt input to the DEFAULT workflow, silently. The flag extractor now consumes a repeated leading/trailing flag (`--name`, `--max-jumps`, `--max-laps`): the first-typed value wins in every slot (occurrences are ranked by their offset in the line, not by extraction order — a trailing run peels from the end and a head flag can mask a leading match for a pass), the rest are stripped, and `/wf` warns once per repeated token. A doubled `--name` follows the same rule (it used to stay in the input as prompt text with the mid-input warning).
+- **`/wf` warns when `--max-jumps` is at or above the lap ceiling.** The ceiling counts every re-entry and is arbitrated first, so a cap at or above it can never trip — `--max-jumps 20` alone still delivered at most 8 re-entries with no hint why. The warning names the effective pair (an absent flag is its default) on both the run and `@resume` arms; the run proceeds, bounded by the ceiling. Raise `--max-laps` beside the cap to widen a run.
+- **Programmatic budget options are validated pre-flight.** `runWorkflow` / `resumeWorkflow` refuse a `maxBackwardJumps`, `maxLaps`, or `maxIterations` that is not a non-negative integer (`NaN`, `Infinity`, a negative, a fraction) with a pre-flight envelope before any row is written — `??` passed `NaN` straight to the ledgers, where `laps > NaN` is always false, so the ceiling documented as "always halts" failed OPEN under an always-`"improved"` hook. `buildRunContext` throws on the same check as the backstop. `validateRunBudgets`, `RunBudgetOptions`, and the three defaults (`MAX_BACKWARD_JUMPS`, `MAX_LAPS`, `MAX_ITERATIONS`) are exported from both the root entry and `/runner`, so an embedder can pre-validate and read the defaults the refusal math uses.
+- **Floated `/wf` runs survive launcher session replacement.** The float settle tails in `command-run.ts` notify via `notifyOrDropIfStale` — the per-package twin of the `isStaleCtxError` guards in rpiv-core, btw and todo — swallowing only the stale-ctx phrase; a genuine error still propagates. Previously the `.catch` tail read `ctx.ui` itself, so a ctx invalidated by `/new`, resume, `/reload`, quit or auto-compaction converted a handled rejection into an uncaughtException that killed pi.
+
+### Added
+
+- **`argKeys` on `textScanCollector` / `transcriptPathCollector`** narrows the tool-argument fallback to named argument keys of a matching call (e.g. `argKeys: ["path"]`), so a `write` call's `content` — which may quote a sibling artifact's path — can never outrank the path it wrote to. Absent ⇒ every string argument is scanned, as before. Validated at construction (non-empty array of strings).
+- **`/wf … --max-laps <n>` sets an absolute per-destination ceiling on decision-edge re-entries (`MAX_LAPS = 8`), on a fresh run and on a resume.** The backward-jump cap is waive-aware — a stage whose `progress` hook keeps reporting `"improved"` re-enters past `--max-jumps` — while the lap ceiling counts every re-entry, waived or counted, so even an all-improving loop halts on the `maxLaps + 1`-th re-entry of one stage. When both limits would trip on the same re-entry, the ceiling is arbitrated first. Like the cap, the ledger is per invocation (a resume starts both re-entry budgets fresh), and the flag is honored in the leading or trailing position like `--max-jumps`/`--name` — in any relative order among them — with a mid-position token staying as input text.
+- **`/wf … --max-jumps <n>` sets the backward-jump cap per run, on a fresh run and on a resume.** The cap (`MAX_BACKWARD_JUMPS = 3` per re-entered stage) was an embedder-only option; a fix loop that converges slowly — a code panel climbing 55 → 70 → 90 → 92 across four rounds with one finding left — hit it one lap short. The budget is per invocation (a resume starts a fresh count), so the flag is for giving a single invocation more room. It is honored in the leading or trailing position like `--name`; a mid-position token stays as input text.
+- **`unitLabel` on the session and disk-first verdict collection.** A session that *is* one loop unit now carries the unit's display label, so a collector can narrow collection to it (the disk-first verdict collector's determined-name tightness); single stages and unlabeled wirings degrade to the loose shapes they accepted before. `retryHaltedUnits` on a collect-all loop re-dispatches a soft-halted unit (a failed sentinel in its slot) up to N more times as a whole attempt — unit start, pre-attempt snapshot, session build, execution — with the attempt-1 failure memo riding the re-dispatch prompt; the fold sees only the final attempt. Inert under `failFast`.
+- **`routingNotes` on the run recap.** The recap carries every note-bearing forward routing row's `note`, verbatim in trail order, on every outcome (set only when non-empty); a stop row's note renders once as the stopped refinement's `failureReason`, never twice. A gate that explained itself before a later stage failed keeps its explanation.
+
+### Changed
+
+- **The resume fold trusts the trail for fanout generations that already closed with every unit done.** A closed, fully-done generation dispatches nothing on resume, yet the fold re-ran its unit source and refused (`ERR_RESUME_LOOP_MISMATCH`) whenever that source read state the run had since moved past — a grade panel's roster consults the basename-keyed prior snapshot, overwritten every fix round, so replaying round 1 read round 4's bytes. The recorded unit tags now stand in for the recompute on such generations; a generation at the trail's tail, one with a pending or hard-failed slot, or one followed by its parent's own halt/abort marker still recomputes, so a mid-flight abort re-dispatches exactly its pending units as before.
+
+- **Run trails move to schema v3 — the resume fold becomes budget-aware over `retryHaltedUnits`.** Collected soft-halt rows now carry the failed attempt's 1-based `attemptOrdinal` (stamped by the parallel dispatcher, written by `recordUnitHalt`), and the resume fold re-dispatches an under-budget halted unit — its slot stays unfilled, exactly like a pending one — instead of folding its sentinel, so a run interrupted inside a unit's retry window picks the retries up on resume instead of permanently collecting the halt. A final-attempt row (ordinal beyond budget, or absent) still folds the sentinel, byte-identical to v2. The retry budget is fresh per resume invocation (ordinals restart at 1, bounded only by human-initiated resumes — the accepted semantics). v1 and v2 trails refuse resume with a version mismatch ("start a fresh run"): there is no in-place migration.
+
+## [2.9.0] - 2026-09-01
+
+### Fixed
+
+- **`resolveModel` now receives the workflow name — the per-preset model-tiering rung is reachable from the run path.** The seam (`WorkflowExecutionProvider.resolveModel`, `RunContext.resolveModel`, and the runner/loop dispatch sites) passed only `{ stage, skill }`, so an embedder cascade keyed on the workflow — rpiv-pi's documented `presets.<workflow>.stages.<stage>` rung — could never match and silently fell through to the flat rungs. The id is now `{ workflow, stage, skill }` (required — the runner always knows `run.workflow.name`, and an optional field would invite the same silent-omission bug back), threaded at both dispatch sites (`run-stage`, the fanout unit path) and through resume.
+
+### Added
+
+- **`fanout({ haltWhenAllFailed: true })` — an opt-in terminal halt when a fanout generation closes with every unit failed.** Observed shape (rpiv-pi's build): four dead design units still dispatched design-review twice over an empty `designs` channel — collect-all faithfully advanced a generation whose fan-in read had nothing to read. The knob narrows the generation CLOSE, not the collection (per-unit rows keep flowing through the collect-all soft-halt path, so resume still rebuilds sentinels instead of re-running dead units); when every declared slot is filled and every one a failed sentinel, the run halts at the loop stage with a parent-attributed `FAIL_FANOUT_ALL_FAILED` row (the `FAIL_LOOP_CAP_HALT` recording shape, so the resume fold's halt-marker predicate keeps the generation open and a later resume re-derives the halt with zero new resume code). Strict by construction: an over-cap-advancing generation never qualifies (beyond-cap slots stay unfilled), and `failFast` wins when both flags are set. Covered: constructor carry/omit twins, the collect-all probe (the flag still collects), the live halt suite (all-failed halts at close with the fan-in never dispatched, one-survivor proceeds, over-cap advance unaffected, flagless contrast unchanged), and both resume re-derivation paths (all-sentinel trail → zero re-dispatch + one fresh halt row; partial trail → only pending units re-run, then halt).
+
+### Fixed
+
+- **A side-effect stage with a NAMED outcome now publishes onto its `state.named` channel — the `Outcome.name` contract honored for acts stages.** Review 2026-08-28_12-11-57 (I5, confirmed against the code): the only `state.named` writers were the `kind === "produces"`-gated pushes plus the judge-panel publisher, so an acts outcome's channel was never written — `validate-fix`'s `remediation` digest existed on the stage output but the gates folding the CHANNEL (the fix-round cap and the unchanged-tree stop) read a slot no code path populated: the cap could never trip and the unchanged-tree backstop was inert since it shipped, leaving the loop bounded only by the backward-jump guard. `applyCompletedStage` now pushes an acts output onto `def.outcome.name`'s channel (explicit name ONLY — never the record-key fallback, so unnamed acts stages like `implement` stay silent and `reads:` semantics don't widen), the load-time publish scan (`publishedNamesOf`) matches the write rule, and the rolling primary stays governed by the acts rules (a side-effect outcome never rolls it). Resume replays identically by construction (the fold shares `applyCompletedStage`). Covered at three levels: unit (publish/silent/accumulate), e2e cap loop (a channel-length budget stops a real runner fix loop after exactly one round), and e2e live halt+resume (the unchanged digest forms the `[stop, halt]` pair through the real runner and resume dispatches the onward target — the side-effect re-measure arm, previously unreachable for built-ins, exercised end to end).
+- **A multi-target side-effect gate-stop resumes by RE-ROUTING, never by replaying the arm** (review I2): when the halted gate declares several onward targets (reachable from user-authored workflows only), the resume entry now re-fires the edge over the replayed channels — an idempotent re-stop or a live branch — instead of falling through to the cold re-dispatch of the side-effect stage, which is exactly the replay the arm exists to prevent. The halt toast's `/wf @<runId>` remedy is now pinned by a test.
+
+### Changed
+
+- **Resuming a gate-halted run now re-measures instead of replaying a stale verdict.** Real-run analysis (2026-08-13 → 2026-08-20 corpus) showed a red gate's biggest cost is recovery: after a halt, users re-ran the whole workflow from scratch — full re-runs of research+plan for a one-line citation fix, and one run stranded ~50 minutes of verified implementation behind a terminal validate nit. Three seams close this. (1) The resume fold now treats a routed-stop `RoutingDecision` as a GENERATION SEPARATOR (`readAllStagesForResume` returns `stopBefore`): the halted fanout generation closes and projects at the stop, exactly as the live driver had before its route fired — so resuming a halted fanout gate (a grade panel) cold re-dispatches the whole loop for a fresh judgment instead of re-folding the stale verdicts into a second identical halt, and a post-resume trail with two same-parent generations replays without drift. (2) A gate-stop halt on a SIDE-EFFECT stage (a remediation arm whose own progress gate stopped it) resumes at the gate's sole non-stop onward target rather than replaying the arm — re-running remediate against a hand-fixed tree no-ops and re-trips the very unchanged-tree gate that halted it, a permanent livelock; the onward dispatch re-verifies the repaired tree end-to-end instead. A produces gate stage keeps today's behavior deliberately: its halt row is sessionless by construction, so the failed-trailer arm already re-runs the gate cold — the re-measure. (3) The `FAIL_GATE_STOP` toast now names the remedy: "fix and resume with `/wf @<runId>`" — the old "fix and re-run" read as "start over", which is exactly what users did.
+
 ## [2.7.1] - 2026-08-24
 
 ## [2.7.0] - 2026-08-21

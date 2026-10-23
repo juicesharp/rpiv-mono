@@ -12,9 +12,10 @@
  * `transcriptPathCollector({ pattern })` and supply the regex directly.
  */
 
-import type { ArtifactCollector } from "../../output-spec.js";
-import { requireOpt } from "./require-opt.js";
-import { transcriptPathCollector } from "./transcript-path.js";
+import type { ArtifactCollector } from "../../output-spec.ts";
+import { requireOpt } from "./require-opt.ts";
+import type { ToolCall } from "./tool-call.ts";
+import { transcriptPathCollector } from "./transcript-path.ts";
 
 export interface DirectoryPathCollectorOpts {
 	/** cwd-relative directory the agent's announced path must sit under (e.g. `"docs/adr"`). */
@@ -24,6 +25,8 @@ export interface DirectoryPathCollectorOpts {
 	 * etc.). Defaults to any common alphanumeric extension.
 	 */
 	ext?: string;
+	/** Narrows the tool-argument fallback to matching tool calls (see `textScanCollector`). */
+	match?: (tc: ToolCall) => boolean;
 }
 
 export function directoryPathCollector(opts: DirectoryPathCollectorOpts): ArtifactCollector {
@@ -36,7 +39,7 @@ export function directoryPathCollector(opts: DirectoryPathCollectorOpts): Artifa
 	const escapedDir = escapeRegex(opts.dir);
 	const extPart = opts.ext ? escapeRegex(opts.ext) : "[a-zA-Z0-9]+";
 	const pattern = new RegExp(`${escapedDir}/[\\w.-]+\\.${extPart}`, "g");
-	return transcriptPathCollector({ pattern });
+	return transcriptPathCollector({ pattern, match: opts.match });
 }
 
 function escapeRegex(s: string): string {

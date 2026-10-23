@@ -15,6 +15,10 @@ contract:
       properties:
         status:
           enum: [in-progress, in-review, ready]
+        # Derived from the path + frontmatter by the build workflow's design parser, never authored:
+        # `matches` iff the basename's `_slice-<N>_` token equals `slice_n`.
+        filename_slice:
+          enum: [matches]
   consumes:
     meta:
       artifactKind: [slices, design]
@@ -110,6 +114,7 @@ tags: [design, slice]
 ## Hard rules
 
 - **One slice only.** Never design or touch work that the slice map assigns to a different slice.
+- **The path carries the slice.** The basename's `_slice-<N>_` segment is mandatory and must equal `slice_n` — the workflow resolves which slice a design belongs to from both, and a title that happens to look like an ID (`LV-2`, `DT-1`) never substitutes for it.
 - **Code shape, not implementation.** Interfaces, file map, decisions — `implement` writes the actual code later.
 - **No discovery/analysis subagents. No self-review.** Read the files the slice names; decide; write. Ask only to clear a genuine blocking fork.
 - **Build against decided upstream contracts.** When `--upstream` designs are provided, consume their `## Key Interfaces` as fixed — never redesign a dependency's contract. If a contract you depend on is undecided (parked in the upstream's `## Notes / Deferred`), escalate (Step 5), don't guess.

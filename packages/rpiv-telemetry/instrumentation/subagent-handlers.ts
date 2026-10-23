@@ -1,6 +1,6 @@
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { dispatchTelemetryEvent } from "../dispatcher.js";
+import { dispatchTelemetryEvent } from "../dispatcher.ts";
 import type {
 	SubAgentCompactedEvent,
 	SubAgentCompletedEvent,
@@ -9,7 +9,7 @@ import type {
 	SubAgentStartedEvent,
 	SubAgentSteeredEvent,
 	TelemetryEvent,
-} from "../types/events.js";
+} from "../types/events.ts";
 import {
 	type SubAgentCompactedPayload,
 	SubAgentCompactedPayloadSchema,
@@ -23,8 +23,8 @@ import {
 	SubAgentStartedPayloadSchema,
 	type SubAgentSteeredPayload,
 	SubAgentSteeredPayloadSchema,
-} from "./schemas.js";
-import { currentSessionId, inflightKey, inflightSubAgents } from "./state.js";
+} from "./schemas.ts";
+import { currentSessionId, inflightKey, inflightSubAgents } from "./state.ts";
 
 /**
  * One row per sub-agent EventBus channel subscribed via `pi.events.on(...)`.
@@ -146,7 +146,7 @@ export const SUBAGENT_HANDLERS: readonly SubAgentHandlerSpec[] = [
 
 /**
  * Validate a sub-agent EventBus payload, gate on a known session, update the
- * inflight tracker (with composite sessionId+agentId key — see L4-06), and
+ * inflight tracker (with composite sessionId+agentId key), and
  * dispatch the resulting TelemetryEvent.
  *
  * Foreground vs background detection: pi-subagents only emits
@@ -159,7 +159,7 @@ export const SUBAGENT_HANDLERS: readonly SubAgentHandlerSpec[] = [
  * first for the same `(sessionId, agentId)` pair.
  */
 export function handleSubAgentBusEvent(h: SubAgentHandlerSpec, data: unknown): void {
-	// L4-07: drop events that arrive before `session_start` populates currentSessionId.
+	// Drop events that arrive before `session_start` populates currentSessionId.
 	// Without this guard the event would ship with `sessionId: ""` and propagate
 	// into MLflow span attributes as a phantom session.
 	if (!currentSessionId) {

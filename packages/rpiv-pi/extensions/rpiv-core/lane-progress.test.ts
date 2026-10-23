@@ -17,8 +17,8 @@ const registerLifecycle = vi.fn((_listeners: unknown) => lifecycleDispose);
 const summarizeRun = vi.fn();
 vi.mock("@juicesharp/rpiv-workflow/startup", () => ({ registerLifecycle, summarizeRun }));
 
-import { __resetLaneProgress, registerLaneProgressHook } from "./lane-progress.js";
-import { createLaneRelayUiContext } from "./lane-relay-ui.js";
+import { __resetLaneProgress, registerLaneProgressHook } from "./lane-progress.ts";
+import { createLaneRelayUiContext } from "./lane-relay-ui.ts";
 import {
 	__resetRunLaneRegistry,
 	getLane,
@@ -26,8 +26,8 @@ import {
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
-} from "./run-lane-registry.js";
-import { __resetSessionCaptureState, registerSessionCapture } from "./session-capture.js";
+} from "./run-lane-registry.ts";
+import { __resetSessionCaptureState, registerSessionCapture } from "./session-capture.ts";
 
 /** Loose projection of the listener bundle — enough to drive the events under test. */
 interface Bundle {
@@ -848,7 +848,7 @@ describe("clean-install degradation", () => {
 			});
 		});
 		// Re-import the bridge so its internal dynamic import resolves the throwing mock.
-		const fresh = await import("./lane-progress.js");
+		const fresh = await import("./lane-progress.ts");
 		fresh.__resetLaneProgress(); // ensure the process-global guard is clear
 		await expect(fresh.registerLaneProgress()).resolves.toBeUndefined();
 	});

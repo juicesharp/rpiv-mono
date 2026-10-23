@@ -14,8 +14,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runFileFor, runsDir, stateFilePath } from "./paths.js";
-import { enumerateRunIds, readFirstJsonlLine } from "./raw.js";
+import { runFileFor, runsDir, stateFilePath } from "./paths.ts";
+import { enumerateRunIds, readFirstJsonlLine } from "./raw.ts";
 
 let tmpDir: string;
 

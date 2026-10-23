@@ -1,0 +1,317 @@
+{
+  "_meta": {
+    "population_rule": "Distinct design-readiness fail shapes (pass:false) across .rpiv/workflows/runs/*.jsonl named-channel state rows, deduped per run by exact {pass, remedy, findings} JSON. Derived once from the on-disk gitignored trails; never reconciled toward any design count.",
+    "census": {
+      "shapes": 19,
+      "bookkeeping": 16,
+      "structural": 3
+    },
+    "classification_rule": "class is the semantic ledger census (bookkeeping = the finding demands adding/refreshing citations only; structural = the finding demands a re-cut: a bundling/epic finding). The ENGINE classification under gates.ts seedOnlyFindings is shape-based (pass:false, remedy cite-or-absent, >=1 finding, every finding a concrete string requires): it holds only for the marker-emitted half of the bookkeeping shapes (remedy 'cite' + requires present); the marker-omitted bookkeeping shapes carry no requires and classify NOT seed-only today (the grade skill's requires emission contract owns that residual); every structural shape classifies not seed-only (fail-closed).",
+    "derivation_note": "The design's '16/16 bookkeeping seed-only' conflated the semantic census with the shape classification: the trails carry 8 marker-emitted seed-only shapes of the 16 bookkeeping shapes, exactly matching the ledger's 'only 8 of 16 judges emitted the marker'. Resolved at the source per the corpus risk's rule (drift is a derivation bug to resolve, never silent reconciliation).",
+    "trim_rule": "Per shape keep pass, remedy, findings' requires (verbatim, omitted when the trail carried none) and the provenance run ids; severity was uniformly medium and is dropped, as are finding detail/where prose.",
+    "replay_rule": "Import seedOnlyFindings from built-ins/gates.js and replay each row: exactly the remedy:'cite' rows with all-requires findings classify seed-only; every structural row and every marker-omitted bookkeeping row classifies not seed-only; row counts pin the census (19 total, 16 bookkeeping, 3 structural)."
+  },
+  "rows": [
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "findings": [
+        {}
+      ],
+      "runs": [
+        "2026-07-01_16-41-30-9515"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "findings": [
+        {},
+        {}
+      ],
+      "runs": [
+        "2026-07-07_12-44-20-b226"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "findings": [
+        {}
+      ],
+      "runs": [
+        "2026-07-27_17-30-44-8b79"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "findings": [
+        {},
+        {}
+      ],
+      "runs": [
+        "2026-07-30_12-25-25-7514"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "findings": [
+        {}
+      ],
+      "runs": [
+        "2026-07-30_12-25-25-7514"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "findings": [
+        {},
+        {}
+      ],
+      "runs": [
+        "2026-07-30_12-25-25-7514"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "findings": [
+        {}
+      ],
+      "runs": [
+        "2026-07-30_12-25-25-7514"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "remedy": "cite",
+      "findings": [
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:3721"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:3748"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:3758"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:3799"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:3990"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.test.ts:3984"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.test.ts:5102"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:3718-3794"
+        },
+        {
+          "requires": ":3721"
+        },
+        {
+          "requires": ":3723-3766"
+        },
+        {
+          "requires": ":3767-3793"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.ts:3796-4166"
+        },
+        {
+          "requires": ":3799"
+        },
+        {
+          "requires": ":3801-4003"
+        },
+        {
+          "requires": ":4004-4165"
+        }
+      ],
+      "runs": [
+        "2026-07-30_12-25-25-7514"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "remedy": "cite",
+      "findings": [
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/run-lane-registry.ts:23"
+        },
+        {
+          "requires": "packages/rpiv-workflow/runner/by-run-id.ts:67"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/lane-switcher.ts:129"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/lane-switcher.ts:86"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/lane-switcher.ts:102"
+        }
+      ],
+      "runs": [
+        "2026-07-30_15-41-48-5de3"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "findings": [
+        {},
+        {},
+        {}
+      ],
+      "runs": [
+        "2026-07-30_19-47-29-d5e9"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "remedy": "cite",
+      "findings": [
+        {
+          "requires": ".rpiv/guidance/packages/rpiv-workflow/architecture.md:102"
+        }
+      ],
+      "runs": [
+        "2026-07-31_08-08-11-1638"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "remedy": "cite",
+      "findings": [
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.test.ts:525"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.test.ts:5255"
+        }
+      ],
+      "runs": [
+        "2026-07-31_09-31-58-c529"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "remedy": "cite",
+      "findings": [
+        {
+          "requires": "packages/rpiv-pi/README.md:123"
+        },
+        {
+          "requires": "packages/rpiv-pi/docs/workflows.md:3"
+        },
+        {
+          "requires": "packages/rpiv-pi/docs/workflows.md:22"
+        },
+        {
+          "requires": "packages/rpiv-site/src/content/docs/guides/run-a-workflow.md:136"
+        },
+        {
+          "requires": "packages/rpiv-pi/docs/architecture.md:12"
+        }
+      ],
+      "runs": [
+        "2026-08-13_07-57-13-8e8b"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "remedy": "cite",
+      "findings": [
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/models-config.ts:196-278"
+        },
+        {
+          "requires": "packages/rpiv-workflow/events.ts:155-200"
+        }
+      ],
+      "runs": [
+        "2026-09-01_11-34-37-089a"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "remedy": "cite",
+      "findings": [
+        {
+          "requires": "packages/rpiv-workflow/routing.ts:39-48"
+        },
+        {
+          "requires": "packages/rpiv-site/src/lib/workflows.ts:1-60"
+        }
+      ],
+      "runs": [
+        "2026-09-02_17-26-10-3212"
+      ]
+    },
+    {
+      "class": "bookkeeping",
+      "pass": false,
+      "remedy": "cite",
+      "findings": [
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-ins/verdict-outcome.test.ts:1-120"
+        },
+        {
+          "requires": "packages/rpiv-pi/extensions/rpiv-core/built-in-workflows.test.ts:2657-2733"
+        }
+      ],
+      "runs": [
+        "2026-09-03_10-46-57-f9a6"
+      ]
+    },
+    {
+      "class": "structural",
+      "pass": false,
+      "findings": [
+        {},
+        {}
+      ],
+      "runs": [
+        "2026-07-05_17-01-19-63fd"
+      ]
+    },
+    {
+      "class": "structural",
+      "pass": false,
+      "findings": [
+        {},
+        {}
+      ],
+      "runs": [
+        "2026-07-25_12-16-42-c6d9"
+      ]
+    },
+    {
+      "class": "structural",
+      "pass": false,
+      "findings": [
+        {},
+        {},
+        {}
+      ],
+      "runs": [
+        "2026-07-25_22-33-52-2eb9"
+      ]
+    }
+  ]
+}

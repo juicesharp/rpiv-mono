@@ -71,6 +71,12 @@ The final artifact feeds design or blueprint.
 
 4. **Parse the agent's final message** as the questions artifact body. Extract: Discovery Summary (3-5 sentence file-landscape overview), Questions (numbered dense 3-6 sentence paragraphs).
 
+   Questions formulated — emit:
+
+   ```
+   [Questions]: {N} research questions formulated. Reading shared files and grouping before dispatch.
+   ```
+
 5. **Read key shared files** referenced across multiple questions into main context — especially shared utilities, type definitions, and integration points that multiple questions mention.
 
 6. **Analyze question overlap for grouping:**
@@ -88,6 +94,14 @@ The final artifact feeds design or blueprint.
 ### Step 2: Dispatch Analysis Agents
 
 Spawn analysis agents using the Agent tool — all in a **single assistant message with multiple Agent calls** (concurrent, synchronous). **Never `run_in_background`**: its completion can't re-drive a workflow session, so the skill ends its turn before writing the document and the stage fails with no artifact.
+
+**Launch marker** — in that SAME assistant message, as its text block (it adds no turn, so the one-message parallel dispatch shape stays intact), emit:
+
+```
+[Dispatched]: {N} analysis agents in one batch{ + precedent sweep}. Waiting for returns.
+```
+
+N counts every dispatched agent, including the git-gated precedent-locator when it joins; the ` + precedent sweep` suffix appears only when it does.
 
 **Default agent**: `codebase-analyzer` for all codebase questions. This agent has Read, Grep, Glob, LS — it can trace code paths, find patterns, and analyze integration points.
 
@@ -129,7 +143,19 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
 
 **Wait for ALL agents to complete** before proceeding.
 
+Once every agent has returned, emit:
+
+```
+[Returned]: {N}/{N} agents returned. Proceeding to synthesis.
+```
+
 ### Step 3: Synthesize and Checkpoint
+
+Before compiling, emit:
+
+```
+[Synthesizing]: compiling {N} agent reports.
+```
 
 1. **Compile findings:**
    - Match each agent's response to the question(s) it answered
@@ -137,7 +163,7 @@ Findings go into Precedents & Lessons. Otherwise skip and note "git history unav
    - Prioritize live codebase findings as primary source of truth
    - Use `.rpiv/artifacts/` findings as supplementary historical context
    - Include specific file paths and line numbers
-   - **Every `file:line` you emit must be VERIFIABLE against the file at this revision.** Before writing a citation, confirm the file exists and the cited line (or range end) is within it — cite what you actually read, never a remembered or guessed range. If you cannot verify a line number, cite the file path alone and omit the `:line`. Write paths **relative to the repo root** (`packages/billing/src/invoice.ts:NN` — not the subdirectory-relative `src/invoice.ts:NN`, nor the bare `invoice.ts:NN`) — downstream artifacts inherit your citation form. A fabricated `file:line` (a range that matches no version of the file) propagates unbacked precision downstream — when the build workflow consumes this research, the slice map that rests on it fails the deterministic citation check at the `slice-check` gate, so an invented citation only bounces the flow.
+   - **Cite what you actually read.** Every `file:line` comes from a file you opened in this session — never a remembered or guessed range; if you're unsure of the line, cite the path alone and omit the `:line`. Write paths **relative to the repo root** (`packages/billing/src/invoice.ts:NN` — not the subdirectory-relative `src/invoice.ts:NN`, nor the bare `invoice.ts:NN`) — downstream artifacts inherit your citation form. No separate verification pass: citations are compressed addresses for the next stage, and a consumer that finds one drifted locates the symbol itself.
    - Build Code References as jump-table entries for the planner, not narrative (file:startLine-endLine format)
    - No multi-line code blocks (>3 lines) — use file:line refs + prose. No implementation recipes — facts only.
    - No artifact summaries — link plans/designs in Historical Context, don't summarize their contents. Research describes current codebase state.
@@ -359,3 +385,4 @@ Please review and let me know if you have follow-up questions.
   - ALWAYS gather metadata before writing (Step 4)
   - NEVER write the document with placeholder values
 - **Frontmatter consistency**: Always include frontmatter, use snake_case fields
+- **Progress markers are transcript text only**: the `[Questions]:` / `[Dispatched]:` / `[Returned]:` / `[Synthesizing]:` lines are one-line status for the lane console's live tail — never artifact content — and NEVER quote the research document's path in a marker, or anywhere else, before the file is written.

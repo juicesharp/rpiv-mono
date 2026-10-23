@@ -18,7 +18,7 @@ describe("i18n-bridge", () => {
 		vi.resetModules();
 		vi.doMock("@juicesharp/rpiv-i18n", () => ({ scope, getActiveLocale }));
 
-		const mod = await import("./i18n-bridge.js");
+		const mod = await import("./i18n-bridge.ts");
 		expect(scope).toHaveBeenCalledWith("@juicesharp/rpiv-voice");
 		expect(mod.t("k", "fallback")).toBe("[scoped] fallback");
 		expect(mod.getActiveLocale()).toBe("ru");
@@ -30,7 +30,7 @@ describe("i18n-bridge", () => {
 			throw new Error("module not found");
 		});
 
-		const mod = await import("./i18n-bridge.js");
+		const mod = await import("./i18n-bridge.ts");
 		expect(mod.t("any.key", "the english fallback")).toBe("the english fallback");
 		expect(mod.getActiveLocale()).toBeUndefined();
 		expect(mod.I18N_NAMESPACE).toBe("@juicesharp/rpiv-voice");

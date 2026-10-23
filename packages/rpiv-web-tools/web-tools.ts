@@ -25,12 +25,12 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { validateGuidanceFields } from "@juicesharp/rpiv-config";
 import { Type } from "typebox";
-import { getConfigPath, readConfig, type WebToolsConfig, writeConfig } from "./providers/config.js";
-import { createSearchProvider } from "./providers/factory.js";
-import { fetchViaGenericHtml } from "./providers/fetch-helpers.js";
-import { PROVIDERS } from "./providers/index.js";
-import { GITHUB_TOKEN_ENV_VAR, getActiveGitHubInterceptor, getInterceptors } from "./providers/interceptors/index.js";
-import type { FetchResponse, FullProvider, ProviderMeta, SearchProvider, SearchResult } from "./providers/types.js";
+import { getConfigPath, readConfig, type WebToolsConfig, writeConfig } from "./providers/config.ts";
+import { createSearchProvider } from "./providers/factory.ts";
+import { fetchViaGenericHtml } from "./providers/fetch-helpers.ts";
+import { PROVIDERS } from "./providers/index.ts";
+import { GITHUB_TOKEN_ENV_VAR, getActiveGitHubInterceptor, getInterceptors } from "./providers/interceptors/index.ts";
+import type { FetchResponse, FullProvider, ProviderMeta, SearchProvider, SearchResult } from "./providers/types.ts";
 
 // ---------------------------------------------------------------------------
 // Tunables and external surface
@@ -65,8 +65,6 @@ const LEGACY_TOP_LEVEL_KEY_PROVIDER = "brave";
 
 // ---------------------------------------------------------------------------
 // Config persistence — schema + reader/writer live in providers/config.ts.
-// The two local aliases keep the call-site shape identical to pre-refactor
-// (loadConfig / saveConfig) so the rest of this file reads unchanged.
 // ---------------------------------------------------------------------------
 
 const loadConfig = readConfig;
@@ -130,10 +128,41 @@ function resolveProviderBaseUrl(meta: ProviderMeta, config: WebToolsConfig): str
 	return meta.defaultBaseUrl ?? "";
 }
 
-// Known provider names — derived once from PROVIDERS so the schema enum,
-// the per-call override validation, and the error messages all stay in sync
-// when a provider is added or removed.
+// Known provider names — derived once from PROVIDERS so validation and error
+// messages stay in sync when a provider is added or removed.
 const KNOWN_PROVIDER_NAMES = PROVIDERS.map((p) => p.name) as readonly string[];
+
+// "Configured" = usable without further setup: a hosted provider with a
+// resolved API key, or a self-hosted one with an explicit base URL (env or
+// config). The bare default URL doesn't count — it's just a hint that the user
+// hasn't touched the setting yet. Shared by the /web-tools picker markers and
+// the model-visible `web_search` provider enum.
+function isProviderConfigured(meta: ProviderMeta, config: WebToolsConfig): boolean {
+	if (meta.baseUrlEnvVar) {
+		return Boolean(process.env[meta.baseUrlEnvVar]?.trim() || config.baseUrls?.[meta.name]?.trim());
+	}
+	return resolveProviderApiKey(meta.name, config) !== undefined;
+}
+
+function getVisibleProviderNames(config: WebToolsConfig): {
+	active: { name: string; source: "env" | "config" | "default" };
+	names: string[];
+} {
+	const active = resolveActiveProviderName(config);
+	const configured = PROVIDERS.filter((meta) => isProviderConfigured(meta, config)).map((meta) => meta.name);
+	const names = configured.filter((name) => name !== active.name);
+	if (KNOWN_PROVIDER_NAMES.includes(active.name)) names.unshift(active.name);
+	if (names.length === 0) names.push(DEFAULT_PROVIDER_NAME);
+	return { active, names };
+}
+
+function providerSelectionDescription(names: readonly string[], active: { name: string; source: string }): string {
+	return (
+		"Search provider to use for this call only, overriding the active provider set via /web-tools. " +
+		`Configured providers: ${names.join(", ")}. Default provider: ${active.name} (source: ${active.source}). ` +
+		"Omit to use the configured active provider. The named provider must have its API key/URL configured or the call throws."
+	);
+}
 
 // Uniform "unknown provider" error for both the per-call override path and the
 // WEB_SEARCH_PROVIDER env path so misconfiguration surfaces the same shape.
@@ -309,7 +338,9 @@ function buildEmptyResultsEnvelope(query: string, providerName: string) {
 // ---------------------------------------------------------------------------
 
 export function registerWebSearchTool(pi: ExtensionAPI): void {
-	const guidance = validateGuidanceFields(loadConfig().guidance?.web_search);
+	const config = loadConfig();
+	const guidance = validateGuidanceFields(config.guidance?.web_search);
+	const visibleProviders = getVisibleProviderNames(config);
 
 	pi.registerTool({
 		name: "web_search",
@@ -332,13 +363,8 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 			),
 			provider: Type.Optional(
 				Type.Union(
-					KNOWN_PROVIDER_NAMES.map((name) => Type.Literal(name)),
-					{
-						description:
-							"Search provider to use for this call only, overriding the active provider set via /web-tools. " +
-							`Valid values: ${KNOWN_PROVIDER_NAMES.join(", ")}. ` +
-							"Omit to use the configured active provider. The named provider must have its API key/URL configured (via env var or /web-tools) or the call throws — there is no silent fallback.",
-					},
+					visibleProviders.names.map((name) => Type.Literal(name)),
+					{ description: providerSelectionDescription(visibleProviders.names, visibleProviders.active) },
 				),
 			),
 		}),
@@ -577,6 +603,14 @@ function formatShowConfigMessage(current: WebToolsConfig): string {
 	return lines.join("\n");
 }
 
+// The `web_search` provider enum is built from the config at registration, so a
+// saved /web-tools change re-registers the tool: Pi replaces a re-registered
+// tool's definition, and without the refresh the model would keep seeing the
+// pre-change providers (and default) until the next restart (#204).
+function refreshWebSearchSchema(pi: ExtensionAPI): void {
+	registerWebSearchTool(pi);
+}
+
 export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 	pi.registerCommand(WEB_TOOLS_COMMAND_NAME, {
 		description: "Configure the search provider and API key used by web_search",
@@ -598,15 +632,7 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 				...PROVIDERS.filter((p) => p.name === activeProvider),
 				...PROVIDERS.filter((p) => p.name !== activeProvider),
 			];
-			const hasKey = (p: ProviderMeta) => {
-				// Self-hosted providers are "configured" once they have a base URL
-				// (env or config). The bare default URL doesn't count — it's just a
-				// hint that the user hasn't touched the setting yet.
-				if (p.baseUrlEnvVar) {
-					return Boolean(process.env[p.baseUrlEnvVar]?.trim() || current.baseUrls?.[p.name]?.trim());
-				}
-				return resolveProviderApiKey(p.name, current) !== undefined;
-			};
+			const hasKey = (p: ProviderMeta) => isProviderConfigured(p, current);
 			const labelOf = (p: (typeof PROVIDERS)[number]) => {
 				const markers: string[] = [];
 				if (p.name === activeProvider) markers.push("✓");
@@ -659,6 +685,7 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 					);
 					return;
 				}
+				refreshWebSearchSchema(pi);
 				ctx.ui.notify(
 					result.baseUrl
 						? `Saved ${selectedMeta.label} config (url: ${result.baseUrl}) to ${CONFIG_PATH}`
@@ -704,6 +731,7 @@ export function registerWebSearchConfigCommand(pi: ExtensionAPI): void {
 				);
 				return;
 			}
+			refreshWebSearchSchema(pi);
 			ctx.ui.notify(
 				trimmed
 					? `Saved ${selectedMeta.label} API key to ${CONFIG_PATH}`

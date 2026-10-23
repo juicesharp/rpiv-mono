@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { initInstrumentation } from "./instrumentation/index.js";
+import { initInstrumentation } from "./instrumentation/index.ts";
 
 export default function (pi: ExtensionAPI): void {
 	initInstrumentation(pi);

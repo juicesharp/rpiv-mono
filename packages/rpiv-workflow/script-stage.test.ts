@@ -19,11 +19,11 @@ import { join } from "node:path";
 import { createMockSessionChain } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, defineWorkflow, produces, type ScriptContext, terminal } from "./api.js";
-import type { LifecycleListeners } from "./events.js";
-import { fs as fsHandle } from "./handle.js";
-import { runWorkflow } from "./runner/index.js";
-import { typeboxSchema } from "./typebox-adapter.js";
+import { acts, defineWorkflow, produces, type ScriptContext, terminal } from "./api.ts";
+import type { LifecycleListeners } from "./events.ts";
+import { fs as fsHandle } from "./handle.ts";
+import { runWorkflow } from "./runner/index.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
 
 interface JsonlRow {
 	stageNumber?: number;

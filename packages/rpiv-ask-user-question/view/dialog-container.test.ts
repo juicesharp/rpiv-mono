@@ -6,13 +6,13 @@ import { describe, expect, it } from "vitest";
 import {
 	makeMultiSelectPropsFromState as msoPropsFromState,
 	makeSubmitPickerPropsFromState as submitPickerPropsFromState,
-} from "../test-fixtures.js";
-import type { QuestionAnswer, QuestionData } from "../tool/types.js";
-import { MultiSelectView } from "./components/multi-select-view.js";
-import type { OptionListView } from "./components/option-list-view.js";
-import type { PreviewPane } from "./components/preview/preview-pane.js";
-import { CANCEL_LABEL, SUBMIT_LABEL, SubmitPicker } from "./components/submit-picker.js";
-import type { TabBar } from "./components/tab-bar.js";
+} from "../test-fixtures.ts";
+import type { QuestionAnswer, QuestionData } from "../tool/types.ts";
+import { MultiSelectView } from "./components/multi-select-view.ts";
+import type { OptionListView } from "./components/option-list-view.ts";
+import type { PreviewPane } from "./components/preview/preview-pane.ts";
+import { CANCEL_LABEL, SUBMIT_LABEL, SubmitPicker } from "./components/submit-picker.ts";
+import type { TabBar } from "./components/tab-bar.ts";
 import {
 	type DialogConfig,
 	type DialogProps,
@@ -29,8 +29,8 @@ import {
 	INCOMPLETE_WARNING_PREFIX,
 	READY_PROMPT,
 	REVIEW_HEADING,
-} from "./dialog-builder.js";
-import type { TabComponents } from "./tab-components.js";
+} from "./dialog-builder.ts";
+import type { TabComponents } from "./tab-components.ts";
 
 const theme = makeTheme() as unknown as Theme;
 
@@ -695,7 +695,7 @@ describe("makeDialog — body residual padding", () => {
 		const multiSelectByTab: ReadonlyArray<MultiSelectView | undefined> = [undefined, mso];
 		const getBodyHeight = (w: number) => Math.max(1, (mso as unknown as Component).render(w).length);
 
-		// Phase 2 adds a "Type something." row to multi-select tabs (+1 to MultiSelectView
+		// The "Type something." row on multi-select tabs adds (+1 to MultiSelectView
 		// height), pushing this 5-option multi tab's body from 11 → 12 and the full dialog past
 		// the prior 24-row default into the overflow regime (which disables the residual spacer
 		// that equalizes cross-tab height). Give the dialog enough rows that both tabs render

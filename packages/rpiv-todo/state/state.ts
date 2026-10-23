@@ -1,4 +1,4 @@
-import type { Task } from "../tool/types.js";
+import type { Task } from "../tool/types.ts";
 
 /**
  * Canonical state for the todo tool. Single source of truth — both the reducer

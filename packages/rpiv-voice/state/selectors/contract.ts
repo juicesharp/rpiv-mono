@@ -1,5 +1,5 @@
-import type { ActiveView } from "../../view/stateful-view.js";
-import type { ScreenKind, VoiceState } from "../state.js";
+import type { ActiveView } from "../../view/stateful-view.ts";
+import type { ScreenKind, VoiceState } from "../state.ts";
 
 export interface BindingContext {
 	readonly activeView: ActiveView;

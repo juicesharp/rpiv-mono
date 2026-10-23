@@ -22,10 +22,12 @@
 
   "preview.no_preview": "Aucun aperçu disponible",
   "preview.notes_affordance": "Notes : appuyez sur n pour ajouter des notes",
+  "preview.notes_edit_affordance": "Note enregistrée : appuyez sur n pour la modifier",
   "notes.header": "Notes :",
+  "notes.saved_label": "Note pour cette réponse :",
 
   "editor.failed": "Échec de l’éditeur externe",
 
-  "rpc.multi_instructions": "Saisissez les numéros de toutes les options applicables, séparés par des virgules (p. ex. « 1,3 »), ou tapez une réponse libre en texte.",
+  "rpc.multi_instructions": "Saisissez les numéros de toutes les options applicables, séparés par des virgules (p. ex. « 1,3 »). Ajoutez « ; réponse libre » pour inclure votre propre texte, ou saisissez uniquement ce texte.",
   "rpc.custom_answer_title": "Tapez votre réponse :"
 }

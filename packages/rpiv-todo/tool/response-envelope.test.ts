@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { TaskState } from "../state/state.js";
-import type { Op } from "../state/state-reducer.js";
-import { buildToolResult, formatContent } from "./response-envelope.js";
-import type { Task } from "./types.js";
+import type { TaskState } from "../state/state.ts";
+import type { Op } from "../state/state-reducer.ts";
+import { buildToolResult, formatContent } from "./response-envelope.ts";
+import type { Task } from "./types.ts";
 
 const stateWith = (...tasks: Task[]): TaskState => ({
 	tasks,

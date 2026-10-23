@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
-import { appendDiagnosticLog } from "./error-log.js";
-import { computeRmsInt16 } from "./pcm.js";
-import { Int16LinearResampler } from "./resampler.js";
+import { appendDiagnosticLog } from "./error-log.ts";
+import { computeRmsInt16 } from "./pcm.ts";
+import { Int16LinearResampler } from "./resampler.ts";
 
 // Public 16 kHz target — Whisper's input rate, also the only rate the
 // downstream pipeline understands (segment caps, RMS thresholds, etc. are

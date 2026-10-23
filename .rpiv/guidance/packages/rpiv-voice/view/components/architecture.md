@@ -1,7 +1,7 @@
 # rpiv-voice / view / components
 
 ## Responsibility
-Leaf renderers implementing `StatefulView<P>` from `../stateful-view.js`. Each owns a small `props` blob set via `setProps`, has no-op `handleInput`/`invalidate`, and returns pre-styled ANSI lines from `render(width)`. No state-store value imports — parents feed already-resolved props.
+Leaf renderers implementing `StatefulView<P>` from `../stateful-view.ts`. Each owns a small `props` blob set via `setProps`, has no-op `handleInput`/`invalidate`, and returns pre-styled ANSI lines from `render(width)`. No state-store value imports — parents feed already-resolved props.
 
 ## Dependencies
 - **`@earendil-works/pi-coding-agent`**: `Theme` (color/bold tokens), `DynamicBorder` (splash divider)

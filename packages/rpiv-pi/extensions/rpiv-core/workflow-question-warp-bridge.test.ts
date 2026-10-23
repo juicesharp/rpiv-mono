@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the rpiv-warp seam so the transport is observable without real OSC I/O.
 // Preserves the real module surface (via importOriginal) so test/setup.ts's
-// `await import("../packages/rpiv-warp/index.js").__resetState()` — which resolves
+// `await import("../packages/rpiv-warp/index.ts").__resetState()` — which resolves
 // to this same root export — still works under the mock.
 const transportAsked = vi.fn();
 const transportResolved = vi.fn();
@@ -25,20 +25,20 @@ vi.mock("@juicesharp/rpiv-warp", async (importOriginal) => {
 	return { ...actual, createWorkflowQuestionTransport };
 });
 
-import { createLaneRelayUiContext } from "./lane-relay-ui.js";
+import { createLaneRelayUiContext } from "./lane-relay-ui.ts";
 import {
 	__questionLifecycleListenerCount,
 	__resetQuestionLifecycle,
 	emitQuestionAsked,
 	emitQuestionResolved,
 	subscribeQuestionLifecycle,
-} from "./question-lifecycle.js";
-import { SINGLE_UNIT_KEY } from "./run-lane-registry.js";
+} from "./question-lifecycle.ts";
+import { SINGLE_UNIT_KEY } from "./run-lane-registry.ts";
 import {
 	__resetWorkflowQuestionWarpBridge,
 	registerWorkflowQuestionWarpBridge,
 	registerWorkflowQuestionWarpBridgeHook,
-} from "./workflow-question-warp-bridge.js";
+} from "./workflow-question-warp-bridge.ts";
 
 /** Loose projection of the lifecycle event the bridge switches on. */
 function asked(runId: string, unitIndex: number): void {
@@ -287,7 +287,7 @@ describe("clean-install no-op (rpiv-warp absent)", () => {
 			const err = Object.assign(new Error("Cannot find package"), { code: "ERR_MODULE_NOT_FOUND" });
 			throw err;
 		});
-		const fresh = await import("./workflow-question-warp-bridge.js");
+		const fresh = await import("./workflow-question-warp-bridge.ts");
 		fresh.__resetWorkflowQuestionWarpBridge(); // ensure the process-global guard is clear
 		// A lifecycle listener registered BEFORE the import resolves still works:
 		// subscribe via the public API and assert no throw from the bridge.

@@ -13,7 +13,7 @@ import {
 	saveJsonConfig,
 	validateConfig,
 	validateGuidanceFields,
-} from "./config.js";
+} from "./config.ts";
 
 // ---------------------------------------------------------------------------
 // Temporary config directory — isolated per test

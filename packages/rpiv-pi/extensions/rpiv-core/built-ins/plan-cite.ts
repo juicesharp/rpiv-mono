@@ -5,10 +5,10 @@
  */
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import type { Output, ScriptContext } from "@juicesharp/rpiv-workflow/registration";
-import { verifyCitations } from "./citations.js";
-import { forEachLineOutsideFences } from "./markdown-fence.js";
-import { PLAN_PHASE_RE, phaseFiles } from "./plan-phases.js";
-import { haltPreflight, latestFsArtifact, readArtifactFile, writeStructureVerdict } from "./shared.js";
+import { verifyCitations } from "./citations.ts";
+import { forEachLineOutsideFences } from "./markdown-fence.ts";
+import { PLAN_PHASE_RE, phaseFiles } from "./plan-phases.ts";
+import { haltPreflight, latestFsArtifact, readArtifactFile, writeStructureVerdict } from "./shared.ts";
 
 /**
  * Slice a plan body into per-phase text keyed by phase number, splitting on

@@ -13,7 +13,7 @@ vi.mock("@mlflow/core", () => ({
 }));
 
 import { flushTraces, init, SpanStatusCode, SpanType, startSpan } from "@mlflow/core";
-import { MlflowProvider } from "./index.js";
+import { MlflowProvider } from "./index.ts";
 
 describe("MlflowProvider", () => {
 	beforeEach(() => {

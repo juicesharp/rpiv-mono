@@ -1,8 +1,8 @@
 import { Type } from "@sinclair/typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import { acts, defineWorkflow, fanin, produces as producesRaw, type StageDef } from "./api.js";
-import { noopCollector } from "./outcomes/index.js";
-import type { CompositionComparator, ProducesSpec, SkillContract, SkillContractMap } from "./skill-contract.js";
+import { acts, defineWorkflow, fanin, produces as producesRaw, type StageDef } from "./api.ts";
+import { noopCollector } from "./outcomes/index.ts";
+import type { CompositionComparator, ProducesSpec, SkillContract, SkillContractMap } from "./skill-contract.ts";
 import {
 	__resetSkillContracts,
 	adjudicateChannel,
@@ -19,8 +19,8 @@ import {
 	registerCompositionComparator,
 	registerSkillContracts,
 	registerSkillContractsProvider,
-} from "./skill-contracts/index.js";
-import { typeboxSchema } from "./typebox-adapter.js";
+} from "./skill-contracts/index.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
 
 /** Strip symbol keys from an object tree for deep-equal comparison. */
 function stripSymbols(value: unknown): unknown {

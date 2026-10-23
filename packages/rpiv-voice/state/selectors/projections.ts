@@ -1,11 +1,11 @@
-import type { EqualizerViewProps } from "../../view/components/equalizer-view.js";
-import type { SettingsFieldViewProps } from "../../view/components/settings-field-view.js";
-import type { StatusBarViewProps } from "../../view/components/status-bar-view.js";
-import type { TranscriptViewProps } from "../../view/components/transcript-view.js";
-import { getActiveLocale, t } from "../i18n-bridge.js";
-import type { FooterHintKey } from "../screen-intent.js";
-import { SCREEN_META } from "../screen-intent.js";
-import type { GlobalSelector } from "./contract.js";
+import type { EqualizerViewProps } from "../../view/components/equalizer-view.ts";
+import type { SettingsFieldViewProps } from "../../view/components/settings-field-view.ts";
+import type { StatusBarViewProps } from "../../view/components/status-bar-view.ts";
+import type { TranscriptViewProps } from "../../view/components/transcript-view.ts";
+import { getActiveLocale, t } from "../i18n-bridge.ts";
+import type { FooterHintKey } from "../screen-intent.ts";
+import { SCREEN_META } from "../screen-intent.ts";
+import type { GlobalSelector } from "./contract.ts";
 
 // Locales the bundled Whisper base multilingual model recognizes well. Mirror
 // of WHISPER_SUPPORTED_LANGUAGES in voice-command.ts — duplicated rather than
@@ -110,3 +110,13 @@ export const selectLanguageReadonlyFieldProps: GlobalSelector<SettingsFieldViewP
 		hint: t("settings.language_hint", "Run /languages to change."),
 	};
 };
+
+// Decode threads are session-baked (VoiceState.numThreads) — display-only.
+// The value is the raw count as a string; the hint points at voice.json
+// because the settings screen cannot edit the key (JSON-only, restart-to-apply).
+export const selectNumThreadsReadonlyFieldProps: GlobalSelector<SettingsFieldViewProps> = (state, _ctx) => ({
+	label: t("settings.threads_label", "Threads"),
+	active: false,
+	field: { kind: "readonly", value: String(state.numThreads) },
+	hint: t("settings.threads_hint", "Set numThreads in voice.json; re-run /voice to apply."),
+});

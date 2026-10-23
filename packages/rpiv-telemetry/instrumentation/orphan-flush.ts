@@ -1,6 +1,6 @@
-import { dispatchTelemetryEvent } from "../dispatcher.js";
-import type { SubAgentFailedEvent } from "../types/events.js";
-import { inflightSubAgents } from "./state.js";
+import { dispatchTelemetryEvent } from "../dispatcher.ts";
+import type { SubAgentFailedEvent } from "../types/events.ts";
+import { inflightSubAgents } from "./state.ts";
 
 /**
  * Synthesize `subagent_failed` events for any in-flight sub-agent at shutdown.

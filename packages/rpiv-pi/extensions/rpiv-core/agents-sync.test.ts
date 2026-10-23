@@ -13,17 +13,13 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	CLEANUP_SKIP_REASON,
-	cleanupPerCwdAgents,
-	injectModelFrontmatter,
-	isSafeDestructiveOp,
-	SYNC_OP,
-	summarizeCleanupSkips,
-	syncBundledAgents,
-} from "./agents.js";
-import type { ModelsConfig } from "./models-config.js";
-import { BUNDLED_AGENTS_DIR } from "./paths.js";
+import { installedExtensionNames } from "./agent-enablement.ts";
+import { type AgentInjectionContext, injectModelFrontmatter } from "./agents-inject.ts";
+import { cleanupPerCwdAgents, isSafeDestructiveOp, syncBundledAgents } from "./agents-sync.ts";
+import { CLEANUP_SKIP_REASON, SYNC_OP } from "./agents-types.ts";
+import { loadModelsConfig, type ModelsConfig } from "./models-config.ts";
+import { findInstalledSiblings, type LoadedSiblingSources } from "./package-checks.ts";
+import { BUNDLED_AGENTS_DIR } from "./paths.ts";
 
 const sha256 = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
 
@@ -601,26 +597,6 @@ describe("cleanupPerCwdAgents — conservative all-or-nothing cleanup", () => {
 		expect(existsSync(join(perCwdAgentsDir, "my-custom.md"))).toBe(true);
 	});
 
-	describe("summarizeCleanupSkips", () => {
-		it("returns empty string for no skips", () => {
-			expect(summarizeCleanupSkips([])).toBe("");
-		});
-
-		it("formats a single reason", () => {
-			expect(summarizeCleanupSkips([{ dir: "/a", reason: CLEANUP_SKIP_REASON.DIVERGED }])).toBe("1 with user edits");
-		});
-
-		it("aggregates and orders reasons (unmanaged, diverged, custom-files)", () => {
-			const skips = [
-				{ dir: "/a", reason: CLEANUP_SKIP_REASON.DIVERGED },
-				{ dir: "/b", reason: CLEANUP_SKIP_REASON.UNMANAGED },
-				{ dir: "/c", reason: CLEANUP_SKIP_REASON.CUSTOM_FILES },
-				{ dir: "/d", reason: CLEANUP_SKIP_REASON.DIVERGED },
-			];
-			expect(summarizeCleanupSkips(skips)).toBe("1 unmanaged, 2 with user edits, 1 with custom files");
-		});
-	});
-
 	it("removes directory when all managed files match source and no extras", () => {
 		const bundled = bundledNames();
 		if (bundled.length === 0) return;
@@ -664,83 +640,11 @@ describe("isSafeDestructiveOp", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Agent frontmatter injection
+// Agent frontmatter injection — disk/e2e seam tests (real bundled agent).
+// The pure-transform its live in agents-inject.test.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("agent frontmatter injection", () => {
-	const agentContent = [
-		"---",
-		"name: test-agent",
-		"description: Test agent",
-		"tools: grep, find",
-		"isolated: true",
-		"---",
-		"",
-		"You are a test agent.",
-	].join("\n");
-
-	// --- Direct unit tests on the pure transform (the load-bearing invariants) ---
-
-	const cfg: ModelsConfig = {
-		agents: { "test-agent": { model: "anthropic/claude-sonnet-4-20250514", thinking: "high" } },
-	};
-
-	it("injects model and thinking before the closing ---", () => {
-		const out = injectModelFrontmatter(agentContent, "test-agent.md", cfg);
-		// Post-slash-canonical migration: models.json value passes through to
-		// frontmatter byte-for-byte. No translation step.
-		expect(out).toContain("model: anthropic/claude-sonnet-4-20250514");
-		expect(out).toContain("thinking: high");
-		// Injected keys land inside the frontmatter block, before the body.
-		const fmEnd = out.indexOf("\n---", 3);
-		expect(out.indexOf("model:")).toBeLessThan(fmEnd);
-		expect(out.indexOf("You are a test agent.")).toBeGreaterThan(fmEnd);
-	});
-
-	it("is idempotent — inject(inject(x)) === inject(x) (drift prevention)", () => {
-		const once = injectModelFrontmatter(agentContent, "test-agent.md", cfg);
-		const twice = injectModelFrontmatter(once, "test-agent.md", cfg);
-		expect(twice).toBe(once);
-	});
-
-	it("emits the models.json model value byte-for-byte (strengthened idempotency)", () => {
-		const out = injectModelFrontmatter(agentContent, "test-agent.md", cfg);
-		const fmModelLine = out.split("\n").find((l) => l.startsWith("model: "));
-		// Post-slash-canonical: the frontmatter `model:` value equals the
-		// models.json `model` field char-for-char — no translation layer.
-		expect(fmModelLine).toBe(`model: ${cfg.agents!["test-agent"].model}`);
-	});
-
-	it("returns content unchanged when no override is configured", () => {
-		expect(injectModelFrontmatter(agentContent, "other-agent.md", cfg)).toBe(agentContent);
-		expect(injectModelFrontmatter(agentContent, "test-agent.md", {})).toBe(agentContent);
-	});
-
-	it("replaces an existing model key in place rather than duplicating it", () => {
-		const withModel = agentContent.replace("name: test-agent", "name: test-agent\nmodel: openai/gpt-5.5");
-		const out = injectModelFrontmatter(withModel, "test-agent.md", cfg);
-		expect(out.match(/^model:/gm)?.length).toBe(1);
-		expect(out).toContain("model: anthropic/claude-sonnet-4-20250514");
-	});
-
-	it("injects an explicit thinking: off (disable reasoning) and stays idempotent", () => {
-		const offCfg: ModelsConfig = { agents: { "test-agent": { model: "anthropic/opus", thinking: "off" } } };
-		const out = injectModelFrontmatter(agentContent, "test-agent.md", offCfg);
-		expect(out).toContain("thinking: off");
-		expect(injectModelFrontmatter(out, "test-agent.md", offCfg)).toBe(out);
-	});
-
-	it("cascades a defaults model into an otherwise-unconfigured agent", () => {
-		const defaultsCfg: ModelsConfig = {
-			defaults: { model: "openai/o3-pro" },
-			agents: { "other-agent": { model: "openai/o3-pro" } },
-		};
-		const out = injectModelFrontmatter(agentContent, "test-agent.md", defaultsCfg);
-		expect(out).toContain("model: openai/o3-pro");
-	});
-
-	// --- End-to-end sync seam tests (real bundled agent) ---
-
 	const REAL_AGENT = "codebase-analyzer.md";
 	const writeModels = (config: unknown) => {
 		const dir = join(homedir(), ".config", "rpiv-pi");
@@ -778,5 +682,133 @@ describe("agent frontmatter injection", () => {
 
 		// Dest content must equal the raw bundled source — no frontmatter injected.
 		expect(destContent(REAL_AGENT)).toBe(bundledContent(REAL_AGENT));
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent enablement injection — e2e through the sync engine (real settings +
+// models.json reads). The pure-transform its live in agents-inject.test.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("agent enablement injection (install-gated, config-driven)", () => {
+	// The shipped AGENT_ENABLEMENT_GRANTS map is empty (the rpiv-lsp experiment
+	// that populated it lives on backup/lsp-experiment); enablement now flows
+	// through models.json agent entries. These tests exercise the SAME
+	// injection machinery — merge forms, idempotency, the install gate, the
+	// e2e sync + cleanup paths — with config-sourced grants against the
+	// rpiv-web-tools sibling (a real registry entry, so the settings-driven
+	// gate opens for it).
+	const GATE_ON: AgentInjectionContext = { installedExtensions: new Set(["rpiv-web-tools"]) };
+	const SCANNER = "integration-scanner.md";
+	const ANALYZER = "codebase-analyzer.md";
+	const ENABLE_CFG: ModelsConfig = {
+		agents: {
+			"integration-scanner": { tools: ["ext:rpiv-web-tools/tool_a"], extensions: ["rpiv-web-tools"] },
+			"codebase-analyzer": {
+				tools: ["ext:rpiv-web-tools/tool_b", "ext:rpiv-web-tools/tool_c"],
+				extensions: ["rpiv-web-tools"],
+			},
+		},
+	};
+
+	const writeSettings = (packages: unknown[]) => {
+		const dir = join(homedir(), ".pi", "agent");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "settings.json"), JSON.stringify({ packages }), "utf-8");
+	};
+	const writeModels = (config: unknown) => {
+		const dir = join(homedir(), ".config", "rpiv-pi");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "models.json"), JSON.stringify(config), "utf-8");
+	};
+	const dest = (name: string) => readFileSync(join(homedir(), ".pi", "agent", "agents", name), "utf-8");
+	// Rebuild the exact context the sync engine builds from one settings read.
+	const syncContext = (): AgentInjectionContext => ({
+		installedExtensions: installedExtensionNames(findInstalledSiblings().map((s) => s.pkg)),
+	});
+
+	it("e2e gate on: sync injects, re-sync reports unchanged, manifest records hash-after-transform", () => {
+		writeSettings(["npm:@juicesharp/rpiv-web-tools"]);
+		writeModels(ENABLE_CFG);
+
+		const r1 = syncBundledAgents(true);
+		expect([...r1.added, ...r1.updated, ...r1.unchanged]).toContain(SCANNER);
+		expect(dest(SCANNER)).toContain("tools: grep, find, ls, ext:rpiv-web-tools/tool_a");
+		expect(dest(ANALYZER)).toContain("ext:rpiv-web-tools/tool_b");
+
+		const r2 = syncBundledAgents(false);
+		expect(r2.unchanged).toContain(SCANNER);
+		expect(r2.unchanged).toContain(ANALYZER);
+		expect(r2.pendingUpdate).not.toContain(SCANNER);
+
+		const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+		const expected = injectModelFrontmatter(bundledContent(SCANNER), SCANNER, loadModelsConfig(), syncContext());
+		expect(manifest["integration-scanner.md"]).toBe(sha256(expected));
+	});
+
+	it("e2e gate flip: un-edited dests auto-update back to the raw source form", () => {
+		writeSettings(["npm:@juicesharp/rpiv-web-tools"]);
+		writeModels(ENABLE_CFG);
+		syncBundledAgents(true);
+		expect(dest(SCANNER)).toContain("ext:rpiv-web-tools/");
+
+		writeSettings([]); // uninstall
+		const r = syncBundledAgents(false);
+		expect(r.updated).toContain(SCANNER);
+		expect(r.updated).toContain(ANALYZER);
+		expect(r.pendingUpdate).not.toContain(SCANNER);
+		expect(dest(SCANNER)).toBe(bundledContent(SCANNER));
+	});
+
+	// #216: a sibling loaded outside the settings file (bundled in another
+	// package) opens the gate exactly as declaring it would; without the runtime
+	// snapshot the answer is the settings-only one.
+	it("e2e: a sibling loaded but not declared opens the gate; no snapshot keeps it closed", () => {
+		writeSettings(["npm:frida-pi-studio"]);
+		writeModels(ENABLE_CFG);
+		const loaded: LoadedSiblingSources = {
+			extensionPaths: [
+				"/home/u/.pi/agent/npm/node_modules/frida-pi-studio/node_modules/@juicesharp/rpiv-web-tools/index.ts",
+			],
+			markers: new Set(),
+		};
+
+		syncBundledAgents(true);
+		expect(dest(SCANNER)).toBe(bundledContent(SCANNER)); // settings-only: gate closed
+
+		syncBundledAgents(true, loaded);
+		expect(dest(SCANNER)).toContain("tools: grep, find, ls, ext:rpiv-web-tools/tool_a");
+		const r = syncBundledAgents(false, loaded);
+		expect(r.unchanged).toContain(SCANNER); // same snapshot → stable hashes
+	});
+
+	it("cleanupPerCwdAgents: gate-on legacy content cleans up; a flipped gate skips it DIVERGED", () => {
+		const perCwdAgentsDir = join(cwd, ".pi", "agents");
+		const buildLegacyInstall = (ctx: AgentInjectionContext) => {
+			mkdirSync(perCwdAgentsDir, { recursive: true });
+			const manifest: Record<string, string> = {};
+			for (const name of bundledNames()) {
+				const injected = injectModelFrontmatter(bundledContent(name), name, loadModelsConfig(), ctx);
+				writeFileSync(join(perCwdAgentsDir, name), injected, "utf-8");
+				manifest[name] = sha256(injected);
+			}
+			writeFileSync(join(perCwdAgentsDir, ".rpiv-managed.json"), JSON.stringify(manifest), "utf-8");
+		};
+
+		// Gate on: files hold exactly the expected transformed form → cleaned.
+		writeSettings(["npm:@juicesharp/rpiv-web-tools"]);
+		writeModels(ENABLE_CFG);
+		buildLegacyInstall(syncContext());
+		const cleaned = cleanupPerCwdAgents(cwd);
+		expect(cleaned.cleanedUp).toEqual([perCwdAgentsDir]);
+		expect(cleaned.skipped).toEqual([]);
+
+		// Gate flipped off: identical on-disk bytes no longer match the raw
+		// expectation — conservative skip (DIVERGED), never falsely cleaned.
+		writeSettings([]);
+		buildLegacyInstall(GATE_ON);
+		const after = cleanupPerCwdAgents(cwd);
+		expect(after.cleanedUp).toEqual([]);
+		expect(after.skipped).toEqual([{ dir: perCwdAgentsDir, reason: CLEANUP_SKIP_REASON.DIVERGED }]);
 	});
 });

@@ -9,12 +9,12 @@
  * + lifecycle events + `terminate`) lives in `audit.ts`.
  */
 
-import type { StageDef } from "./api.js";
-import { applyCompletedStage } from "./chain-state.js";
-import { nowIso } from "./internal-utils.js";
-import type { Output } from "./output.js";
-import { appendStage, type SessionRef, type WorkflowStage } from "./state/index.js";
-import type { RunState, UnitRef } from "./types.js";
+import type { StageDef } from "./api.ts";
+import { applyCompletedStage } from "./chain-state.ts";
+import { nowIso } from "./internal-utils.ts";
+import type { Output } from "./output.ts";
+import { appendStage, type SessionRef, type WorkflowStage } from "./state/index.ts";
+import type { RunState, UnitRef } from "./types.ts";
 
 /**
  * Advance the monotonic stage-number allocator and return the assigned

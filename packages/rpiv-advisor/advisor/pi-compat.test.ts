@@ -9,7 +9,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getRuntimeCompleteSimple } from "./pi-compat.js";
+import { getRuntimeCompleteSimple } from "./pi-compat.ts";
 
 describe("getRuntimeCompleteSimple", () => {
 	it("returns a method bound to the host runtime", async () => {
@@ -44,7 +44,7 @@ describe("loadCompleteSimple", () => {
 	/** Import the shim AFTER the per-test doMocks so its dynamic imports resolve
 	 *  against them (vi.resetModules first drops any previously-cached copies). */
 	async function load(): Promise<unknown> {
-		const mod = await import("./pi-compat.js");
+		const mod = await import("./pi-compat.ts");
 		return mod.loadCompleteSimple();
 	}
 

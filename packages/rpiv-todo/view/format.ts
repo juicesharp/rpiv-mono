@@ -1,10 +1,10 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { formatStatusLabel } from "../state/i18n-bridge.js";
-import { selectTaskSubjectById } from "../state/selectors.js";
-import type { TaskState } from "../state/state.js";
-import { sanitizeTerminalText } from "../tool/sanitize.js";
-import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } from "../tool/types.js";
+import { formatStatusLabel } from "../state/i18n-bridge.ts";
+import { selectTaskSubjectById } from "../state/selectors.ts";
+import type { TaskState } from "../state/state.ts";
+import { sanitizeTerminalText } from "../tool/sanitize.ts";
+import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } from "../tool/types.ts";
 
 // Re-export so legacy import paths (todo.ts, tests) continue to resolve;
 // the canonical definition lives in the i18n bridge.
@@ -24,7 +24,7 @@ export const STATUS_GLYPH: Record<TaskStatus, string> = {
 /**
  * Color palette for the renderResult status echo. `deleted` uses `muted` so a
  * successful delete is visually distinct from the error branch (which uses
- * `error` + `✗`). Mirrors pre-refactor `todo.ts:444-450`.
+ * `error` + `✗`)..
  */
 export const STATUS_COLOR: Record<TaskStatus, "dim" | "warning" | "success" | "muted"> = {
 	pending: "dim",
@@ -35,7 +35,7 @@ export const STATUS_COLOR: Record<TaskStatus, "dim" | "warning" | "success" | "m
 
 /**
  * Per-action prefix glyph for renderCall. `+` create, `→` update, `×` delete,
- * `›` get, `☰` list, `∅` clear. Pre-refactor `todo.ts:457-464`.
+ * `›` get, `☰` list, `∅` clear..
  */
 export const ACTION_GLYPH: Record<TaskAction, string> = {
 	create: "+",
@@ -50,7 +50,7 @@ export const ACTION_GLYPH: Record<TaskAction, string> = {
  * Glyph for the persistent overlay's per-task row. Differs from `STATUS_GLYPH`
  * for `completed` (`✓` vs `●`) and `deleted` (`✗` vs `⊘`) because the
  * overlay caller never renders a `deleted` row but uses `✗` in its
- * error-toned palette. Mirrors pre-refactor `todo-overlay.ts:23-33`.
+ * error-toned palette..
  */
 export function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
 	switch (status) {

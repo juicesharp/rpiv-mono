@@ -3,8 +3,7 @@
  * handler-failure tests in rpiv-advisor + rpiv-web-tools + rpiv-voice.
  *
  * The SDK-level boolean return of saveLocaleConfig is asserted in i18n.test.ts.
- * This file exercises the persist-first save-then-apply invariant that
- * Phase 4 restored at index.ts:64 — i.e. that a failed disk write produces
+ * This file exercises the persist-first save-then-apply invariant — i.e. that a failed disk write produces
  * an error notification AND skips applyLocale, leaving the in-memory locale
  * untouched so the next session's detection chain runs cleanly.
  */
@@ -14,13 +13,13 @@ import { dirname, join } from "node:path";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./i18n-ui.js", () => ({
+vi.mock("./i18n-ui.ts", () => ({
 	showLanguagePicker: vi.fn(),
 }));
 
-import { __resetState, applyLocale, getActiveLocale } from "./i18n.js";
-import { showLanguagePicker } from "./i18n-ui.js";
-import registerI18n from "./index.js";
+import { __resetState, applyLocale, getActiveLocale } from "./i18n.ts";
+import { showLanguagePicker } from "./i18n-ui.ts";
+import registerI18n from "./index.ts";
 
 const LOCALE_CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-i18n", "locale.json");
 

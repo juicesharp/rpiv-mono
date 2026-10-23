@@ -30,13 +30,13 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, type FanoutFn, fanin, gate, type IterateFn, produces, type Workflow } from "../api.js";
-import { fs as fsHandle } from "../handle.js";
-import { judge } from "../judge.js";
-import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
-import { failedOutput, type Output, outputMeta } from "../output.js";
-import type { Outcome } from "../output-spec.js";
-import { eq, gt } from "../predicates.js";
+import { acts, type FanoutFn, fanin, gate, type IterateFn, produces, type Workflow } from "../api.ts";
+import { fs as fsHandle } from "../handle.ts";
+import { judge } from "../judge.ts";
+import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.ts";
+import { failedOutput, type Output, outputMeta } from "../output.ts";
+import type { Outcome } from "../output-spec.ts";
+import { eq, gt } from "../predicates.ts";
 import {
 	appendHeader,
 	appendStage,
@@ -44,9 +44,9 @@ import {
 	STATE_SCHEMA_VERSION,
 	type WorkflowHeader,
 	type WorkflowStage,
-} from "../state/index.js";
-import { typeboxSchema } from "../typebox-adapter.js";
-import { resumeWorkflow } from "./runner.js";
+} from "../state/index.ts";
+import { typeboxSchema } from "../typebox-adapter.ts";
+import { resumeWorkflow } from "./runner.ts";
 
 // ---------------------------------------------------------------------------
 // Shared scaffolding
@@ -335,9 +335,11 @@ describe("loop-resume — fanout", () => {
 		// No fanout unit re-dispatched — index 1's slot is filled by the rebuilt sentinel,
 		// not left pending. The only dispatch is the synthesize stage, whose fanin read
 		// skips the failed sentinel (p1 + p3, NOT p2).
-		expect(chain.sentMessages).toEqual([
-			"/skill:synthesize --plans .rpiv/artifacts/plans/p1.md --plans .rpiv/artifacts/plans/p3.md",
-		]);
+		expect(chain.sentMessages).toHaveLength(1);
+		expect(chain.sentMessages[0]).toMatch(
+			/^\/skill:synthesize --plans \.rpiv\/artifacts\/plans\/p1\.md --plans \.rpiv\/artifacts\/plans\/p3\.md\n\nPrior failures/,
+		);
+		expect(chain.sentMessages[0]).toContain("impl (unit phase-2): unit 2 boom"); // the collected halt's memo
 		// The collected row is NOT re-dispatched, so no new unit rows for impl land.
 		const rows = readAllStages(tmpDir, header.runId);
 		expect(rows.filter((r) => r.parent === "impl")).toHaveLength(3);
@@ -357,6 +359,311 @@ describe("loop-resume — fanout", () => {
 		};
 		const rebuilt = failedOutput(outputMeta({ ...rowFields, ts: rowFields.ts }), "unit 2 boom");
 		expect(rebuilt.meta).toStrictEqual(rowFields);
+	});
+
+	it("collected soft-halt row with unitLabel: resume rebuilds a DIMENSION-BEARING sentinel, byte-identical to the live softHaltUnit twin", async () => {
+		// Live: `softHaltUnit` passes `s.unit?.label` as `failedOutput`'s third arg;
+		// resume: `rebuildCollectedSentinel` threads `row.unitLabel` (which
+		// `recordUnitHalt` persisted off the same unit). A capture stage observes the
+		// folded channel directly: the sentinel sits at phase 2's index carrying the
+		// dimension — the blocking field every gate fold keys off — and the collected
+		// row is NOT re-dispatched (every slot filled).
+		let captured: Output[] = [];
+		const capWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }),
+				capture: acts.script({
+					run: ({ state }) => {
+						captured = [...(state.named.plans ?? [])];
+					},
+				}),
+			},
+			edges: { impl: "capture", capture: "stop" },
+		} as Workflow;
+		writeRun([
+			unitRow(1, 1, "completed"),
+			{ ...unitRow(2, 2, "failed"), collected: true, errMsg: "unit 2 boom", unitLabel: "phase 2" },
+			unitRow(3, 3, "completed"),
+		]);
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: capWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([]); // every slot filled — no re-dispatch
+		expect(captured).toHaveLength(3);
+		expect(captured[1]).toMatchObject({
+			kind: "failed",
+			data: { reason: "unit 2 boom", dimension: "phase 2" },
+			meta: { stage: "impl (phase-2)", skill: "impl", stageNumber: 2, ts: "t2", runId: header.runId },
+		});
+	});
+
+	it("v3 budget-aware fold: an UNDER-BUDGET collected row (attemptOrdinal within retryHaltedUnits) re-dispatches its unit", async () => {
+		// The v3 trail contract: the collected row carries the failed attempt's
+		// 1-based ordinal, and the fold re-dispatches while budget remains. Here
+		// retryHaltedUnits is 1 and the row is attempt 1 — budget remains, so the
+		// slot stays UNFILLED (exactly like a pending unit) and resume dispatches
+		// phase 2 once; the capture stage then sees the re-dispatch's real output
+		// at slot 2, not a sentinel.
+		let captured: Output[] = [];
+		const retryWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({
+					outcome: transcriptOutcome("plans"),
+					loop: fanout({ units: threeUnits, retryHaltedUnits: 1 }),
+				}),
+				capture: acts.script({
+					run: ({ state }) => {
+						captured = [...(state.named.plans ?? [])];
+					},
+				}),
+			},
+			edges: { impl: "capture", capture: "stop" },
+		} as Workflow;
+		writeRun([
+			unitRow(1, 1, "completed"),
+			{
+				...unitRow(2, 2, "failed"),
+				collected: true,
+				errMsg: "unit 2 boom",
+				unitLabel: "phase 2",
+				attemptOrdinal: 1,
+			},
+			unitRow(3, 3, "completed"),
+		]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p2.md")] }], // the phase-2 re-dispatch
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: retryWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		// Exactly one re-dispatch — phase 2 (under budget), never the completed 1 & 3 —
+		// and the skipped attempt's failure rides its prompt as the memo suffix.
+		expect(chain.sentMessages).toHaveLength(1);
+		expect(chain.sentMessages[0]).toMatch(/^\/skill:impl phase 2\n\nPrior failures in this run/);
+		expect(chain.sentMessages[0]).toContain("impl (unit phase-2): unit 2 boom");
+		// One new completed phase-2 row follows the three trail rows (the capture
+		// stage's own completed row lands after it).
+		const rows = readAllStages(tmpDir, header.runId);
+		const implRows = rows.filter((r) => r.parent === "impl");
+		expect(implRows).toHaveLength(4);
+		expect(implRows[3]).toMatchObject({ stage: "impl (phase-2)", status: "completed", unitIndex: 1 });
+		// Capture slot 2 holds the re-dispatch's REAL output — no sentinel.
+		expect(captured).toHaveLength(3);
+		expect(captured[1]?.kind).not.toBe("failed");
+		expect(captured[1]?.artifacts[0]?.handle).toMatchObject({ kind: "fs", path: ".rpiv/artifacts/plans/p2.md" });
+	});
+
+	it("v3 budget-aware fold: TWO under-budget collected rows for one unit (retryHaltedUnits: 2) both skip — one re-dispatch carrying both memos", async () => {
+		let captured: Output[] = [];
+		const retryWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({
+					outcome: transcriptOutcome("plans"),
+					loop: fanout({ units: threeUnits, retryHaltedUnits: 2 }),
+				}),
+				capture: acts.script({
+					run: ({ state }) => {
+						captured = [...(state.named.plans ?? [])];
+					},
+				}),
+			},
+			edges: { impl: "capture", capture: "stop" },
+		} as Workflow;
+		writeRun([
+			unitRow(1, 1, "completed"),
+			{ ...unitRow(2, 2, "failed"), collected: true, errMsg: "boom one", unitLabel: "phase 2", attemptOrdinal: 1 },
+			{ ...unitRow(2, 3, "failed"), collected: true, errMsg: "boom two", unitLabel: "phase 2", attemptOrdinal: 2 },
+			unitRow(3, 4, "completed"),
+		]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p2.md")] }],
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: retryWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toHaveLength(1);
+		expect(chain.sentMessages[0]).toContain("impl (unit phase-2): boom one");
+		expect(chain.sentMessages[0]).toContain("impl (unit phase-2): boom two");
+		expect(captured).toHaveLength(3);
+		expect(captured[1]?.kind).not.toBe("failed");
+	});
+
+	it("v3 budget-aware fold: an exhausted-budget collected row's failure still enters the memo ledger — the next stage's prompt carries it", async () => {
+		const retryWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({
+					outcome: transcriptOutcome("plans"),
+					loop: fanout({ units: threeUnits, retryHaltedUnits: 1 }),
+				}),
+				note: acts({ reads: [fanin("plans")] }),
+			},
+			edges: { impl: "note", note: "stop" },
+		} as Workflow;
+		writeRun([
+			unitRow(1, 1, "completed"),
+			{
+				...unitRow(2, 2, "failed"),
+				collected: true,
+				errMsg: "unit 2 boom",
+				unitLabel: "phase 2",
+				attemptOrdinal: 2,
+			},
+			unitRow(3, 3, "completed"),
+		]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("noted")] }], // the note stage
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: retryWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toHaveLength(1); // zero unit re-dispatch — only the note stage
+		expect(chain.sentMessages[0]).toContain("/skill:note");
+		expect(chain.sentMessages[0]).toContain("impl (unit phase-2): unit 2 boom");
+	});
+
+	it("v3 budget-aware fold: an AT-BUDGET-EXHAUSTED collected row folds its sentinel — zero re-dispatch (today's behavior)", async () => {
+		// The same trail with attemptOrdinal: 2 — the FINAL attempt under
+		// retryHaltedUnits: 1 (1 initial + 1 retry). No budget remains, so the
+		// fold rebuilds the dimension-bearing sentinel at slot 2 exactly as a
+		// pre-v3 collected row folded: zero dispatch, every slot filled.
+		let captured: Output[] = [];
+		const retryWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({
+					outcome: transcriptOutcome("plans"),
+					loop: fanout({ units: threeUnits, retryHaltedUnits: 1 }),
+				}),
+				capture: acts.script({
+					run: ({ state }) => {
+						captured = [...(state.named.plans ?? [])];
+					},
+				}),
+			},
+			edges: { impl: "capture", capture: "stop" },
+		} as Workflow;
+		writeRun([
+			unitRow(1, 1, "completed"),
+			{
+				...unitRow(2, 2, "failed"),
+				collected: true,
+				errMsg: "unit 2 boom",
+				unitLabel: "phase 2",
+				attemptOrdinal: 2,
+			},
+			unitRow(3, 3, "completed"),
+		]);
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: retryWf, header, ref: "@x" });
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toEqual([]); // every slot filled — zero re-dispatch
+		expect(captured).toHaveLength(3);
+		expect(captured[1]).toMatchObject({
+			kind: "failed",
+			data: { reason: "unit 2 boom", dimension: "phase 2" },
+			meta: { stage: "impl (phase-2)", skill: "impl", stageNumber: 2, ts: "t2", runId: header.runId },
+		});
+	});
+
+	it("haltWhenAllFailed trail: all-sentinel cursor + parent halt row → ZERO re-dispatch, one fresh halt row, ends failed", async () => {
+		// The halt row is parent-attributed (no collected/parent/unitIndex fields), so
+		// the fold's halt-marker predicate (isOpenFanoutHaltMarker) keeps the generation
+		// open; the rebuilt all-sentinel cursor leaves pending=[] and the early tail
+		// (runFanoutGeneration's order.length === 0) re-fires the finishLoop check — one
+		// fresh parent halt row per resume invocation, zero new dispatch, no loop.
+		const haltWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({
+					outcome: transcriptOutcome("plans"),
+					loop: fanout({ units: threeUnits, haltWhenAllFailed: true }),
+				}),
+			},
+			edges: { impl: "stop" },
+		} as Workflow;
+		writeRun([
+			{ ...unitRow(1, 1, "failed"), collected: true, errMsg: "unit 1 boom" },
+			{ ...unitRow(2, 2, "failed"), collected: true, errMsg: "unit 2 boom" },
+			{ ...unitRow(3, 3, "failed"), collected: true, errMsg: "unit 3 boom" },
+			{
+				session: null,
+				stageNumber: 4,
+				stage: "impl", // parent-unset — the all-failed generation-close halt marker
+				skill: "impl",
+				status: "failed",
+				ts: "t4",
+				errMsg: 'Fanout all-failed at stage "impl" (3/3 units failed)',
+			} as WorkflowStage,
+		]);
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: haltWf, header, ref: "@x" });
+
+		expect(result.success).toBe(false);
+		expect(chain.sentMessages).toEqual([]); // ZERO re-dispatch — every slot filled by a rebuilt sentinel
+		const rows = readAllStages(tmpDir, header.runId);
+		const halts = rows.filter((r) => r.stage === "impl" && r.parent === undefined && r.status === "failed");
+		expect(halts).toHaveLength(2); // the trail's original halt + exactly ONE fresh re-derived row
+		expect(String(halts[1]!.errMsg)).toContain("Fanout all-failed");
+	});
+
+	it("haltWhenAllFailed trail: partial-collected cursor re-dispatches ONLY the pending unit, then halts at the close when all fail", async () => {
+		// Units 1-2 collected-failed before the process died; unit 3 never ran (no
+		// parent halt row — the trailer is a unit row). Resume re-dispatches ONLY
+		// phase 3; its soft-halt fills the last slot, and the close sees all three
+		// failed → the halt fires with one parent-attributed row.
+		const haltWf: Workflow = {
+			name: "fanout-wf",
+			start: "impl",
+			stages: {
+				impl: produces({
+					outcome: transcriptOutcome("plans"),
+					loop: fanout({ units: threeUnits, haltWhenAllFailed: true }),
+				}),
+			},
+			edges: { impl: "stop" },
+		} as Workflow;
+		writeRun([
+			{ ...unitRow(1, 1, "failed"), collected: true, errMsg: "unit 1 boom" },
+			{ ...unitRow(2, 2, "failed"), collected: true, errMsg: "unit 2 boom" },
+		]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("no artifact path here")] }], // phase 3 also fails (soft)
+		});
+
+		const result = await resumeWorkflow(chain.ctx, { workflow: haltWf, header, ref: "@x" });
+
+		expect(result.success).toBe(false);
+		expect(chain.sentMessages).toHaveLength(1); // ONLY the pending unit re-dispatched, carrying both memos
+		expect(chain.sentMessages[0]).toMatch(/^\/skill:impl phase 3\n\nPrior failures/);
+		expect(chain.sentMessages[0]).toContain("unit 1 boom");
+		expect(chain.sentMessages[0]).toContain("unit 2 boom");
+		const rows = readAllStages(tmpDir, header.runId);
+		expect(rows.filter((r) => r.parent === "impl" && r.collected === true)).toHaveLength(3);
+		const halts = rows.filter((r) => r.stage === "impl" && r.parent === undefined && r.status === "failed");
+		expect(halts).toHaveLength(1);
+		expect(String(halts[0]!.errMsg)).toContain("Fanout all-failed");
 	});
 
 	it("process died mid-fanout (no failure row): resumes at the next unit", async () => {

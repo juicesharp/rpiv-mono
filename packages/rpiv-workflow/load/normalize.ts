@@ -16,8 +16,8 @@
  * `Number(...)` coercion in the predicate body — not a loader concern.
  */
 
-import type { Workflow } from "../api.js";
-import { describe, isEnvelope, isWorkflow } from "./shape-guards.js";
+import type { Workflow } from "../api.ts";
+import { describe, isEnvelope, isWorkflow } from "./shape-guards.ts";
 
 export type FileKind = "config" | "pack";
 

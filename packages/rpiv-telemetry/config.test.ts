@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { isEventEnabled, validateEventAllowlist } from "./config.js";
-import type { TelemetryEventKind } from "./types/events.js";
+import { isEventEnabled, validateEventAllowlist } from "./config.ts";
+import type { TelemetryEventKind } from "./types/events.ts";
 
 describe("validateEventAllowlist", () => {
 	beforeEach(() => {

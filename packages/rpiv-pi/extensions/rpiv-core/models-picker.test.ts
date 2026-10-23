@@ -6,7 +6,7 @@
 
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { showFilterablePicker } from "./models-picker.js";
+import { showFilterablePicker } from "./models-picker.ts";
 
 interface RenderableComponent {
 	render: (w: number) => string[];

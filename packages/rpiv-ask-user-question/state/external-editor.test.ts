@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { editWithExternalEditor } from "./external-editor.js";
+import { editWithExternalEditor } from "./external-editor.ts";
 
 let fixtureDir: string;
 let stdout: ReturnType<typeof vi.spyOn>;

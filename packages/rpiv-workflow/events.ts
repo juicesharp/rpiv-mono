@@ -26,12 +26,12 @@
  * caller through the existing path.
  */
 
-import type { CapPolicy, Unit, UnitRole } from "./api.js";
-import { formatError, globalSlot } from "./internal-utils.js";
-import { MSG_LIFECYCLE_THREW } from "./messages.js";
-import type { Output, RunView } from "./output.js";
-import type { RunTrigger } from "./triggers.js";
-import type { RunWorkflowResult } from "./types.js";
+import type { CapPolicy, Unit, UnitRole } from "./api.ts";
+import { formatError, globalSlot } from "./internal-utils.ts";
+import { MSG_LIFECYCLE_THREW } from "./messages.ts";
+import type { Output, RunView } from "./output.ts";
+import type { RunTrigger } from "./triggers.ts";
+import type { RunWorkflowResult } from "./types.ts";
 
 /**
  * Run-scoped context shared by every lifecycle callback. Mirrors the

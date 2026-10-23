@@ -19,9 +19,9 @@
  * consumers read the envelope shape there.
  */
 
-import type { Artifact } from "./handle.js";
-import type { RunView } from "./output.js";
-import type { BranchEntry } from "./transcript.js";
+import type { Artifact } from "./handle.ts";
+import type { RunView } from "./output.ts";
+import type { BranchEntry } from "./transcript.ts";
 
 // ---------------------------------------------------------------------------
 // Snapshot — pre-stage reference capture (shared by collector + parser)
@@ -51,6 +51,15 @@ export interface CollectContext<Snapshot = unknown> extends SnapshotContext {
 	snapshot: Snapshot;
 	/** Filled by the runner; collectors MUST NOT set this themselves. */
 	skill: string;
+	/**
+	 * Present iff this session IS one loop unit — the unit's display label.
+	 * Grade panels label each dimension unit with the dimension it grades, so
+	 * there it IS the verdict dimension; a collector may narrow collection to
+	 * it (the disk-first verdict collector's determined-name tightness).
+	 * Absent for single stages and unlabeled wirings — those collectors must
+	 * degrade to their loose shapes, never fatal on what they accepted before.
+	 */
+	unitLabel?: string;
 }
 
 /**

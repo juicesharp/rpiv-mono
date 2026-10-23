@@ -21,7 +21,7 @@ Agent({ subagent_type: "codebase-analyzer", description: "analyze services", pro
 ```
 <agent-name>.md                   — Flat folder. One file per agent; `name` frontmatter == filename stem
                                     == subagent_type value used by callers. Profiles are grouped by
-                                    capability tier (see below), not by directory.
+                                    capability tiers (see below), not by directory.
 ```
 
 ## Agent Definition Pattern
@@ -67,7 +67,14 @@ External-tier tools are namespaced `ext:<sibling>/<tool>` and the agent must dec
 `general-purpose` is provided by the subagent dispatcher as a default agent (broad tool set, inherits project context). Skills that need a fallback dispatcher reference it by name without rpiv-pi shipping a profile file.
 
 ## Session Sync Lifecycle
-At session start, the rpiv-core extension syncs bundled `.md` files into the global `~/.pi/agent/agents/` — new files are always copied, and a smart gate auto-updates/auto-removes managed files whose destination still matches the recorded hash; only user-edited files are held as pending. The manifest at `~/.pi/agent/agents/.rpiv-managed.json` tracks which files are managed so user-authored agents are never touched. Legacy per-cwd `<cwd>/.pi/agents/` installs are cleaned up at session start (`cleanupPerCwdAgents`). `/rpiv-update-agents` applies full sync: force add/update/remove, overwriting user edits.
+At session start, the rpiv-core extension syncs bundled `.md` files into the global `~/.pi/agent/agents/` — new files are always copied, and a smart gate auto-updates/auto-removes managed files whose destination still matches the recorded hash; only user-edited files are held as pending. The manifest at `~/.pi/agent/agents/.rpiv-managed.json` tracks which files are managed so user-authored agents are never touched. Sync additionally INJECTS enablement frontmatter into installed copies: `model`/`thinking` picks plus sibling-gated `tools`/`extensions` grants, flipping shipped `isolated: true` → `isolated: false` + `skills: false` when providing siblings are installed (the manifest records the hash AFTER transform — installed copies may legitimately diverge from the shipped file). Legacy per-cwd `<cwd>/.pi/agents/` installs are cleaned up at session start (`cleanupPerCwdAgents`, under a conservative all-or-nothing gate). `/rpiv-update-agents` applies full sync: force add/update/remove, overwriting user edits. Sync is not concurrency-safe across sessions sharing the target dir.
+
+## Citation Verification Contract (downstream)
+Agent output citations are verified by the workflow's deterministic citation floor (`extensions/rpiv-core/built-ins/citations.ts`), not by the agents themselves:
+- `file:line(-line)` citations are checked against the working tree; bare basenames and package-relative suffixes back a citation when exactly one tree file matches; an ambiguous suffix gets TWO tiebreaks before failing as unresolved — (1) the plan's declared `files:` write-set, (2) the nearest preceding prose mention of a candidate's full path
+- Arrow-pair revision notes (`old → new`) are skipped — each half is a revision reference, not a live claim
+- `node_modules/` probes resolve direct dependencies but the suffix walk never resolves into deps; placeholder prefixes (`path/to/`, `packages/x/`) and citations inside fenced code blocks are exempt
+- ALL citation findings are advisory (severity `low` rides the gate floor) — they route to the ship-grade panel, never block a run
 
 ## Architectural Boundaries
 - **NO agent dispatches another agent** — `Agent` never appears in any allowlist
@@ -82,7 +89,7 @@ At session start, the rpiv-core extension syncs bundled `.md` files into the glo
 3. Frontmatter: `name`, `description`, `tools`, and `isolated: true` (omit `isolated` only for an External-tier agent, which instead declares `extensions: [<sibling>]` and uses `ext:<sibling>/<tool>` tool names). `description` addresses the caller ("Use when…"), not the agent itself
 4. Opening sentence: "You are a specialist at X. Your job is to Y, NOT to Z." — Z is an adjacent activity outside this agent's scope, expressed without naming another agent (the agent runs isolated and cannot dispatch siblings)
 5. Include `## What NOT to Do` and a closing `Remember:` sentence in every agent
-6. Output Format: one fenced block with a realistic filled-in example; prefix with `CRITICAL: Use EXACTLY this format.` if downstream code parses the output. If the agent emits `file:line` citations, instruct it to use repo-root-relative paths — strip only the absolute prefix up to the repository root, never a package or subdirectory prefix (`packages/billing/src/invoice.ts:42`, not `src/invoice.ts:42`; see `integration-scanner.md:53`) — the workflow's deterministic citation floor verifies every citation against the tree: bare basenames and package-relative suffixes still back a citation when exactly one tree file matches, an ambiguous suffix fails as unresolved (with candidates), and only citations naming no real file or pointing past end-of-file are flagged as fabricated
-7. If the agent depends on external state (e.g., git), add a `## Pre-flight` check with an explicit fallback output block
+6. Output Format: one fenced block with a realistic filled-in example; prefix with `CRITICAL: Use EXACTLY this format.` if downstream code parses the output. If the agent emits `file:line` citations, instruct it to use repo-root-relative paths — strip only the absolute prefix up to the repository root, never a package or subdirectory prefix (`packages/billing/src/invoice.ts:42`, not `src/invoice.ts:42`; see `integration-scanner.md:53`)
+7. If the agent depends on external state (e.g. git), add a `## Pre-flight` check with an explicit fallback output block
 8. The file is auto-synced to the global `~/.pi/agent/agents/` at session start — no registration step needed
 </important>

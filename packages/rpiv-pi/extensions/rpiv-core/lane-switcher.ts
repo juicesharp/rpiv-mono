@@ -20,10 +20,10 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, KeyId, TUI } from "@earendil-works/pi-tui";
 import type { WorkflowHostContext } from "@juicesharp/rpiv-workflow";
-import { showLaneConsole } from "./lane-console.js";
-import { LaneDock } from "./lane-dock.js";
-import { LaneDockEditor } from "./lane-dock-editor.js";
-import { isLaneRelayUiContext } from "./lane-relay-ui.js";
+import { showLaneConsole } from "./lane-console.ts";
+import { LaneDock } from "./lane-dock.ts";
+import { LaneDockEditor } from "./lane-dock-editor.ts";
+import { isLaneRelayUiContext } from "./lane-relay-ui.ts";
 import {
 	getFocusedRun,
 	laneCount,
@@ -31,8 +31,8 @@ import {
 	SINGLE_UNIT_KEY,
 	setFocusedRun,
 	subscribeLanes,
-} from "./run-lane-registry.js";
-import { isModuleNotFound } from "./utils.js";
+} from "./run-lane-registry.ts";
+import { isModuleNotFound } from "./utils.ts";
 
 /**
  * Root hotkey that opens the lane switcher, registered via Pi's `registerShortcut`
@@ -44,13 +44,24 @@ import { isModuleNotFound } from "./utils.js";
  * Pi's keymap. So the binding is OVERRIDABLE: set `RPIV_LANES_HOTKEY` to a
  * different KeyId to rebind, or to `off`/`none`/empty to disable the hotkey entirely
  * and rely on the always-safe `/lanes` command. `/lanes` is always available.
+ *
+ * Under Windows keybindings (Windows, and Linux under WSL) Pi binds ctrl+q to its reserved
+ * follow-up action (Pi #8372), so Pi skips our shortcut and warns at every launch — the
+ * default there is `alt+l` instead (#252).
  */
 const DEFAULT_HOTKEY = "ctrl+q";
+const WINDOWS_DEFAULT_HOTKEY = "alt+l";
+
+/** Mirrors Pi's `useWindowsKeybindings` (not exported): Windows, or Linux under WSL. */
+function usesWindowsKeybindings(): boolean {
+	const { WSL_DISTRO_NAME, WSL_INTEROP } = process.env;
+	return process.platform === "win32" || (process.platform === "linux" && Boolean(WSL_DISTRO_NAME || WSL_INTEROP));
+}
 
 /** Resolve the switcher hotkey from the environment; undefined = no hotkey. */
 function resolveHotkey(): string | undefined {
 	const raw = process.env.RPIV_LANES_HOTKEY;
-	if (raw === undefined) return DEFAULT_HOTKEY; // back-compat default
+	if (raw === undefined) return usesWindowsKeybindings() ? WINDOWS_DEFAULT_HOTKEY : DEFAULT_HOTKEY; // back-compat default
 	const v = raw.trim();
 	if (v === "" || /^(off|none|false|disabled?)$/i.test(v)) return undefined;
 	return v;

@@ -1,5 +1,7 @@
 /**
- * /rpiv-setup — installs any SIBLINGS not present in the active Pi settings file
+ * /rpiv-setup — installs any SIBLINGS neither declared in the active Pi settings
+ * file nor already loaded (bundled in another package, a project install — #216:
+ * installing those again makes both copies register the same tools)
  * and prunes deprecated entries (e.g. the unscoped `npm:pi-subagents` from
  * the rpiv-pi 0.12.x → 0.14.0 line). Both mutations are previewed in the
  * confirmation dialog and only executed after the user agrees.
@@ -9,11 +11,12 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { findMissingSiblings } from "./package-checks.js";
-import { spawnPiInstall } from "./pi-installer.js";
-import { findLegacySiblings, pruneLegacySiblings } from "./prune-legacy-siblings.js";
-import type { SiblingPlugin } from "./siblings.js";
-import { getPiAgentSettingsPath, toErrorMessage } from "./utils.js";
+import { readLoadedSiblingSources } from "./loaded-siblings.ts";
+import { findMissingSiblings } from "./package-checks.ts";
+import { spawnPiInstall } from "./pi-installer.ts";
+import { findLegacySiblings, pruneLegacySiblings } from "./prune-legacy-siblings.ts";
+import type { SiblingPlugin } from "./siblings.ts";
+import { getPiAgentSettingsPath, toErrorMessage } from "./utils.ts";
 
 const INSTALL_TIMEOUT_MS = 120_000;
 const STDERR_SNIPPET_CHARS = 300;
@@ -28,6 +31,11 @@ const msgInstalling = (pkg: string) => `Installing ${pkg}…`;
 const msgInstalledLine = (pkgs: string[]) => `✓ Installed: ${pkgs.join(", ")}`;
 const msgFailedHeader = () => `✗ Failed:`;
 const msgFailedLine = (pkg: string, err: string) => `  ${pkg}: ${err}`;
+const msgOptionalHint = (optional: SiblingPlugin[]) =>
+	[
+		"Optional, not installed — add any with `pi install`:",
+		...optional.map((o) => `  • pi install ${o.pkg}  (provides ${o.provides})`),
+	].join("\n");
 const msgLegacyPruned = (entries: string[]) =>
 	`Removed legacy subagent library from settings.json: ${entries.join(", ")}. Run \`pi uninstall\` to free disk space, then restart Pi.`;
 
@@ -36,7 +44,7 @@ type UI = {
 	confirm: (title: string, body: string) => Promise<boolean>;
 };
 
-function buildConfirmBody(missing: SiblingPlugin[], legacyEntries: string[]): string {
+function buildConfirmBody(missing: SiblingPlugin[], optional: SiblingPlugin[], legacyEntries: string[]): string {
 	const lines: string[] = ["rpiv-pi will apply the following changes:", ""];
 	if (missing.length > 0) {
 		lines.push("Install via `pi install`:");
@@ -49,6 +57,10 @@ function buildConfirmBody(missing: SiblingPlugin[], legacyEntries: string[]): st
 		for (const entry of legacyEntries) lines.push(`  • ${entry}`);
 		lines.push("");
 	}
+	if (optional.length > 0) {
+		lines.push(msgOptionalHint(optional));
+		lines.push("");
+	}
 	lines.push(`Your \`${settingsPath}\` will be updated. Proceed?`);
 	return lines.join("\n");
 }
@@ -56,24 +68,35 @@ function buildConfirmBody(missing: SiblingPlugin[], legacyEntries: string[]): st
 export function registerSetupCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("rpiv-setup", {
 		description: "Install rpiv-pi's sibling extension plugins",
-		handler: handleSetupCommand,
+		handler: (args, ctx) => handleSetupCommand(args, ctx, pi),
 	});
 }
 
-async function handleSetupCommand(_args: string, ctx: { hasUI: boolean; ui: UI }): Promise<void> {
+async function handleSetupCommand(
+	_args: string,
+	ctx: { hasUI: boolean; ui: UI },
+	pi: Pick<ExtensionAPI, "getAllTools" | "getCommands">,
+): Promise<void> {
 	if (!ctx.hasUI) {
 		ctx.ui.notify(MSG_INTERACTIVE_ONLY, "error");
 		return;
 	}
 
-	const missing = findMissingSiblings();
+	// Optional siblings are named, never installed: the confirm is all-or-nothing, so
+	// installing them would override a user who left one out on purpose (#167).
+	const allMissing = findMissingSiblings(readLoadedSiblingSources(pi));
+	const missing = allMissing.filter((s) => !s.optional);
+	const optional = allMissing.filter((s) => s.optional);
 	const legacyEntries = findLegacySiblings();
 	if (missing.length === 0 && legacyEntries.length === 0) {
-		ctx.ui.notify(MSG_NOTHING_TO_DO, "info");
+		ctx.ui.notify(
+			optional.length > 0 ? `${MSG_NOTHING_TO_DO}\n\n${msgOptionalHint(optional)}` : MSG_NOTHING_TO_DO,
+			"info",
+		);
 		return;
 	}
 
-	const confirmed = await ctx.ui.confirm(MSG_CONFIRM_TITLE, buildConfirmBody(missing, legacyEntries));
+	const confirmed = await ctx.ui.confirm(MSG_CONFIRM_TITLE, buildConfirmBody(missing, optional, legacyEntries));
 	if (!confirmed) {
 		ctx.ui.notify(MSG_CANCELLED, "info");
 		return;

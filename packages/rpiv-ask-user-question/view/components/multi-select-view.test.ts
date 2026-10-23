@@ -2,9 +2,9 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
-import { makeMultiSelectViewProps as makeProps } from "../../test-fixtures.js";
-import type { QuestionData } from "../../tool/types.js";
-import { MultiSelectView, type MultiSelectViewProps } from "./multi-select-view.js";
+import { makeMultiSelectViewProps as makeProps } from "../../test-fixtures.ts";
+import type { QuestionData } from "../../tool/types.ts";
+import { MultiSelectView, type MultiSelectViewProps } from "./multi-select-view.ts";
 
 const theme = makeTheme() as unknown as Theme;
 
@@ -245,7 +245,7 @@ describe("MultiSelectView.focusedItemRowRange", () => {
 				{ checked: false, active: true },
 				{ checked: false, active: false },
 			],
-			other: { active: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
+			other: { active: false, checked: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
 			nextActive: false,
 			nextLabel: "Next",
 		});
@@ -269,7 +269,7 @@ describe("MultiSelectView.focusedItemRowRange", () => {
 				{ checked: false, active: true },
 				{ checked: false, active: false },
 			],
-			other: { active: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
+			other: { active: false, checked: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
 			nextActive: false,
 			nextLabel: "Next",
 		});
@@ -287,7 +287,7 @@ describe("MultiSelectView.focusedItemRowRange", () => {
 		};
 		const view = makeView(q, {
 			rows: [{ checked: false, active: false }],
-			other: { active: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
+			other: { active: false, checked: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
 			nextActive: true,
 			nextLabel: "Next",
 		});
@@ -305,7 +305,7 @@ describe("MultiSelectView.focusedItemRowRange", () => {
 		};
 		const view = makeView(q, {
 			rows: [{ checked: false, active: false }],
-			other: { active: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
+			other: { active: false, checked: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
 			nextActive: false,
 			nextLabel: "Next",
 		});
@@ -329,7 +329,7 @@ describe("MultiSelectView.focusedItemRowRange", () => {
 				{ checked: false, active: false },
 				{ checked: false, active: true },
 			],
-			other: { active: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
+			other: { active: false, checked: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
 			nextActive: false,
 			nextLabel: "Next",
 		});
@@ -351,7 +351,7 @@ describe("MultiSelectView — 'Type something.' row", () => {
 			inputBuffer: buffer,
 		});
 
-	it("renders the other row after options, numbered N+1, box always [ ] muted", () => {
+	it("renders an unchecked custom row when its draft is empty", () => {
 		const q = question();
 		const m = makeView(q, otherInactive(q));
 		const lines = m.render(80);
@@ -361,11 +361,18 @@ describe("MultiSelectView — 'Type something.' row", () => {
 		expect(lines[3]).not.toContain("[✔]");
 	});
 
+	it("keeps the custom row unchecked for whitespace-only input", () => {
+		const q = question();
+		const m = makeView(q, makeProps(q, { inputBuffer: " " }));
+		expect(m.render(80)[3]).not.toContain("[✔]");
+	});
+
 	it("keeps the draft visible on the other row while another option has focus", () => {
 		const q = question();
 		const m = makeView(q, makeProps(q, { optionIndex: 0, inputMode: false, inputBuffer: "draft answer" }));
 		const otherLine = m.render(80)[3] ?? "";
 		expect(otherLine).toContain("draft answer");
+		expect(otherLine).toContain("[✔]");
 		expect(otherLine).not.toContain("Type something.");
 		expect(otherLine).not.toContain("\x1b_pi:c\x07");
 	});
@@ -416,7 +423,7 @@ describe("MultiSelectView — 'Type something.' row", () => {
 				{ checked: false, active: false },
 				{ checked: false, active: false },
 			],
-			other: { active: true, inputMode: true, inputBuffer: "x", inputCursorOffset: undefined },
+			other: { active: true, checked: true, inputMode: true, inputBuffer: "x", inputCursorOffset: undefined },
 			nextActive: false,
 			nextLabel: "Next",
 		};
@@ -435,7 +442,7 @@ describe("MultiSelectView — 'Type something.' row", () => {
 		};
 		const view = makeView(q, {
 			rows: [{ checked: false, active: false }],
-			other: { active: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
+			other: { active: false, checked: false, inputMode: false, inputBuffer: "", inputCursorOffset: undefined },
 			nextActive: true,
 			nextLabel: "Next",
 		});

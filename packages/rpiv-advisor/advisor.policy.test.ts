@@ -1,7 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { beforeEach, describe, expect, it } from "vitest";
-import { setDisabledForModels } from "./advisor/index.js";
-import { isModelBlocked } from "./advisor/policy.js";
+import { setDisabledForModels } from "./advisor/index.ts";
+import { isModelBlocked } from "./advisor/policy.ts";
 
 const opus = { provider: "anthropic", id: "opus", name: "Opus" } as unknown as Model<Api>;
 const sonnet = { provider: "anthropic", id: "sonnet", name: "Sonnet" } as unknown as Model<Api>;

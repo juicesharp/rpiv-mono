@@ -8,7 +8,7 @@ import {
 	type StreamingHandle,
 	type ViewerEntry,
 	type ViewerMessage,
-} from "./lane-transcript.js";
+} from "./lane-transcript.ts";
 
 /** Identity theme — fg returns its text unchanged so render assertions read plainly. */
 const identityTheme = {

@@ -15,9 +15,9 @@
 
 import type { ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { EFFORT_ORDINAL } from "../../../rpiv-advisor/advisor/messages.js";
-import type { ModelSelection } from "../../../rpiv-workflow/host.js";
-import { type MODEL_THINKING_LEVEL_VALUES, THINKING_LEVEL_VALUES } from "./models-config.js";
+import { EFFORT_ORDINAL } from "../../../rpiv-advisor/advisor/messages.ts";
+import type { ModelSelection } from "../../../rpiv-workflow/host.ts";
+import { type MODEL_THINKING_LEVEL_VALUES, THINKING_LEVEL_VALUES } from "./models-config.ts";
 
 // Type probes — bidirectional-extends idiom (cf. host.test.ts `Satisfies`).
 // Each pair fails to compile when the two universes drift in either direction.

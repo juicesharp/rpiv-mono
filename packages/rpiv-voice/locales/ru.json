@@ -35,5 +35,8 @@
   "settings.language_value_auto": "Автоопределение",
   "settings.language_hint": "Используйте /languages для смены.",
   "settings.hallucination_filter_label": "Фильтр шумов Whisper",
-  "settings.hallucination_filter_hint": "Убирает артефакты тишины. Выключите для диктовки одного слова."
+  "settings.hallucination_filter_hint": "Убирает артефакты тишины. Выключите для диктовки одного слова.",
+
+  "settings.threads_label": "Потоки",
+  "settings.threads_hint": "Задайте numThreads в voice.json; перезапустите /voice, чтобы применить."
 }

@@ -6,9 +6,9 @@
  * back to the live session). Absent provider ⇒ the live ctx executes directly
  * (graceful degrade for non-Pi embedders / tests).
  */
-import type { ModelSelection, WorkflowHostContext } from "./host.js";
-import { globalSlot } from "./internal-utils.js";
-import type { BranchEntry } from "./transcript.js";
+import type { ModelSelection, WorkflowHostContext } from "./host.ts";
+import { globalSlot } from "./internal-utils.ts";
+import type { BranchEntry } from "./transcript.ts";
 
 /** What the provider hands back per run: the detached executor, an optional
  *  cancellation `signal` (rpiv-pi wires it from `ctx.ui.onTerminalInput`),
@@ -42,7 +42,7 @@ export interface WorkflowExecutionProvider {
 	): WorkflowExecution | Promise<WorkflowExecution>;
 	/** Per-stage model resolution (rpiv-pi's resolveStageModel) — threaded onto
 	 *  RunContext.resolveModel so the dispatcher fills each child's ModelSelection. */
-	resolveModel?(id: { stage: string; skill: string }): ModelSelection | undefined;
+	resolveModel?(id: { workflow: string; stage: string; skill: string }): ModelSelection | undefined;
 	/** Re-open a persisted child-session JSONL and return its branch
 	 *  (`SessionManager.open(file).getBranch()` on the rpiv-pi side), narrowed
 	 *  to `BranchEntry[]`. Threaded onto `RunContext.readSessionBranch` so the

@@ -21,14 +21,14 @@
  * calls that pass no contracts at all.
  */
 
-import { marksReadsData, STOP, type Workflow } from "../api.js";
-import { extractJsonSchema } from "../json-schema.js";
-import { forEachJudgeChannel } from "../loop-constructors.js";
-import type { ProducesSpec, SkillContractMap } from "../skill-contract.js";
-import { adjudicateChannel, compareDataChannel, getCompositionComparators } from "../skill-contracts/index.js";
-import { readName } from "../stage-def.js";
-import { isDispatchingStage, resolvePublishName, resolveSkill } from "../stage-identity.js";
-import type { IssueReporter } from "./issue.js";
+import { marksReadsData, STOP, type Workflow } from "../api.ts";
+import { extractJsonSchema } from "../json-schema.ts";
+import { forEachJudgeChannel } from "../loop-constructors.ts";
+import type { ProducesSpec, SkillContractMap } from "../skill-contract.ts";
+import { adjudicateChannel, compareDataChannel, getCompositionComparators } from "../skill-contracts/index.ts";
+import { readName } from "../stage-def.ts";
+import { isDispatchingStage, resolvePublishName, resolveSkill } from "../stage-identity.ts";
+import type { IssueReporter } from "./issue.ts";
 
 /**
  * Route edges that read `output.data[field]` (i.e. `defineRoute(...)` with

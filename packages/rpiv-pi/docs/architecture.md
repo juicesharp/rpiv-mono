@@ -9,7 +9,7 @@ extending the package.
 ```
 rpiv-pi/
 ├── extensions/rpiv-core/   the one extension: hooks, commands, lanes, guidance, model config
-├── skills/                 29 contract-carrying skills, one directory each
+├── skills/                 30 contract-carrying skills, one directory each
 ├── agents/                 15 subagent profiles, copied to ~/.pi/agent/agents/ at runtime
 └── scripts/                deterministic helpers skills shell out to (Node built-ins only)
 ```
@@ -38,8 +38,8 @@ the siblings contribute capability.
 | `/rpiv-update-agents` | always | |
 | `/rpiv-models` | always | Interactive only |
 | `/lanes` | always | No-ops with a notice when nothing is running |
-| `ctrl+q` | conditionally | Skipped entirely when `RPIV_LANES_HOTKEY` disables it |
-| `/skill:<name>` × 29 | Pi, from the manifest | |
+| `ctrl+q` (`alt+l` on Windows and WSL) | conditionally | Skipped entirely when `RPIV_LANES_HOTKEY` disables it |
+| `/skill:<name>` × 30 | Pi, from the manifest | |
 | `--rpiv-debug` flag | always | Reveals the hidden injected messages below |
 
 Session events subscribed: `session_start`, `session_compact`, `session_shutdown`,
@@ -88,7 +88,7 @@ changes. When `git config user.name` is empty, `$USER` is used, then `unknown`.
 
 ## Pipeline pointer
 
-20 of the 29 skills set `disable-model-invocation: true`, which hides them from the
+21 of the 30 skills set `disable-model-invocation: true`, which hides them from the
 model's skill list so it cannot wander into a design pass mid-conversation. To keep them
 discoverable, a roughly 120-token stage index is injected at `session_start` and folded
 into the first real user turn after compaction — hidden by default, visible under
@@ -96,19 +96,30 @@ into the first real user turn after compaction — hidden by default, visible un
 
 ## Sibling coupling
 
-Sibling **presence** is detected from the filesystem: a case-insensitive regex over the
-`packages[]` array in the active Pi settings file (`<agent dir>/settings.json`, honoring
-`PI_CODING_AGENT_DIR`). No sibling is statically imported from the entry graph; a test
-enforces that.
+A sibling counts as **present** when either signal finds it:
 
-`/rpiv-setup` installs eight packages:
+- a case-insensitive regex over the `packages[]` array in the active Pi settings file
+  (`<agent dir>/settings.json`, honoring `PI_CODING_AGENT_DIR`);
+- or it is actually loaded in this session: the same regex matched against the source
+  path of every loaded tool and extension command, plus a presence marker for
+  `rpiv-args`, which registers neither.
+
+The second signal covers siblings that load without a settings entry of their own:
+bundled inside another Pi package (a kit), installed per project (`pi install -l`), or
+loaded with `pi -e`. They no longer trigger the missing-siblings banner, and
+`/rpiv-setup` does not install a second copy whose tools would conflict. No sibling is
+statically imported from the entry graph; a test enforces that.
+
+`/rpiv-setup` installs whichever of these eight packages are neither declared nor loaded, except
+`@juicesharp/rpiv-advisor`. That one is optional: nothing in rpiv-pi needs it, so a missing copy
+raises no banner and setup only names its `pi install` command:
 
 | Package | Provides |
 | --- | --- |
 | `@tintinweb/pi-subagents` | `Agent`, `get_subagent_result`, `steer_subagent` tools |
 | `@juicesharp/rpiv-ask-user-question` | `ask_user_question` tool |
 | `@juicesharp/rpiv-todo` | `todo` tool, `/todos`, overlay widget |
-| `@juicesharp/rpiv-advisor` | `advisor` tool and `/advisor` |
+| `@juicesharp/rpiv-advisor` (optional) | `advisor` tool and `/advisor` |
 | `@juicesharp/rpiv-i18n` | `/languages`, `--locale`, the i18n SDK |
 | `@juicesharp/rpiv-web-tools` | `web_search`, `web_fetch`, `/web-tools` |
 | `@juicesharp/rpiv-args` | `$N` / `$ARGUMENTS` substitution in skill bodies |

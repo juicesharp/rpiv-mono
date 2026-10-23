@@ -19,24 +19,24 @@ export {
 	resolveMlflowConfig,
 	saveTelemetryConfig,
 	type TelemetryConfig,
-} from "./config.js";
+} from "./config.ts";
 export {
 	dispatchTelemetryEvent,
 	getProviders,
 	registerTelemetryProvider,
 	resetTelemetryDispatcher,
 	shutdownTelemetryDispatcher,
-} from "./dispatcher.js";
-export { teardownTelemetry } from "./instrumentation/index.js";
+} from "./dispatcher.ts";
+export { teardownTelemetry } from "./instrumentation/index.ts";
 export {
 	BUILT_IN_PROVIDERS,
 	CONSOLE_PROVIDER_META,
 	ConsoleProvider,
 	MLFLOW_PROVIDER_META,
-} from "./providers/index.js";
+} from "./providers/index.ts";
 // Pulled directly from the @mlflow/core-backed module to keep it in the embedder
 // API. Paid only by embedders — this barrel is not the extension entry.
-export { MlflowProvider } from "./providers/mlflow/index.js";
+export { MlflowProvider } from "./providers/mlflow/index.ts";
 export type {
 	AgentEndEvent,
 	AgentStartEvent,
@@ -61,8 +61,8 @@ export type {
 	ToolExecutionStartEvent,
 	TurnEndEvent,
 	TurnStartEvent,
-} from "./types/events.js";
-export { TELEMETRY_EVENT_KINDS } from "./types/events.js";
-export type { TelemetryProvider, TelemetryProviderMeta } from "./types/provider.js";
+} from "./types/events.ts";
+export { TELEMETRY_EVENT_KINDS } from "./types/events.ts";
+export type { TelemetryProvider, TelemetryProviderMeta } from "./types/provider.ts";
 
 // NOTE: the Pi extension `default` entry is `./extension.ts`, not this barrel.

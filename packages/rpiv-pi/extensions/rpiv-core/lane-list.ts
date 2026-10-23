@@ -13,8 +13,8 @@
 
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { shortFailureReason } from "./lane-failure.js";
-import { addLaneUsage, formatTokens, type LaneUsage } from "./lane-usage.js";
+import { shortFailureReason } from "./lane-failure.ts";
+import { addLaneUsage, formatTokens, type LaneUsage } from "./lane-usage.ts";
 import {
 	type DisplayRow,
 	getLane,
@@ -27,8 +27,8 @@ import {
 	type UnitLane,
 	unitNeedsInput,
 	unitUsage,
-} from "./run-lane-registry.js";
-import { getSubagentUsageForRun, getSubagentUsageForStage } from "./subagent-usage.js";
+} from "./run-lane-registry.ts";
+import { getSubagentUsageForRun, getSubagentUsageForStage } from "./subagent-usage.ts";
 
 /** Per-row CAP on the lane region (the scroll-follow window + its +N above/below summaries).
  *  computeLaneLayout bounds laneCap at MAX_WIDGET_LINES - 1, so the list never grows unbounded. */
@@ -458,7 +458,10 @@ export function renderLiveOutputBorder(theme: Theme, width: number): string {
  * and ≤1 line by construction so the console's constant-height invariant holds. Its
  * outcome can legitimately diverge from the lane chip (the accepted
  * `droppedFailureRows` divergence: recap reads "completed" off the trail while the
- * chip shows ✗ failed).
+ * chip shows ✗ failed). `routingNotes`, when the recap carries them, render as
+ * dim parts between the artifact-arrow parts and the `⚠` reason — the
+ * honest pass-through floors' deferral notes, visible without claiming a line
+ * of their own.
  */
 export function renderRecap(theme: Theme, width: number, runId: string): string[] {
 	const recap = getLane(runId)?.recap;
@@ -469,6 +472,12 @@ export function renderRecap(theme: Theme, width: number, runId: string): string[
 		parts.push(theme.fg("muted", `→ ${displayArtifact(recap.artifacts[n - 1])}`));
 		if (n > 1) parts.push(theme.fg("dim", `+${n - 1} more`));
 	}
+	// Route-note recap — dim parts, ordered after the artifact-arrow parts and
+	// before the `⚠` failure-reason part (one part per note). The notes ride the
+	// SAME joined-and-truncated single line, so the console's constant-height
+	// invariant holds; a stop's note never appears here — the stopped refinement
+	// already renders it once as the `⚠` failureReason.
+	for (const note of recap.routingNotes ?? []) parts.push(theme.fg("dim", note));
 	// Failure reason only for a non-completed outcome that carries one.
 	if (recap.outcome !== "completed" && recap.failureReason) {
 		parts.push(theme.fg("warning", `⚠ ${recap.failureReason}`));

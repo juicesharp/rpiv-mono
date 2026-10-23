@@ -1,8 +1,8 @@
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ViewerMessage } from "./lane-transcript.js";
-import { LaneTranscriptView } from "./lane-transcript-view.js";
+import type { ViewerMessage } from "./lane-transcript.ts";
+import { LaneTranscriptView } from "./lane-transcript-view.ts";
 import {
 	__resetRunLaneRegistry,
 	type LaneSession,
@@ -12,7 +12,7 @@ import {
 	seedPendingUnits,
 	setCurrentSession,
 	setUnitStarted,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 const identityTheme = {
 	fg: (_c: string, s: string) => s,

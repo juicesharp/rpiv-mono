@@ -10,7 +10,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { GIT_EXEC_TIMEOUT_MS } from "./constants.js";
+import { GIT_EXEC_TIMEOUT_MS } from "./constants.ts";
 
 type GitContext = { branch: string; commit: string; user: string };
 

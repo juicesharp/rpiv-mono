@@ -14,9 +14,9 @@
 
 import { closeSync, existsSync, openSync, readdirSync, readSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { SessionRef } from "../state/index.js";
-import { childSessionsDir } from "../state/paths.js";
-import { JSONL_PREFIX_READ_BYTES } from "../state/raw.js";
+import type { SessionRef } from "../state/index.ts";
+import { childSessionsDir } from "../state/paths.ts";
+import { JSONL_PREFIX_READ_BYTES } from "../state/raw.ts";
 
 /**
  * id → on-disk session file. Fail-soft: `null` means "fall back to cold

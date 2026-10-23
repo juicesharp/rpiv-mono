@@ -28,23 +28,23 @@
  *   - `stage.sessionPolicy !== "continue"` (no session to continue).
  */
 
-import type { ScriptContext } from "../api.js";
-import { auditCtxFor, failAuditWrite, failedArgs, recordFatalFailure } from "../audit.js";
-import { allocateStageNumber, persistStageSuccess } from "../audit-rows.js";
-import { lifecycleCtxFor, scriptStageRef } from "../events.js";
-import type { Artifact } from "../handle.js";
-import { formatError, nowIso } from "../internal-utils.js";
-import { FAIL_SCRIPT_THREW, FAIL_VALIDATION_EXHAUSTED } from "../messages.js";
-import { finalizeOutput, type Output, outputMeta } from "../output.js";
-import type { RunContext, WorkflowHostContext } from "../types.js";
+import type { ScriptContext } from "../api.ts";
+import { auditCtxFor, failAuditWrite, failedArgs, recordFatalFailure } from "../audit.ts";
+import { allocateStageNumber, persistStageSuccess } from "../audit-rows.ts";
+import { lifecycleCtxFor, scriptStageRef } from "../events.ts";
+import type { Artifact } from "../handle.ts";
+import { formatError, nowIso } from "../internal-utils.ts";
+import { FAIL_SCRIPT_THREW, FAIL_VALIDATION_EXHAUSTED } from "../messages.ts";
+import { finalizeOutput, type Output, outputMeta } from "../output.ts";
+import type { RunContext, WorkflowHostContext } from "../types.ts";
 import {
 	DEFAULT_VALIDATION_RETRIES,
 	describeFailure,
 	runValidationRetryLoop,
 	validateOutputData,
-} from "../validate-output.js";
-import type { AdvanceFn, ChainOutcome } from "./failure.js";
-import type { ResolvedStage } from "./resolve-stage.js";
+} from "../validate-output.ts";
+import type { AdvanceFn, ChainOutcome } from "./failure.ts";
+import type { ResolvedStage } from "./resolve-stage.ts";
 
 /**
  * Drive a script stage: lifecycle-fire `onStageStart`, retry-loop the

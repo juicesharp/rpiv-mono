@@ -13,7 +13,7 @@ import {
 	saveLocaleConfig,
 	scope,
 	tr,
-} from "./i18n.js";
+} from "./i18n.ts";
 
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-i18n", "locale.json");
 

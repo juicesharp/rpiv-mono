@@ -6,17 +6,37 @@
  * /rpiv-setup installer (setup-command.ts). Add a sibling here and every
  * consumer picks it up automatically.
  *
- * Detection is filesystem-based via a regex over the active Pi settings file
- * — no runtime import of sibling packages (keeps rpiv-core pure-orchestrator).
+ * Detection (package-checks.ts) is the union of a regex over the active Pi
+ * settings file and what is actually loaded: `matches` is also tested against
+ * the source path of every loaded tool / extension command, and `marker` names
+ * the presence slot of a sibling that registers neither (#216). No runtime
+ * import of sibling packages (keeps rpiv-core pure-orchestrator).
  */
 
 export interface SiblingPlugin {
 	/** Install spec passed to `pi install`. Prefixed with `npm:` for Pi's installer. */
 	readonly pkg: string;
-	/** Case-insensitive regex that matches the package in settings.json. */
+	/**
+	 * Case-insensitive regex that matches the package in settings.json AND in the
+	 * source path of its loaded extension (e.g. `…/@juicesharp/rpiv-todo/index.ts`
+	 * bundled inside another package).
+	 */
 	readonly matches: RegExp;
+	/**
+	 * `Symbol.for` key the sibling sets on `globalThis` when it loads — only for a
+	 * sibling with no tool or command to find by source path. Keep in sync with
+	 * the sibling's own constant.
+	 */
+	readonly marker?: string;
 	/** What the sibling provides — shown in /rpiv-setup confirmation and reports. */
 	readonly provides: string;
+	/**
+	 * Nothing in rpiv-pi needs it to work — skills that use it fall back without it.
+	 * A missing optional sibling raises no session_start warning, and /rpiv-setup
+	 * names it with its install command instead of installing it, so a user who
+	 * leaves it out (or runs their own replacement) is never nagged or overridden (#167).
+	 */
+	readonly optional?: true;
 }
 
 export const SIBLINGS: readonly SiblingPlugin[] = [
@@ -41,6 +61,8 @@ export const SIBLINGS: readonly SiblingPlugin[] = [
 		pkg: "npm:@juicesharp/rpiv-advisor",
 		matches: /rpiv-advisor/i,
 		provides: "advisor tool + /advisor command",
+		// Opt-in reviewer: code-review probes for the tool and reconciles inline without it.
+		optional: true,
 	},
 	{
 		pkg: "npm:@juicesharp/rpiv-i18n",
@@ -55,6 +77,8 @@ export const SIBLINGS: readonly SiblingPlugin[] = [
 	{
 		pkg: "npm:@juicesharp/rpiv-args",
 		matches: /rpiv-args(?![-\w])/i,
+		// Hooks events only — nothing to find by source path (`LOADED_MARKER`, rpiv-args/index.ts).
+		marker: "@juicesharp/rpiv-args:loaded",
 		provides: "skill-argument resolver — substitutes $N/$ARGUMENTS in skill bodies",
 	},
 	{

@@ -1,17 +1,15 @@
 /**
- * FRD §6 integration test — the incident replay.
+ * Failure-resilience integration test — the incident replay.
  *
  * One end-to-end scenario chaining the full recover → remember → preserve →
  * gate ladder against a mock workflow whose collect-all fan-out has a unit
- * whose verification command times out deterministically. Asserts the FRD §6
- * sequence in ONE test and concludes with the cost-bound the FRD names:
+ * whose verification command times out deterministically. Asserts the full ladder
+ * sequence in ONE test and concludes with the watchdog cost-bound:
  * total watchdog-attributable cost ≤ strikes × ceiling, NOT stages × ceiling.
  *
- * Depends on the behavioral phases being applied first: the
- * `createMockSessionChain` `onSend`/mutable-`toolTimeout` surface +
- * `ERR_VALIDATE_RETRY_UNCHANGED` message const; the `readSessionBranch`
- * execution provider; the `worktreeDigest` run option. See the plan's
- * ## Notes / Deferred for the resolved-default assumptions.
+ * Depends on: the `createMockSessionChain` `onSend`/mutable-`toolTimeout`
+ * surface + `ERR_VALIDATE_RETRY_UNCHANGED` message const; the
+ * `readSessionBranch` execution provider; the `worktreeDigest` run option.
  */
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,14 +17,14 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { defineWorkflow, type FanoutFn, produces } from "./api.js";
-import { registerWorkflowExecutionHost } from "./execution-host.js";
-import { fs as fsHandle } from "./handle.js";
-import { fanout } from "./loop-constructors.js";
-import { ERR_VALIDATE_RETRY_UNCHANGED } from "./messages.js";
-import { runWorkflow } from "./runner/index.js";
-import type { BranchEntry } from "./transcript.js";
-import { typeboxSchema } from "./typebox-adapter.js";
+import { defineWorkflow, type FanoutFn, produces } from "./api.ts";
+import { registerWorkflowExecutionHost } from "./execution-host.ts";
+import { fs as fsHandle } from "./handle.ts";
+import { fanout } from "./loop-constructors.ts";
+import { ERR_VALIDATE_RETRY_UNCHANGED } from "./messages.ts";
+import { runWorkflow } from "./runner/index.ts";
+import type { BranchEntry } from "./transcript.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
 
 // The steering prose the strike recovery re-prompts with (module-owned in
 // bash-strikes.ts). Asserted to count strikes without coupling to the

@@ -12,9 +12,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { extname, join, sep as pathSep, resolve as resolvePath } from "node:path";
-import { readConfig } from "../config.js";
-import type { FetchResponse } from "../types.js";
-import type { UrlInterceptor } from "./types.js";
+import { readConfig } from "../config.ts";
+import type { FetchResponse } from "../types.ts";
+import type { UrlInterceptor } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Constants

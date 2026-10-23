@@ -15,10 +15,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockPi, createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, defineWorkflow, produces } from "./api.js";
-import { fs as fsHandle, handleToString } from "./handle.js";
-import type { Outcome } from "./output-spec.js";
-import { runWorkflow } from "./runner/index.js";
+import { acts, defineWorkflow, produces } from "./api.ts";
+import { fs as fsHandle, handleToString } from "./handle.ts";
+import type { Outcome } from "./output-spec.ts";
+import { runWorkflow } from "./runner/index.ts";
 
 const PATTERN = /\.rpiv\/artifacts\/[\w.-]+\/[\w.-]+\.md/g;
 

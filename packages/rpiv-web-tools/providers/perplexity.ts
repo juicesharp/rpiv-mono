@@ -1,4 +1,4 @@
-import type { SearchProvider, SearchResponse, SearchResult } from "./types.js";
+import type { SearchProvider, SearchResponse, SearchResult } from "./types.ts";
 
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/search";
 export const PERPLEXITY_API_KEY_ENV_VAR = "PERPLEXITY_API_KEY";

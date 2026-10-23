@@ -5,9 +5,9 @@
  * (`/wf` registration is itself lazy); the barrel stays the embedder API surface.
  */
 
-import { registerWorkflowCommand } from "./command.js";
-import { type DocsProtocolHost, registerDocsProtocol } from "./docs-protocol.js";
-import type { WorkflowHost } from "./host.js";
+import { registerWorkflowCommand } from "./command.ts";
+import { type DocsProtocolHost, registerDocsProtocol } from "./docs-protocol.ts";
+import type { WorkflowHost } from "./host.ts";
 
 /** Host ports the `default` needs; Pi's `ExtensionAPI` structurally satisfies both. */
 type ExtensionHost = WorkflowHost & DocsProtocolHost;

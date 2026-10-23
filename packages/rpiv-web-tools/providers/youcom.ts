@@ -1,4 +1,4 @@
-import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.js";
+import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.ts";
 
 const YOUCOM_SEARCH_URL = "https://ydc-index.io/v1/search";
 const YOUCOM_CONTENTS_URL = "https://ydc-index.io/v1/contents";

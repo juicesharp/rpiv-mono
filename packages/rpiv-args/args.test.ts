@@ -23,7 +23,7 @@ import {
 	SKILL_INVOCATION_PROTOCOL,
 	substituteArgs,
 	substituteVariables,
-} from "./args.js";
+} from "./args.ts";
 
 interface SkillSpec {
 	name: string;

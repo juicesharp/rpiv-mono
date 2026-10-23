@@ -20,8 +20,8 @@ import type {
 	SchemaCompatResult,
 	SkillContract,
 } from "@juicesharp/rpiv-workflow/registration";
-import { BUNDLED_SKILLS_DIR } from "./paths.js";
-import { isModuleNotFound } from "./utils.js";
+import { BUNDLED_SKILLS_DIR } from "./paths.ts";
+import { isModuleNotFound } from "./utils.ts";
 
 const JSON_SCHEMA_ROOT_KEYWORDS = new Set([
 	"type",
@@ -253,7 +253,7 @@ export async function registerSkillContractsSource(): Promise<void> {
 		// edge off the entry path: it only resolves after the `/startup` import above
 		// already succeeded, and a missing/non-resolvable sibling degrades to the
 		// isModuleNotFound no-op below instead of crashing the extension.
-		const { registerOutcomeDerivation } = await import("./outcome-derivation.js");
+		const { registerOutcomeDerivation } = await import("./outcome-derivation.ts");
 		await registerOutcomeDerivation();
 	} catch (err) {
 		if (isModuleNotFound(err)) return; // sibling absent — /rpiv-setup prompts the user

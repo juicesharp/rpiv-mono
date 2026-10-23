@@ -1,5 +1,5 @@
-import type { QuestionAnswer, QuestionData } from "../../tool/types.js";
-import type { WrappingSelectItem } from "../../view/components/wrapping-select.js";
+import type { QuestionAnswer, QuestionData } from "../../tool/types.ts";
+import type { WrappingSelectItem } from "../../view/components/wrapping-select.ts";
 
 /**
  * Which row in the active tab should be marked as "previously confirmed"? Drives the
@@ -37,4 +37,19 @@ export function selectConfirmedIndicator(
 export function selectActivePreviewPaneIndex(currentTab: number, totalQuestions: number): number {
 	if (totalQuestions <= 0) return 0;
 	return Math.min(currentTab, totalQuestions - 1);
+}
+
+/**
+ * The committed note for a question tab, or `undefined` when it has none. Same precedence as
+ * the reducer's editor seeding (`notesValueFor`): the in-flight side-band (`notesByTab`) is
+ * authoritative — a note saved before the question is answered lives only there, and a
+ * present empty string means the note was cleared — with `answer.notes` as the mirror.
+ */
+export function selectSavedNote(
+	notesByTab: ReadonlyMap<number, string>,
+	answers: ReadonlyMap<number, QuestionAnswer>,
+	tab: number,
+): string | undefined {
+	const note = notesByTab.get(tab) ?? answers.get(tab)?.notes;
+	return note && note.length > 0 ? note : undefined;
 }

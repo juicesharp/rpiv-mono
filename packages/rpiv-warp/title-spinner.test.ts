@@ -18,7 +18,7 @@ import {
 	SPINNER_FRAMES,
 	startSpinner,
 	stopSpinner,
-} from "./title-spinner.js";
+} from "./title-spinner.ts";
 
 const PUSH = "\x1b[22;0t";
 const POP = "\x1b[23;0t";

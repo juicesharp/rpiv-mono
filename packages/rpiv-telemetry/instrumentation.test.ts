@@ -1,21 +1,21 @@
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import * as config from "./config.js";
+import * as config from "./config.ts";
 
-vi.mock("./config.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("./config.js")>();
+vi.mock("./config.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./config.ts")>();
 	return {
 		...actual,
 		loadTelemetryConfig: vi.fn(actual.loadTelemetryConfig),
 	};
 });
 
-vi.mock("./providers/index.js", () => ({
+vi.mock("./providers/index.ts", () => ({
 	registerConfiguredProviders: vi.fn(),
 }));
 
-vi.mock("./dispatcher.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("./dispatcher.js")>();
+vi.mock("./dispatcher.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./dispatcher.ts")>();
 	return {
 		...actual,
 		dispatchTelemetryEvent: vi.fn(),
@@ -35,8 +35,8 @@ vi.mocked(config.loadTelemetryConfig).mockReturnValue({
 	dispatcher: { maxQueueSize: 100 },
 });
 
-import { dispatchTelemetryEvent } from "./dispatcher.js";
-import { initInstrumentation, teardownTelemetry } from "./instrumentation/index.js";
+import { dispatchTelemetryEvent } from "./dispatcher.ts";
+import { initInstrumentation, teardownTelemetry } from "./instrumentation/index.ts";
 
 describe("instrumentation", () => {
 	beforeEach(() => {
@@ -155,7 +155,7 @@ describe("instrumentation", () => {
 	});
 
 	it("session_shutdown handler dispatches event and calls shutdownTelemetryDispatcher", async () => {
-		const { shutdownTelemetryDispatcher } = await import("./dispatcher.js");
+		const { shutdownTelemetryDispatcher } = await import("./dispatcher.ts");
 		const { pi, captured } = createMockPi();
 		initInstrumentation(pi);
 		const handler = captured.events.get("session_shutdown")?.[0];
@@ -243,7 +243,7 @@ describe("instrumentation", () => {
 	});
 
 	// -------------------------------------------------------------------------
-	// Sub-agent payload typebox validation (L1-02)
+	// Sub-agent payload typebox validation
 	// -------------------------------------------------------------------------
 
 	it("subagent_created handler dispatches when payload validates", () => {

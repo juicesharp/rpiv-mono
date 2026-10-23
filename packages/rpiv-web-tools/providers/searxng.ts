@@ -7,7 +7,7 @@ import {
 	type SearchProvider,
 	type SearchResponse,
 	type SearchResult,
-} from "./types.js";
+} from "./types.ts";
 
 export const SEARXNG_API_KEY_ENV_VAR = "SEARXNG_API_KEY";
 export const SEARXNG_URL_ENV_VAR = "SEARXNG_URL";

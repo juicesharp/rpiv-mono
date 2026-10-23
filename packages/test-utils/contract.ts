@@ -1,6 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { expect } from "vitest";
-import { createMockPi } from "./pi.js";
+import { createMockPi } from "./pi.ts";
 
 export interface ToolContract {
 	name: string;

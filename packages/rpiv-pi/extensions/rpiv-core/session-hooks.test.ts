@@ -4,9 +4,12 @@ import { join } from "node:path";
 import { createMockCtx, createMockPi, stubGitExec, writeGuidanceTree } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./package-checks.js", () => ({ findMissingSiblings: vi.fn(() => []) }));
-vi.mock("./agents.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("./agents.js")>();
+vi.mock("./package-checks.ts", () => ({
+	findMissingSiblings: vi.fn(() => []),
+	findInstalledSiblings: vi.fn(() => []),
+}));
+vi.mock("./agents.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./agents.ts")>();
 	return {
 		...actual,
 		syncBundledAgents: vi.fn(() => ({
@@ -26,12 +29,12 @@ vi.mock("./agents.js", async (importOriginal) => {
 	};
 });
 
-import type { SyncResult } from "./agents.js";
-import { cleanupPerCwdAgents, SYNC_OP, syncBundledAgents } from "./agents.js";
-import { clearGitContextCache, getGitContext, resetInjectedMarker, takeGitContextIfChanged } from "./git-context.js";
-import { clearInjectionState } from "./guidance.js";
-import { findMissingSiblings } from "./package-checks.js";
-import { __resetSessionHooksAnnounced, registerSessionHooks } from "./session-hooks.js";
+import type { SyncResult } from "./agents.ts";
+import { cleanupPerCwdAgents, SYNC_OP, syncBundledAgents } from "./agents.ts";
+import { clearGitContextCache, getGitContext, resetInjectedMarker, takeGitContextIfChanged } from "./git-context.ts";
+import { clearInjectionState } from "./guidance.ts";
+import { findMissingSiblings } from "./package-checks.ts";
+import { __resetSessionHooksAnnounced, registerSessionHooks } from "./session-hooks.ts";
 
 // Pins the substring `isStaleCtxError` matches in pi-core's invalidated-proxy error.
 const STALE_CTX_MESSAGE = "This extension ctx is stale after session replacement or reload.";
@@ -120,6 +123,35 @@ describe("session_start hook — notifications", () => {
 		expect(warnCall?.[0]).toContain("╭");
 		expect(warnCall?.[0]).toContain("╯");
 		expect(warnCall?.[0]).not.toContain("npm:");
+	});
+
+	it("leaves optional siblings out of the missing-siblings banner (#167)", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValueOnce(emptySync);
+		vi.mocked(findMissingSiblings).mockReturnValueOnce([
+			{ pkg: "npm:@juicesharp/rpiv-advisor", matches: /./, provides: "x", optional: true },
+			{ pkg: "npm:@juicesharp/rpiv-args", matches: /./, provides: "y" },
+		] as never);
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx as never);
+		const warnCall = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[1] === "warning");
+		expect(warnCall?.[0]).toContain("rpiv-pi: 1 sibling extension missing");
+		expect(warnCall?.[0]).toContain("@juicesharp/rpiv-args");
+		expect(warnCall?.[0]).not.toContain("rpiv-advisor");
+	});
+
+	it("shows no banner when only optional siblings are missing (#167)", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValueOnce(emptySync);
+		vi.mocked(findMissingSiblings).mockReturnValueOnce([
+			{ pkg: "npm:@juicesharp/rpiv-advisor", matches: /./, provides: "x", optional: true },
+		] as never);
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx as never);
+		const warnCalls = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.filter((c) => c[1] === "warning");
+		expect(warnCalls).toHaveLength(0);
 	});
 
 	it("skips notifications when !hasUI", async () => {
@@ -313,7 +345,7 @@ describe("G0: session_start → real syncBundledAgents → notifyAgentSyncDrift"
 	});
 
 	it("on a fresh tmp cwd, copies bundled agents and emits a single 'Copied N agents' info", async () => {
-		const real = await vi.importActual<typeof import("./agents.js")>("./agents.js");
+		const real = await vi.importActual<typeof import("./agents.ts")>("./agents.ts");
 		vi.mocked(syncBundledAgents).mockImplementationOnce((apply) => real.syncBundledAgents(apply));
 
 		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
@@ -337,7 +369,7 @@ describe("G0: session_start → real syncBundledAgents → notifyAgentSyncDrift"
 	});
 
 	it("on a second cold-start, reports unchanged (no Copied / no Synced / no drift)", async () => {
-		const real = await vi.importActual<typeof import("./agents.js")>("./agents.js");
+		const real = await vi.importActual<typeof import("./agents.ts")>("./agents.ts");
 		vi.mocked(syncBundledAgents).mockImplementation((apply) => real.syncBundledAgents(apply));
 
 		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });

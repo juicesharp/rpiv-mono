@@ -16,13 +16,13 @@
  * `audit-rows.ts`.
  */
 
-import type { AuditContext } from "./audit-ctx.js";
-import { recordStage, unitRowFields } from "./audit-rows.js";
-import { writeDeathSceneArtifact } from "./death-scene.js";
-import { lifecycleCtxFromSession, scriptStageRef, skillStageRef } from "./events.js";
-import { appendFailureMemo } from "./failure-memos.js";
-import { handleToString } from "./handle.js";
-import { assertNever, nowIso } from "./internal-utils.js";
+import type { AuditContext } from "./audit-ctx.ts";
+import { recordStage, unitRowFields } from "./audit-rows.ts";
+import { writeDeathSceneArtifact } from "./death-scene.ts";
+import { lifecycleCtxFromSession, scriptStageRef, skillStageRef } from "./events.ts";
+import { appendFailureMemo } from "./failure-memos.ts";
+import { handleToString } from "./handle.ts";
+import { assertNever, nowIso } from "./internal-utils.ts";
 import {
 	abortedArgs,
 	FAIL_AUDIT_WRITE,
@@ -36,23 +36,23 @@ import {
 	MSG_PARTIAL_ARTIFACTS,
 	MSG_STAGE_FAILED,
 	MSG_WORKFLOW_CANCELLED,
-} from "./messages.js";
-import { listArtifacts } from "./state/index.js";
-import type { StopSignal } from "./transcript.js";
-import type { RunState, RunTermination, WorkflowHostContext } from "./types.js";
+} from "./messages.ts";
+import { listArtifacts } from "./state/index.ts";
+import type { StopSignal } from "./transcript.ts";
+import type { RunState, RunTermination, WorkflowHostContext } from "./types.ts";
 
 // Preserving barrel — the pre-split import surface is unchanged. Consumers
 // (`sessions/`, `runner/`, `loop-kinds`, `loop-parallel`, `internal.ts`,
 // `audit.test.ts`) keep importing `AuditContext`/`runIdentityOf`/`auditCtxFor`/
 // `currentStageRef`/`failedArgs`/`abortedArgs`/`FatalFailureArgs` from
-// "./audit.js" with no edit. Symbols now live in their post-split homes:
-export type { AuditContext } from "./audit-ctx.js";
-export { auditCtxFor, currentStageRef, runIdentityOf } from "./audit-ctx.js";
+// "./audit.ts" with no edit. Symbols now live in their post-split homes:
+export type { AuditContext } from "./audit-ctx.ts";
+export { auditCtxFor, currentStageRef, runIdentityOf } from "./audit-ctx.ts";
 // Re-export the persistence half so existing audit-layer consumers keep one
 // import site; new code may import audit-rows.js directly.
-export { allocateStageNumber, decorateStage, recordStage, unitRowFields } from "./audit-rows.js";
-export type { FatalFailureArgs } from "./messages.js";
-export { abortedArgs, failedArgs } from "./messages.js";
+export { allocateStageNumber, decorateStage, recordStage, unitRowFields } from "./audit-rows.ts";
+export type { FatalFailureArgs } from "./messages.ts";
+export { abortedArgs, failedArgs } from "./messages.ts";
 
 /**
  * `state.termination` mutator. Every terminal path — completion
@@ -194,6 +194,14 @@ export function recordUnitHalt(ctx: WorkflowHostContext, audit: AuditContext, er
 		errMsg,
 		session: audit.session,
 		...unitRowFields(audit.unit),
+		// The failed unit's label — additive, collected rows only. The resume
+		// fold threads it into the rebuilt sentinel's dimension so the live and
+		// replayed sentinels stay byte-identical (rebuildCollectedSentinel).
+		...(audit.unit ? { unitLabel: audit.unit.label } : {}),
+		// The failed attempt's 1-based ordinal — the resume fold's budget input:
+		// an under-budget collected row leaves its slot unfilled so resume
+		// re-dispatches the unit while `retryHaltedUnits` budget remains.
+		...(audit.attemptOrdinal !== undefined ? { attemptOrdinal: audit.attemptOrdinal } : {}),
 	});
 	recordFailureForensics(ctx, audit, errMsg);
 }

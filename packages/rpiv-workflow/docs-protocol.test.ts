@@ -1,6 +1,6 @@
 import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
-import { getDocsProtocol, handleBeforeAgentStart, registerDocsProtocol } from "./docs-protocol.js";
+import { getDocsProtocol, handleBeforeAgentStart, registerDocsProtocol } from "./docs-protocol.ts";
 
 describe("getDocsProtocol", () => {
 	it("returns a non-empty string", () => {

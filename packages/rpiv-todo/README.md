@@ -48,9 +48,10 @@ by status.
 - **The plan stays on screen.** A panel above the editor shows every task with a
   status glyph, the label of whatever is in progress, and a `Todos (done/total)`
   heading — you never have to ask the agent where it is.
-- **Tasks survive `/reload` and compaction.** Each tool call carries the full
-  post-mutation snapshot, and the list is replayed from the session branch. No
-  disk writes, nothing to lose.
+- **Tasks survive `/reload` and compaction.** Every change records the full
+  post-mutation snapshot on the session branch, including changes made from a
+  codemode script, and the list is replayed from there. No disk writes, nothing
+  to lose.
 - **Finished work gets out of the way.** Completed rows stay visible for the rest
   of the turn, then drop at the start of the next one; the panel disappears
   entirely when the list empties.

@@ -1,17 +1,17 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, type Editor, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, CURSOR_MARKER, type Editor, visibleWidth } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 import {
 	makeQuestionnaireState,
 	makeSubmitPickerPropsFromState as submitPickerPropsFromState,
-} from "../test-fixtures.js";
-import type { QuestionAnswer, QuestionData } from "../tool/types.js";
-import type { MultiSelectView } from "./components/multi-select-view.js";
-import type { OptionListView } from "./components/option-list-view.js";
-import type { PreviewPane } from "./components/preview/preview-pane.js";
-import { SUBMIT_LABEL, SubmitPicker } from "./components/submit-picker.js";
-import type { TabBar } from "./components/tab-bar.js";
+} from "../test-fixtures.ts";
+import type { QuestionAnswer, QuestionData } from "../tool/types.ts";
+import type { MultiSelectView } from "./components/multi-select-view.ts";
+import type { OptionListView } from "./components/option-list-view.ts";
+import type { PreviewPane } from "./components/preview/preview-pane.ts";
+import { SUBMIT_LABEL, SubmitPicker } from "./components/submit-picker.ts";
+import type { TabBar } from "./components/tab-bar.ts";
 import {
 	type DialogConfig,
 	type DialogProps,
@@ -25,8 +25,8 @@ import {
 	HINT_SINGLE,
 	READY_PROMPT,
 	REVIEW_HEADING,
-} from "./dialog-builder.js";
-import type { TabComponents } from "./tab-components.js";
+} from "./dialog-builder.ts";
+import type { TabComponents } from "./tab-components.ts";
 
 const theme = makeTheme() as unknown as Theme;
 
@@ -310,25 +310,22 @@ describe("Dialog overflow — submit tab", () => {
 });
 
 describe("Dialog overflow — indicator content", () => {
-	it("shows combined ↕ when availableMiddle === 1 with both overflow directions", () => {
+	it("keeps the focused row instead of the ↕ glyph when the 1-row window is the focused row (#261)", () => {
 		// topFixed=4, bottomFixed=3 (footerRowCount 4→2), termRows=8 → availableMiddle=1.
-		// Body=20 rows, focus at [0,1] → focusedRowInMiddle=2, idealStart=2, scrollStart=2.
-		// hasUp=true, hasDown=true, availableMiddle===1 → combined ↕.
+		// Body=20 rows, focus at [0,1] → focusedRowInMiddle=2, idealStart=2, scrollStart=2:
+		// the only window row IS the focused row, so no overflow glyph may replace it.
 		const dlg = makeDialog(
 			makeConfig({
 				getTerminalRows: () => 8,
 				getBodyHeight: () => 20,
 				getCurrentBodyHeight: () => 10,
-				previewPane: stubPreviewPane(Array(20).fill("<LINE>")),
+				previewPane: stubPreviewPane(Array.from({ length: 20 }, (_, i) => `<LINE ${i}>`)),
 			}),
 		);
 		const lines = dlg.render(80);
 		expect(lines.length).toBeLessThanOrEqual(8);
-		// Middle row at index topFixed=4 carries the combined glyph.
-		expect(stripAnsi(lines[4])).toBe("↕");
-		// And no separate ↑/↓ leak through.
-		expect(lines.some((l) => stripAnsi(l) === "↑")).toBe(false);
-		expect(lines.some((l) => stripAnsi(l) === "↓")).toBe(false);
+		expect(stripAnsi(lines[4])).toBe("<LINE 0>");
+		expect(lines.some((l) => ["↑", "↓", "↕"].includes(stripAnsi(l)))).toBe(false);
 	});
 
 	it("shows individual ↑ and ↓ when availableMiddle > 1 with centering", () => {
@@ -344,9 +341,11 @@ describe("Dialog overflow — indicator content", () => {
 		);
 		const lines = dlg.render(80);
 		expect(lines.length).toBeLessThanOrEqual(14);
-		// Top of middle region (index 4) is ↑, bottom (index 10 = 4+7-1) is ↓. At termRows=14
-		// with bottomFixed=3 (footerRowCount 4→2), availableMiddle = 14 - 4 - 3 = 7.
-		expect(stripAnsi(lines[4])).toBe("↑");
+		// The heading ("Q1?" + Spacer = 2 rows) is pinned below topFixed=4, so the scroll
+		// window starts at index 6. bottomFixed=3 → availableMiddle = 14 - 6 - 3 = 5, and
+		// its bottom is index 10.
+		expect(stripAnsi(lines[4])).toBe("Q1?");
+		expect(stripAnsi(lines[6])).toBe("↑");
 		expect(stripAnsi(lines[10])).toBe("↓");
 		// No combined glyph when there's room for two separate indicators.
 		expect(lines.some((l) => stripAnsi(l) === "↕")).toBe(false);
@@ -597,5 +596,214 @@ describe("Dialog overflow — notes open on the Submit tab (NFR-2)", () => {
 			.render(80)
 			.join("\n");
 		expect(open).not.toContain("● Note");
+	});
+});
+
+describe("Dialog overflow — the question stays visible while the body scrolls", () => {
+	const longQuestion = "Which caching approach should the plan use for the pricing lookups on checkout?";
+	const single = (question = "Pick one?"): QuestionData[] => [
+		{
+			question,
+			header: "Cache",
+			options: [
+				{ label: "A", description: "a" },
+				{ label: "B", description: "b" },
+			],
+		},
+	];
+	const bodyLines = Array.from({ length: 20 }, (_, i) => `<LINE ${i}>`);
+	const focusedDeep = (_w: number) => [15, 17] as [number, number];
+
+	it("pins the header badge and question above the scroll window when the focus is deep in the body", () => {
+		const lines = makeDialog(
+			makeConfig({
+				questions: single(),
+				getTerminalRows: () => 14,
+				getBodyHeight: () => 20,
+				getCurrentBodyHeight: () => 20,
+				previewPane: stubPreviewPane(bodyLines, focusedDeep),
+			}),
+		)
+			.render(80)
+			.map(stripAnsi);
+		expect(lines.length).toBeLessThanOrEqual(14);
+		expect(lines).toContain("Cache");
+		expect(lines).toContain("Pick one?");
+		expect(lines.some((l) => l.includes("<LINE 15>"))).toBe(true);
+		expect(lines.indexOf("Pick one?")).toBeLessThan(lines.indexOf("↑"));
+	});
+
+	it("measures a wrapped question in rendered rows, keeping every wrapped line and the focused row", () => {
+		const width = 40; // wraps the long question onto several rows
+		const lines = makeDialog(
+			makeConfig({
+				questions: single(longQuestion),
+				getTerminalRows: () => 18,
+				getBodyHeight: () => 20,
+				getCurrentBodyHeight: () => 20,
+				previewPane: stubPreviewPane(bodyLines, focusedDeep),
+			}),
+		)
+			.render(width)
+			.map(stripAnsi);
+		expect(lines.length).toBeLessThanOrEqual(18);
+		expect(lines.join(" ")).toContain("pricing lookups on checkout?");
+		expect(lines.some((l) => l.includes("<LINE 15>"))).toBe(true);
+	});
+
+	it("lets the heading scroll when pinning it would leave fewer than 3 body rows", () => {
+		// topFixed=2 (no tab bar), heading=4 (badge+spacer+question+spacer), bottomFixed=3:
+		// at 11 rows pinning leaves 2 body rows, so the heading scrolls away to reach the focus.
+		const lines = makeDialog(
+			makeConfig({
+				questions: single(),
+				getTerminalRows: () => 11,
+				getBodyHeight: () => 20,
+				getCurrentBodyHeight: () => 20,
+				previewPane: stubPreviewPane(bodyLines, focusedDeep),
+			}),
+		)
+			.render(80)
+			.map(stripAnsi);
+		expect(lines.length).toBeLessThanOrEqual(11);
+		expect(lines).not.toContain("Pick one?");
+		expect(lines.some((l) => l.includes("<LINE 15>"))).toBe(true);
+	});
+});
+
+describe("Dialog overflow — row accounting regressions (#260, #261)", () => {
+	const isBorder = (l: string) => /^─{10,}$/.test(stripAnsi(l));
+
+	it("clamps the padding instead of scrolling when only the residual spacer overflows (#260)", () => {
+		// natural = 4 top + 1 body + 1 spacer + 1 border + 2 footer = 9 rows ≤ 12, but the
+		// tallest tab's spacer pads it to 9 + 8 = 17 > 12. The old overflow branch sliced past
+		// the middle region and appended the bottom border and hint a second time.
+		const lines = makeDialog(
+			makeConfig({ getTerminalRows: () => 12, getBodyHeight: () => 9, getCurrentBodyHeight: () => 1 }),
+		).render(80);
+		expect(lines).toHaveLength(12); // padded to the budget: a stable footprint, no overflow
+		expect(lines.filter(isBorder)).toHaveLength(2);
+		expect(lines.filter((l) => stripAnsi(l).startsWith(HINT_PART_ENTER))).toHaveLength(1);
+		expect(lines.some((l) => ["↑", "↓", "↕"].includes(stripAnsi(l)))).toBe(false);
+	});
+
+	it("keeps the Submit tab's incomplete-answers warning on one row so the bottom border survives (#261)", () => {
+		const questions: QuestionData[] = ["Library choice", "Formatting style", "Test framework", "Delivery mode"].map(
+			(header, i) => ({ question: `Q${i + 1}?`, header, options: [{ label: "A", description: "a" }] }),
+		);
+		const state = makeQuestionnaireState({ currentTab: questions.length });
+		const picker = new SubmitPicker(theme);
+		picker.setProps(submitPickerPropsFromState(state, false));
+		const lines = makeDialog(
+			makeConfig({ questions, state, submitPicker: picker, getTerminalRows: () => 10, getBodyHeight: () => 6 }),
+		)
+			.render(60)
+			.map(stripAnsi);
+		expect(lines.length).toBeLessThanOrEqual(10);
+		const warning = lines.filter((l) => l.includes("Answer remaining questions"));
+		expect(warning).toHaveLength(1);
+		expect(lines.filter((l) => /^─{10,}$/.test(l))).toHaveLength(2);
+	});
+
+	it("never draws an overflow arrow over the focused item's rows (#261)", () => {
+		// Window of 5 rows; the focused item [10,13) is centred into it with rows above and
+		// below hidden, so both arrows apply — but only on rows outside the focused item.
+		const body = Array.from({ length: 20 }, (_, i) => `<LINE ${i}>`);
+		const lines = makeDialog(
+			makeConfig({
+				questions: [{ question: "Pick one?", header: "", options: [{ label: "A", description: "a" }] }],
+				isMulti: false,
+				getTerminalRows: () => 10,
+				getBodyHeight: () => 20,
+				getCurrentBodyHeight: () => 20,
+				previewPane: stubPreviewPane(body, () => [10, 13]),
+			}),
+		)
+			.render(80)
+			.map(stripAnsi);
+		for (const focused of ["<LINE 10>", "<LINE 11>", "<LINE 12>"]) expect(lines).toContain(focused);
+	});
+
+	it("drops an arrow rather than cover the focused row when the window is exactly the focused item", () => {
+		const body = Array.from({ length: 20 }, (_, i) => `<LINE ${i}>`);
+		const lines = makeDialog(
+			makeConfig({
+				questions: [{ question: "Pick one?", header: "", options: [{ label: "A", description: "a" }] }],
+				isMulti: false,
+				getTerminalRows: () => 10, // window = 10 - 2 top - 2 heading - 3 bottom = 3 rows
+				getBodyHeight: () => 20,
+				getCurrentBodyHeight: () => 20,
+				previewPane: stubPreviewPane(body, () => [8, 11]),
+			}),
+		)
+			.render(80)
+			.map(stripAnsi);
+		expect(lines.slice(4, 7)).toEqual(["<LINE 8>", "<LINE 9>", "<LINE 10>"]);
+	});
+});
+
+describe("Dialog overflow — the open notes editor stays in view (#317)", () => {
+	const multiQ: QuestionData = {
+		question: "Areas",
+		header: "Areas",
+		multiSelect: true,
+		options: [
+			{ label: "FE", description: "f" },
+			{ label: "BE", description: "b" },
+		],
+	};
+
+	/** A notes editor of `rows` rendered rows, with the cursor marker on row `cursorRow`. */
+	function stubEditor(rows: number, cursorRow?: number): Editor {
+		return stubComponent(
+			Array.from({ length: rows }, (_, i) => `<EDITOR ${i}>${i === cursorRow ? CURSOR_MARKER : ""}`),
+		) as unknown as Editor;
+	}
+
+	function renderNotesOpen(notesInput: Editor, focus: [number, number] = [0, 1]): string[] {
+		const ms = stubMultiSelect(
+			Array.from({ length: 20 }, (_, i) => `<OPTION ${i}>`),
+			() => focus,
+		);
+		return makeDialog(
+			makeConfig({
+				questions: [multiQ],
+				isMulti: false,
+				state: makeQuestionnaireState({ notesVisible: true }),
+				multiSelectByTab: [ms],
+				notesInput,
+				getTerminalRows: () => 14,
+				getBodyHeight: () => 20,
+				getCurrentBodyHeight: () => 20,
+			}),
+		).render(80);
+	}
+
+	it("scrolls the notes header and editor into view instead of the focused option", () => {
+		const lines = renderNotesOpen(stubEditor(3)).map(stripAnsi);
+		expect(lines.length).toBeLessThanOrEqual(14);
+		expect(lines).toContain("Notes:");
+		for (const row of ["<EDITOR 0>", "<EDITOR 1>", "<EDITOR 2>"]) expect(lines).toContain(row);
+	});
+
+	it("keeps the cursor row visible when the editor is taller than the window", () => {
+		for (const cursorRow of [0, 5, 11]) {
+			const lines = renderNotesOpen(stubEditor(12, cursorRow));
+			expect(lines.length).toBeLessThanOrEqual(14);
+			expect(lines.some((l) => l.includes(CURSOR_MARKER))).toBe(true);
+		}
+	});
+
+	it("scrolls the Submit tab's global-note editor into view", () => {
+		const state = makeQuestionnaireState({ currentTab: 2, notesVisible: true });
+		const picker = new SubmitPicker(theme);
+		picker.setProps(submitPickerPropsFromState(state, true));
+		const lines = makeDialog(
+			makeConfig({ state, submitPicker: picker, getTerminalRows: () => 12, getBodyHeight: () => 20 }),
+		)
+			.render(80)
+			.map(stripAnsi);
+		expect(lines.length).toBeLessThanOrEqual(12);
+		expect(lines).toContain("<NOTES_INPUT>");
 	});
 });
