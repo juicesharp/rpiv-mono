@@ -14,7 +14,7 @@
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, getMaxWidgetLines, resolveCollapseKey } from "./config.ts";
+import { COLLAPSE_KEY_OFF, getCollapsedLines, getMaxWidgetLines, resolveCollapseKey } from "./config.ts";
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
 import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "./state/selectors.ts";
 import { getRenderState } from "./state/store.ts";
@@ -151,21 +151,26 @@ export class TodoOverlay {
 		const headingText = `${t("overlay.heading", OVERLAY_HEADING)} (${counts.completed}/${counts.total})`;
 		const heading = truncate(`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}`);
 
-		// Collapsed view: just the heading + a dim "└─" expand hint, then the
-		// trailing spacer. Short-circuit before the budget math and the completed-
-		// display tracking — nothing is shown to track, and skipping the tracking
-		// when nothing is rendered is correctness, not optimization. The hint splices
-		// the resolved key into the {key} placeholder (per-render, like the row
-		// budget); a config edit needs /reload to re-bind the actual shortcut. The
-		// "off" sentinel is reachable here mid-session (config edited after the
-		// shortcut was bound and the overlay collapsed) — render a static collapsed
-		// label instead of splicing the sentinel into the placeholder.
+		// Collapsed view: the heading plus a dim expand hint. Two shapes, selected by
+		// `collapsedLines`: the default puts the hint on its own `└─` row and appends
+		// the trailing spacer (heading + hint + spacer = three rows); `1` folds the
+		// hint onto the heading row and drops the spacer, so the collapsed panel
+		// costs exactly one terminal row. Short-circuit before the budget math and
+		// the completed-display tracking — nothing is shown to track, and skipping
+		// the tracking when nothing is rendered is correctness, not optimization. The
+		// hint splices the resolved key into the {key} placeholder (per-render, like
+		// the row budget and the row count); a config edit needs /reload to re-bind
+		// the actual shortcut. The "off" sentinel is reachable here mid-session
+		// (config edited after the shortcut was bound and the overlay collapsed) —
+		// render a static collapsed label instead of splicing the sentinel into the
+		// placeholder.
 		if (this.collapsed) {
 			const key = resolveCollapseKey();
 			const hint =
 				key === COLLAPSE_KEY_OFF
 					? t("overlay.collapsed", OVERLAY_COLLAPSED)
 					: t("overlay.expandHint", OVERLAY_EXPAND_HINT).replace("{key}", key);
+			if (getCollapsedLines() === 1) return [truncate(`${heading} ${theme.fg("dim", `· ${hint}`)}`)];
 			return this.withTrailingSpacer([heading, truncate(`${theme.fg("dim", "└─")} ${theme.fg("dim", hint)}`)]);
 		}
 

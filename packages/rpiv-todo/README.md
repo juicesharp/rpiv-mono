@@ -40,8 +40,9 @@ input box, updating as work moves:
 ![Todo overlay panel: a Todos (2/7) heading above two struck-through completed rows, one in-progress row with its activity label, and four pending rows](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/overlay.jpg)
 
 Press `ctrl+shift+t` to collapse the panel to its heading plus a one-line hint,
-and again to expand it. Run `/todos` at any time to print the full list grouped
-by status.
+and again to expand it. Set `collapsedLines` to `1` to fold that hint onto the
+heading row and drop the spacer, so a collapsed panel costs a single row instead
+of three. Run `/todos` at any time to print the full list grouped by status.
 
 ## What you get
 
@@ -75,6 +76,7 @@ Optional. Create `~/.config/rpiv-todo/config.json` (or
 ```json
 {
   "maxWidgetLines": 8,
+  "collapsedLines": 1,
   "collapseKey": "alt+t"
 }
 ```
@@ -82,6 +84,7 @@ Optional. Create `~/.config/rpiv-todo/config.json` (or
 | Setting | What it does | Default |
 | --- | --- | --- |
 | `maxWidgetLines` | Content rows the overlay may use, heading included. Minimum `3`. Applies on the next repaint. Pi's tool-output expansion mode shows all tasks. | `12` |
+| `collapsedLines` | Rows the collapsed panel occupies: `2` keeps the hint on its own row plus a spacer, `1` folds the hint onto the heading and drops the spacer. Applies on the next repaint. | `2` |
 | `collapseKey` | Key that collapses and expands the panel, in Pi keybinding form (`alt+o`, `ctrl+shift+t`). Set `"off"` to register no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
 | `guidance` | Replaces the built-in instructions the extension gives the model about when and how to use the todo list. Needs `/reload`. | _(built-ins)_ |
 
