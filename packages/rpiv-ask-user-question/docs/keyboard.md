@@ -7,7 +7,7 @@ adapts to the size of your terminal.
 
 | Key | What it does | Where it applies |
 | --- | --- | --- |
-| `↑` / `↓` | Move between rows. Wraps at both ends. | Option list, Submit picker |
+| `↑` / `↓` / `k` / `j` | Move between rows. Wraps at both ends. | Option list, Submit picker |
 | `Enter` | Confirm the focused option, commit typed text, close notes, or activate the focused Submit-picker row. | Everywhere |
 | `Shift+Enter` | Insert a newline. | `Type something.` input, notes editor |
 | `Esc` | Cancel the whole questionnaire. | Everywhere except the notes editor, where it closes notes |
