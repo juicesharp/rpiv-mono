@@ -86,6 +86,12 @@ Rebind or disable the shortcut with the `collapseKey` option; see
 `"off"` while the panel is collapsed, the hint becomes a static `collapsed`
 label rather than advertising an unbindable key.
 
+Clicking the heading row also toggles the panel, which covers terminals that
+swallow the shortcut. Only an unmodified left click on that row counts: task
+rows, modified clicks, drags and wheel events keep their existing meaning, and
+the click still works when `collapseKey` is `"off"`. Mouse dispatch requires
+Pi's fullscreen mode; a host without it simply never delivers the click.
+
 ## `/todos`
 
 `/todos` prints the whole list grouped by status, independent of the overlay's

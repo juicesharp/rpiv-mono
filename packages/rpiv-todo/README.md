@@ -40,8 +40,8 @@ input box, updating as work moves:
 ![Todo overlay panel: a Todos (2/7) heading above two struck-through completed rows, one in-progress row with its activity label, and four pending rows](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/overlay.jpg)
 
 Press `ctrl+shift+t` to collapse the panel to its heading plus a one-line hint,
-and again to expand it. Run `/todos` at any time to print the full list grouped
-by status.
+and again to expand it. Clicking the heading row toggles it too. Run `/todos` at
+any time to print the full list grouped by status.
 
 ## What you get
 

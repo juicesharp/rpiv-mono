@@ -13,6 +13,7 @@
  */
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 import { COLLAPSE_KEY_OFF, getMaxWidgetLines, resolveCollapseKey } from "./config.ts";
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
@@ -21,6 +22,9 @@ import { getRenderState } from "./state/store.ts";
 import { formatOverlayTaskLine } from "./view/format.ts";
 
 const WIDGET_KEY = "rpiv-todos";
+
+/** Local row index of the heading inside the rendered widget. */
+const HEADING_ROW = 0;
 
 // English fallbacks for localized overlay chrome strings.
 const OVERLAY_HEADING = "Todos";
@@ -72,6 +76,7 @@ export class TodoOverlay {
 							// No rendered strings are cached. Pi invalidates on theme changes;
 							// the next render reads uiCtx.theme.
 						},
+						handleMouse: (event: TuiMouseEvent) => this.handleHeadingClick(event),
 					};
 				},
 				{ placement: "aboveEditor" },
@@ -80,6 +85,22 @@ export class TodoOverlay {
 		} else {
 			this.tui?.requestRender();
 		}
+	}
+
+	/** Toggle the panel from a click on the heading row.
+	 *
+	 * Only an unmodified left click counts: task rows keep their own meaning (and
+	 * there is no per-task action yet), while modified clicks, drags, wheels and
+	 * press/release events stay available to the transcript's selection, scrolling
+	 * and app-level bindings. The heading renders in both states, so the same row
+	 * collapses and expands. Hosts without mouse dispatch never call this and keep
+	 * the keyboard-only behavior. */
+	private handleHeadingClick(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "click" || event.button !== "left") return undefined;
+		if (event.shift || event.alt || event.ctrl) return undefined;
+		if (event.y !== HEADING_ROW) return undefined;
+		this.toggleCollapse();
+		return { handled: true };
 	}
 
 	resetCompletedDisplayState(): void {
