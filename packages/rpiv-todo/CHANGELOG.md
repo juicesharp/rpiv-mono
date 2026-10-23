@@ -10,6 +10,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Batch create.** `create` accepts `tasks[]` instead of `subject`, so a whole plan lands in one call: `{"action":"create","tasks":[{"subject":"Inspect"},{"subject":"Test"}]}`. The batch is all-or-nothing: every item is validated first, and one bad item fails the call with the list unchanged. Each item carries its own `description`, `activeForm`, `blockedBy`, `owner` and `metadata`; the same fields at the top level of a batch, or a `subject` next to `tasks[]`, are rejected rather than dropped. Items cannot `blockedBy` each other, since their ids do not exist until the call commits; create the prerequisite first, then the dependent with `blockedBy`. A `tasks[]` sent as a JSON string, as some vLLM/LiteLLM-served models do, is decoded before validation. Single create is unchanged. Thanks @0xbentang. ([#44](https://github.com/juicesharp/rpiv-mono/issues/44), [#193](https://github.com/juicesharp/rpiv-mono/pull/193))
+- `collapsedLines` config option for the collapsed overlay. `2` (the default) keeps the historical three-row shape — heading, `└─ <key> to expand` hint, trailing spacer. `1` folds the hint onto the heading row and drops the spacer, so a collapsed panel occupies a single terminal row. Read per render; values other than `1` and `2` fall back to the default.
 
 ### Changed
 

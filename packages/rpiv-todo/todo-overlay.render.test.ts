@@ -297,6 +297,40 @@ describe("TodoOverlay — collapse/expand render", () => {
 		expect(lines[2]).toBe(""); // trailing spacer
 	});
 
+	it("collapsedLines: 1 folds the hint onto the heading and drops the trailing spacer", async () => {
+		writeConfigFile(JSON.stringify({ collapsedLines: 1 }));
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "a" },
+			{ action: "create", subject: "b" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		overlay.toggleCollapse(); // collapse
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(1); // one row, no trailing spacer
+		expect(lines[0]).toContain("Todos (1/2)");
+		expect(lines[0]).toContain("ctrl+shift+t to expand");
+		expect(lines[0]).not.toContain("└─");
+	});
+
+	it("collapsedLines: 1 keeps the static collapsed label when the key resolves to off", async () => {
+		writeConfigFile(JSON.stringify({ collapsedLines: 1, collapseKey: "off" }));
+		const { widget, overlay } = await setup([{ action: "create", subject: "a" }]);
+		overlay.toggleCollapse(); // collapse
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(1);
+		expect(lines[0]).toContain("collapsed");
+		expect(lines[0]).not.toContain("off to expand");
+	});
+
+	it("collapsedLines outside 1..2 keeps the two-row shape", async () => {
+		writeConfigFile(JSON.stringify({ collapsedLines: 3 }));
+		const { widget, overlay } = await setup([{ action: "create", subject: "a" }]);
+		overlay.toggleCollapse(); // collapse
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(3); // heading + hint + trailing spacer
+		expect(lines[1]).toContain("└─");
+	});
+
 	it("uncollapsed (default) yields the unchanged full render (regression-safe)", async () => {
 		const { widget } = await setup([
 			{ action: "create", subject: "a" },

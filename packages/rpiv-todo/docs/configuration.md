@@ -32,6 +32,7 @@ extension only reads it.
 ```json
 {
   "maxWidgetLines": 8,
+  "collapsedLines": 1,
   "collapseKey": "alt+t",
   "guidance": {
     "promptSnippet": "Use the `todo` tool to track multi-step work before starting it.",
@@ -56,6 +57,21 @@ blank spacer sits outside the budget, so `12` renders up to 13 terminal rows.
   no `/reload`.
 - Pi's tool-output expansion mode (`ctrl+o` by default) temporarily overrides
   this budget and shows every task; collapsing restores the configured budget.
+
+## `collapsedLines`
+
+**Default `2`.** How many rows the collapsed overlay occupies.
+
+| Value | Collapsed shape | Terminal rows |
+| --- | --- | --- |
+| `2` | Heading, then the dim `└─ <key> to expand` hint below it, plus the trailing spacer | 3 |
+| `1` | Heading with the hint folded onto the same row (`· <key> to expand`), no spacer | 1 |
+
+- Only the integers `1` and `2` are accepted. A non-number, a fractional value,
+  or an integer outside that range falls back to the default.
+- Read fresh on every render, so a change takes effect on the next repaint — no
+  `/reload`.
+- The expanded overlay is unaffected; `maxWidgetLines` still governs it.
 
 ## `collapseKey`
 
