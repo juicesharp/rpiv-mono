@@ -51,6 +51,9 @@ function errorResult(state: TaskState, message: string): ApplyResult {
 	return { state, op: { kind: "error", message } };
 }
 
+/** Per-task create fields: on a batch they belong to each `tasks[]` item. */
+const BATCH_ITEM_FIELDS = ["description", "activeForm", "blockedBy", "owner", "metadata"] as const;
+
 function asCreateItem(value: unknown): TaskMutationParams | undefined {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
 	return value as TaskMutationParams;
@@ -133,14 +136,21 @@ function taskChanged(before: Task, after: Task): boolean {
 export function applyTaskMutation(state: TaskState, action: TaskAction, params: TaskMutationParams): ApplyResult {
 	switch (action) {
 		case "create": {
-			const hasSubject = Boolean(params.subject?.trim());
 			const batch = params.tasks;
 
-			if (Array.isArray(batch) && hasSubject) {
+			if (Array.isArray(batch) && params.subject !== undefined) {
 				return errorResult(state, "create requires subject or tasks[], not both");
 			}
 
 			if (Array.isArray(batch)) {
+				// Each item carries its own fields; a top-level one would apply to no item.
+				const topLevel = BATCH_ITEM_FIELDS.filter((field) => params[field] !== undefined);
+				if (topLevel.length) {
+					return errorResult(
+						state,
+						`create with tasks[] takes ${topLevel.join(", ")} on each item, not at the top level`,
+					);
+				}
 				if (batch.length === 0) {
 					return errorResult(state, "tasks[] must be non-empty");
 				}

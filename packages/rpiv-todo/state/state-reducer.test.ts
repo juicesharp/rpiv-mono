@@ -136,6 +136,26 @@ describe("applyTaskMutation — create", () => {
 		expect(result.state.tasks).toHaveLength(1);
 		expect(result.state.nextId).toBe(2);
 	});
+
+	it("rejects a blank subject alongside tasks[]: one-of is by presence, not by content", () => {
+		const result = applyTaskMutation(emptyState(), "create", { subject: "", tasks: [{ subject: "a" }] });
+		expect(result.op).toEqual({ kind: "error", message: "create requires subject or tasks[], not both" });
+		expect(result.state.nextId).toBe(1);
+	});
+
+	it("rejects top-level task fields alongside tasks[] instead of dropping them", () => {
+		const result = applyTaskMutation(emptyState(), "create", {
+			tasks: [{ subject: "a" }],
+			blockedBy: [1],
+			description: "lost",
+		});
+		expect(result.op).toEqual({
+			kind: "error",
+			message: "create with tasks[] takes description, blockedBy on each item, not at the top level",
+		});
+		expect(result.state.tasks).toHaveLength(0);
+		expect(result.state.nextId).toBe(1);
+	});
 });
 
 describe("applyTaskMutation — update", () => {

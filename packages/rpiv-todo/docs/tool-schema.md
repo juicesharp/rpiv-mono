@@ -55,7 +55,9 @@ todo({
 ```
 
 `create` takes either `subject` (one task) or `tasks[]` (several independent
-tasks). Passing both is rejected. The batch is validated first and committed
+tasks). Passing both is rejected, even with a blank `subject`. Each item carries
+its own `description`, `activeForm`, `blockedBy`, `owner` and `metadata`; the same
+fields at the top level of a batch are rejected rather than dropped. The batch is validated first and committed
 together: one bad item fails the whole call and leaves the list unchanged.
 Items in `tasks[]` cannot `blockedBy` each other; those ids do not exist until
 the call commits. Create the prerequisite first, then the dependent with
@@ -158,6 +160,7 @@ that it was a no-op instead of a fresh `Updated #N`.
 | `subject required for create` | `create` without a non-blank `subject` and without `tasks[]`. |
 | `create requires subject or tasks[], not both` | `create` with both `subject` and `tasks[]`. |
 | `tasks[] must be non-empty` | `create` with `tasks: []`. |
+| `create with tasks[] takes <fields> on each item, not at the top level` | `create` with `tasks[]` and a top-level `description`, `activeForm`, `blockedBy`, `owner`, or `metadata`. |
 | `tasks[N]: subject required for create` | A batch item with a blank or missing subject. |
 | `blockedBy: #N not found` | `create` naming an unknown dependency. |
 | `blockedBy: #N is deleted` | `create` naming a tombstoned dependency. |

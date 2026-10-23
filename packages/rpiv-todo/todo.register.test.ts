@@ -47,6 +47,26 @@ describe("registerTodoTool — registration shape", () => {
 		}
 		expect(raw).toContain("tasks");
 	});
+
+	it("requires subject on every tasks[] item in the schema", () => {
+		const { tool } = setup();
+		const items = (tool.parameters as { properties: { tasks: { items: { required?: string[] } } } }).properties.tasks
+			.items;
+		expect(items.required).toEqual(["subject"]);
+	});
+
+	it("names tasks[] batch create in the tool description", () => {
+		const { tool } = setup();
+		expect(tool.description).toContain("tasks[]");
+	});
+
+	it("decodes a double-encoded tasks[] before validation", () => {
+		const { tool } = setup();
+		expect(tool.prepareArguments?.({ action: "create", tasks: '[{"subject":"a"}]' })).toEqual({
+			action: "create",
+			tasks: [{ subject: "a" }],
+		});
+	});
 });
 
 describe("registerTodoTool — execute mutates module state", () => {

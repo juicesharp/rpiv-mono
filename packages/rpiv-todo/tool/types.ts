@@ -68,7 +68,7 @@ export interface TaskDetails {
  */
 /** One item in a batch `create` `tasks[]` payload. Same create-shaped fields as a single create, minus nested `tasks`. */
 export interface CreateTaskInput {
-	subject?: string;
+	subject: string;
 	description?: string;
 	activeForm?: string;
 	blockedBy?: number[];
@@ -99,7 +99,7 @@ export interface TaskMutationParams {
 // ---------------------------------------------------------------------------
 
 const CreateTaskInputSchema = Type.Object({
-	subject: Type.Optional(Type.String({ description: "Task subject line (required)" })),
+	subject: Type.String({ description: "Task subject line" }),
 	description: Type.Optional(Type.String({ description: "Long-form task description" })),
 	activeForm: Type.Optional(
 		Type.String({

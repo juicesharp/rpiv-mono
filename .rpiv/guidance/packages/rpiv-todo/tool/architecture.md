@@ -9,14 +9,17 @@ The LLM-facing tool contract surface: declares tool identity strings, the TypeBo
 - **Internal**: `../state/state.ts` (`TaskState`), `../state/state-reducer.ts` (`Op`), `../state/task-graph.ts` (`deriveBlocks`)
 
 ## Inbound / Outbound
-- **Imported by** `../todo.ts`: registers the `todo` tool using `TOOL_NAME`, `TodoParamsSchema`, and `buildToolResult`; and by `../view/format.ts` (`sanitizeTerminalText`, alongside its existing type-only import of `types.ts`)
+- **Imported by** `../todo.ts`: registers the `todo` tool using `TOOL_NAME`, `TodoParamsSchema`, `prepareTodoArguments`, and `buildToolResult`; and by `../view/format.ts` (`sanitizeTerminalText`, alongside its existing type-only import of `types.ts`)
 - **No outbound** to Pi runtime — pure schema + formatter layer
 
 ## Module Structure
 ```
 types.ts                — Identity constants (TOOL_NAME, TOOL_LABEL, COMMAND_NAME, STATE_ENTRY_TYPE), error strings,
                            public domain types (Task, TaskStatus, TaskAction, TaskDetails, TaskMutationParams),
-                           and TodoParamsSchema TypeBox shape
+                           and TodoParamsSchema TypeBox shape (incl. the batch-create `tasks[]` item schema)
+normalize-params.ts     — prepareTodoArguments: Pi's prepareArguments hook; decodes a double-encoded `tasks[]`
+                           (the array or its items sent as JSON strings) before schema validation — the same
+                           fix rpiv-ask-user-question applies to `questions` (#244)
 response-envelope.ts    — Pure formatters (formatListLine, formatGetLines, formatContent) closed-switching over
                            the Op tagged union, plus buildToolResult envelope constructor
 response-envelope.test.ts — Snapshot coverage of every Op branch and the envelope shape
@@ -58,10 +61,10 @@ export interface TaskDetails {
 ## Types Surface
 - `TaskAction = "create" | "update" | "list" | "get" | "delete" | "clear"`
 - `TaskStatus = "pending" | "in_progress" | "completed" | "deleted"`
-- `TodoParamsSchema` enumerates the action via `StringEnum`, plus optional `subject/description/activeForm/status/blockedBy/addBlockedBy/removeBlockedBy/owner/metadata/id/includeDeleted` — every field's `description` is LLM-facing prompt copy
+- `TodoParamsSchema` enumerates the action via `StringEnum`, plus optional `subject/description/activeForm/status/blockedBy/addBlockedBy/removeBlockedBy/owner/metadata/id/includeDeleted/tasks` — every field's `description` is LLM-facing prompt copy. `tasks[]` is batch create, one-of with `subject`; each item requires `subject` and carries its own create fields (#44)
 
 ## Symmetry with `rpiv-ask-user-question/tool/`
-Both packages share the `{ content: [{ type:"text", text }], details }` envelope contract and the TypeBox-params + types split. **Divergence**: todo is leaner (only schema + envelope) because state lives in `../state/`; AUQ's tool layer adds `format-answer.ts` and `validate-questionnaire.ts` because its surface is richer.
+Both packages share the `{ content: [{ type:"text", text }], details }` envelope contract and the TypeBox-params + types split. **Divergence**: todo is leaner (schema + envelope + argument decoding) because state lives in `../state/`; AUQ's tool layer adds `format-answer.ts` and `validate-questionnaire.ts` because its surface is richer.
 
 ## Reconstruct Flow Connection
 `details` is persisted twice: in the `todo` toolResult, and — for every state change — as a `STATE_ENTRY_TYPE` (`"rpiv-todo-state"`) custom entry that `../todo.ts` appends via `pi.appendEntry`, so calls made through another tool (`ctx.executeTool`, e.g. codemode) also survive. `replayFromBranch` in `../state/replay.ts` walks the branch and applies last-writer-wins on `tasks`/`nextId`: state entries when the branch has any, else `todo` toolResults (legacy sessions). The result is fed to the per-session `replaceState(sessionId, next)` in `../state/store.ts` from `../index.ts` — the `session_start` handler plus the shared `replayAndRefresh` handler for `session_compact` / `session_tree` — so every session replays into its own store slot keyed by `sid(ctx)`; `../todo.ts` no longer participates in replay.

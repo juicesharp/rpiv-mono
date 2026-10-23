@@ -46,6 +46,7 @@
 		"state/state.ts",
 		"state/store.ts",
 		"state/task-graph.ts",
+		"tool/normalize-params.ts",
 		"tool/response-envelope.ts",
 		"tool/sanitize.ts",
 		"tool/types.ts",
