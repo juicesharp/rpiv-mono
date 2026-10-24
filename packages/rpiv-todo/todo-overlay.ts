@@ -94,7 +94,7 @@ export class TodoOverlay {
 			this.hiddenCompletedTaskIds.add(taskId);
 		}
 		this.completedTaskIdsPendingHide.clear();
-		this.tui?.requestRender();
+		this.update();
 	}
 
 	toggleCollapse(): void {
@@ -181,7 +181,7 @@ export class TodoOverlay {
 			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
 		}
 
-		const newlyDisplayedCompletedTaskIds = overlayTasks
+		const newlyDisplayedCompletedTaskIds = layout.visible
 			.filter(
 				(task) =>
 					task.status === "completed" &&

@@ -71,9 +71,13 @@ budget's floor and reload semantics.
 ## Completed tasks fading out
 
 A completed task stays on screen for the remainder of the turn in which it was
-completed. At the start of the next agent turn, every completed row that has
-already been displayed is hidden from later renders. Reloading or compacting the
-session resets that tracking, so a fresh session shows the full list again.
+completed. At the foreground session's next `turn_start`, every completed row
+that has actually been displayed is hidden from later renders. A child session's
+turn does not hide foreground rows. Completed tasks omitted by the row budget
+remain eligible to appear when space becomes available or the widget is expanded.
+When the last visible row is hidden, the widget unregisters itself. Reloading or
+compacting the session resets that tracking, so a fresh session shows the full
+list again.
 
 ## Collapsing
 
