@@ -135,6 +135,66 @@ describe("rpiv-todo — collapse/expand shortcut registration", () => {
 	});
 });
 
+describe("rpiv-todo — header mouse toggle", () => {
+	it.each(["ctrl+shift+t", "off"])("toggles only header clicks with collapseKey=%s", async (collapseKey) => {
+		writeConfigFile(JSON.stringify({ collapseKey }));
+		const { captured, sessionStart, toolEnd, tool } = setup();
+		const ctx = createMockCtx({ sessionId: "s1", hasUI: true });
+		await sessionStart({} as never, ctx as never);
+		await tool.execute?.(
+			"tc",
+			{ action: "create", subject: "mouse task" } as never,
+			undefined as never,
+			undefined as never,
+			ctx as never,
+		);
+		await toolEnd({ toolName: "todo", isError: false });
+		const click = { type: "click", button: "left", y: 0, shift: false, alt: false, ctrl: false };
+		const factory = (ctx.ui.setWidget as ReturnType<typeof vi.fn>).mock.calls[0][1] as (
+			tui: { requestRender: ReturnType<typeof vi.fn> },
+			theme: { fg: (color: string, text: string) => string },
+		) => {
+			render(width: number): string[];
+			handleMouse(event: typeof click): { handled: boolean } | undefined;
+		};
+		const requestRender = vi.fn();
+		const widget = factory({ requestRender }, { fg: (_color, text) => text });
+		const expanded = () => widget.render(200).some((line) => line.includes("mouse task"));
+		expect(expanded()).toBe(true);
+		expect(widget.handleMouse(click)).toEqual({ handled: true });
+		expect(expanded()).toBe(false);
+		expect(requestRender).toHaveBeenCalledWith(true);
+		expect(widget.handleMouse(click)).toEqual({ handled: true });
+		expect(expanded()).toBe(true);
+
+		requestRender.mockClear();
+		for (const change of [
+			{ y: 1 },
+			{ y: 2 },
+			{ button: "right" },
+			{ button: "middle" },
+			{ type: "press" },
+			{ type: "release" },
+			{ type: "drag" },
+			{ type: "wheel" },
+			{ type: "move" },
+			{ shift: true },
+			{ alt: true },
+			{ ctrl: true },
+		]) {
+			expect(widget.handleMouse({ ...click, ...change })).toBeUndefined();
+			expect(expanded()).toBe(true);
+		}
+		expect(requestRender).not.toHaveBeenCalled();
+		if (collapseKey !== "off") {
+			await captured.shortcuts.get(collapseKey)?.handler?.(ctx as never);
+			expect(expanded()).toBe(false);
+			widget.handleMouse(click);
+			expect(expanded()).toBe(true);
+		}
+	});
+});
+
 describe("rpiv-todo — collapse/expand shortcut config resolution", () => {
 	// resolveCollapseKey() runs inside registerTodo() at factory scope, reading the
 	// config file fresh from disk — so the config MUST be written before setup().
