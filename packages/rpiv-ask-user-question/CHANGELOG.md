@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The tab bar keeps `Submit` visible when the questions overflow.** Tabs now window around the active question, with `…` on a clipped side, and fall back to a compact `□ i/N` indicator when even that does not fit. Previously the whole line was truncated from the right, so four 16-character headers on an 80-column terminal cut `Submit` off the screen.
+
 ## [2.15.0] - 2026-10-24
 
 ### Added
