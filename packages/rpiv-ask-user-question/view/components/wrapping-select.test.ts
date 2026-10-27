@@ -124,7 +124,7 @@ describe("WrappingSelect.render — inline input when kind:'other' + focused", (
 		const line = s.render(40)[0] ?? "";
 		expect(line).toContain("new draft");
 		expect(line).not.toContain("confirmed");
-		expect(line).not.toContain("✔");
+		expect(line).not.toContain("✓");
 	});
 
 	// Regression: pre-fix the inline-input row was hard-truncated to `width`, so long
@@ -424,9 +424,9 @@ describe("WrappingSelect.render — description block", () => {
 	});
 });
 
-// `setConfirmedIndex` powers the "✔ on previously-chosen row" indicator when the user
+// `setConfirmedIndex` powers the "✓ on previously-chosen row" indicator when the user
 // navigates back to a tab they already answered. Pointer (`❯`) stays with the live cursor;
-// the confirmed row gets the same accent+bold styling as the active row plus a trailing ` ✔`.
+// the confirmed row gets the same accent+bold styling as the active row plus a trailing ` ✓`.
 const markedTheme: WrappingSelectTheme = {
 	selectedText: (t) => `<S>${t}</S>`,
 	description: (t) => t,
@@ -434,7 +434,7 @@ const markedTheme: WrappingSelectTheme = {
 };
 
 describe("WrappingSelect.setConfirmedIndex", () => {
-	it("renders ` ✔` on the confirmed row in selectedText styling, no pointer", () => {
+	it("renders ` ✓` on the confirmed row in selectedText styling, no pointer", () => {
 		const s = new WrappingSelect(
 			[
 				{ kind: "option", label: "Alpha" },
@@ -449,13 +449,13 @@ describe("WrappingSelect.setConfirmedIndex", () => {
 		s.setConfirmedIndex(1);
 		const lines = s.render(40);
 		expect(lines[0]).toContain("❯ 1. Alpha");
-		expect(lines[1]).toContain("  2. Beta ✔");
+		expect(lines[1]).toContain("  2. Beta ✓");
 		expect(lines[1]).toContain("<S>");
 		expect(lines[1]).toContain("</S>");
 		expect(lines[1]).not.toContain("❯");
 		expect(lines[2]).toBe("  3. Gamma");
 	});
-	it("renders both ❯ and ✔ when cursor lands on the confirmed row (e.g. prior answer was row 0)", () => {
+	it("renders both ❯ and ✓ when cursor lands on the confirmed row (e.g. prior answer was row 0)", () => {
 		const s = new WrappingSelect(
 			[
 				{ kind: "option", label: "Alpha" },
@@ -468,7 +468,7 @@ describe("WrappingSelect.setConfirmedIndex", () => {
 		s.setFocused(true);
 		s.setConfirmedIndex(1);
 		const lines = s.render(40);
-		expect(lines[1]).toContain("❯ 2. Beta ✔");
+		expect(lines[1]).toContain("❯ 2. Beta ✓");
 		expect(lines[1]).toContain("<S>");
 	});
 	it("undefined clears the marker (default behavior preserved)", () => {
@@ -483,9 +483,9 @@ describe("WrappingSelect.setConfirmedIndex", () => {
 		s.setConfirmedIndex(1);
 		s.setConfirmedIndex(undefined);
 		const lines = s.render(40);
-		expect(lines.join("\n")).not.toContain("✔");
+		expect(lines.join("\n")).not.toContain("✓");
 	});
-	it("labelOverride replaces the static label (e.g. `Hello ✔` on kind:'other' row)", () => {
+	it("labelOverride replaces the static label (e.g. `Hello ✓` on kind:'other' row)", () => {
 		const s = new WrappingSelect(
 			[
 				{ kind: "option", label: "Alpha" },
@@ -499,7 +499,7 @@ describe("WrappingSelect.setConfirmedIndex", () => {
 		s.setFocused(true);
 		s.setConfirmedIndex(2, "Hello");
 		const lines = s.render(40);
-		expect(lines[2]).toContain("Hello ✔");
+		expect(lines[2]).toContain("Hello ✓");
 		expect(lines[2]).not.toContain("Type something.");
 		expect(lines[2]).toContain("<S>");
 	});
@@ -519,7 +519,7 @@ describe("WrappingSelect.setConfirmedIndex", () => {
 		const lines = s.render(40);
 		expect(lines[1]).toContain("World");
 		expect(lines[1]).toContain(CURSOR_MARKER);
-		expect(lines[1]).not.toContain("✔");
+		expect(lines[1]).not.toContain("✓");
 	});
 	it("clamps index to valid range", () => {
 		const s = new WrappingSelect(
@@ -534,9 +534,9 @@ describe("WrappingSelect.setConfirmedIndex", () => {
 		s.setFocused(true);
 		s.setConfirmedIndex(99);
 		const lines = s.render(40);
-		expect(lines[1]).toContain("B ✔");
+		expect(lines[1]).toContain("B ✓");
 	});
-	it("respects width — wrappable label + ` ✔` does not exceed width per line", () => {
+	it("respects width — wrappable label + ` ✓` does not exceed width per line", () => {
 		// Use identityTheme so the test theme markers don't inflate visibleWidth.
 		const wrappable = "alpha beta gamma delta epsilon zeta eta theta";
 		const s = new WrappingSelect(
@@ -555,7 +555,7 @@ describe("WrappingSelect.setConfirmedIndex", () => {
 		for (const line of lines) {
 			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 		}
-		expect(lines.some((l) => l.includes("✔"))).toBe(true);
+		expect(lines.some((l) => l.includes("✓"))).toBe(true);
 	});
 });
 

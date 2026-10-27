@@ -32,7 +32,7 @@ is deliberate: it makes `Enter` a zero-cost way to flip boxes without leaving th
 `Space` does nothing on `Next` (it is a command, not a choice).
 
 `Type something.` is an inline input, so Space inserts a space. Its checkbox changes to
-`[✔]` when the input contains text. Press `Enter` in the input or use `Next` to submit
+`[✓]` when the input contains text. Press `Enter` in the input or use `Next` to submit
 both the checked options and the custom text.
 
 ## The rows the dialog adds

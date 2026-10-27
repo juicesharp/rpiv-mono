@@ -42,8 +42,8 @@ describe("MultiSelectView.render", () => {
 		expect(lines[4]).toContain("Next");
 	});
 
-	// Spec: a 1-space gap between the bracketed glyph (`[ ]` / `[✔]`) and the option label
-	// (CC parity — single space matches the CC sample `[✔] Logging`).
+	// Spec: a 1-space gap between the bracketed glyph (`[ ]` / `[✓]`) and the option label
+	// (CC parity — single space matches the CC sample `[✓] Logging`).
 	it("separates the checkbox from the label by exactly ONE space", () => {
 		const q = question();
 		const m = makeView(q, makeProps(q));
@@ -51,7 +51,7 @@ describe("MultiSelectView.render", () => {
 		// Strip any ANSI escapes from line 0 to match raw glyph positioning.
 		const raw = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
 		// Active row 0 = `❯ 1. [ ] FE` (pointer 2 + "1." 2 + space 1 + "[ ]" 3 + space 1 + label).
-		expect(raw).toMatch(/\[[ ✔]\] FE/);
+		expect(raw).toMatch(/\[[ ✓]\] FE/);
 	});
 
 	// Spec: when the multi-select pane is unfocused (notes input has focus), the `❯`
@@ -100,13 +100,13 @@ describe("MultiSelectView.render", () => {
 		expect(lines[0].startsWith("❯ ")).toBe(false); // inactive rows do not start with active pointer
 	});
 
-	it("checked options render [✔]; unchecked render [ ]", () => {
+	it("checked options render [✓]; unchecked render [ ]", () => {
 		const q = question();
 		const m = makeView(q, makeProps(q, { checkedIndices: new Set([0, 2]) }));
 		const lines = m.render(80);
-		expect(lines[0]).toContain("[✔]");
+		expect(lines[0]).toContain("[✓]");
 		expect(lines[1]).toContain("[ ]");
-		expect(lines[2]).toContain("[✔]");
+		expect(lines[2]).toContain("[✓]");
 	});
 
 	it("row 1 inactive unchecked renders as '  1. [ ] LABEL'", () => {
@@ -117,11 +117,11 @@ describe("MultiSelectView.render", () => {
 		expect(raw).toMatch(/^ {2}1\. \[ \] FE/);
 	});
 
-	it("row 2 active checked renders as '❯ 2. [✔] LABEL'", () => {
+	it("row 2 active checked renders as '❯ 2. [✓] LABEL'", () => {
 		const q = question();
 		const m = makeView(q, makeProps(q, { optionIndex: 1, checkedIndices: new Set([1]) }));
 		const raw = m.render(80)[1].replace(/\x1b\[[0-9;]*m/g, "");
-		expect(raw).toMatch(/^❯ 2\. \[✔\] BE/);
+		expect(raw).toMatch(/^❯ 2\. \[✓\] BE/);
 	});
 
 	it("description continuation indents to col 2 (CC parity, not prefixVisibleWidth)", () => {
@@ -358,13 +358,13 @@ describe("MultiSelectView — 'Type something.' row", () => {
 		// 3 options → other is row index 3, numbered "4.".
 		const raw = lines[3].replace(/\x1b\[[0-9;]*m/g, "");
 		expect(raw).toMatch(/^ {2}4\. \[ \] Type something\./);
-		expect(lines[3]).not.toContain("[✔]");
+		expect(lines[3]).not.toContain("[✓]");
 	});
 
 	it("keeps the custom row unchecked for whitespace-only input", () => {
 		const q = question();
 		const m = makeView(q, makeProps(q, { inputBuffer: " " }));
-		expect(m.render(80)[3]).not.toContain("[✔]");
+		expect(m.render(80)[3]).not.toContain("[✓]");
 	});
 
 	it("keeps the draft visible on the other row while another option has focus", () => {
@@ -372,7 +372,7 @@ describe("MultiSelectView — 'Type something.' row", () => {
 		const m = makeView(q, makeProps(q, { optionIndex: 0, inputMode: false, inputBuffer: "draft answer" }));
 		const otherLine = m.render(80)[3] ?? "";
 		expect(otherLine).toContain("draft answer");
-		expect(otherLine).toContain("[✔]");
+		expect(otherLine).toContain("[✓]");
 		expect(otherLine).not.toContain("Type something.");
 		expect(otherLine).not.toContain("\x1b_pi:c\x07");
 	});

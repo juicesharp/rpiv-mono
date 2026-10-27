@@ -612,9 +612,9 @@ describe("ask_user_question — multi-question tab cycling flow", () => {
 	});
 
 	// Confirmed-row indicator: tab back to a previously-answered single-select tab and the
-	// prior option's row should render `<label> ✔` and the cursor (`❯`) returns to it, so a
+	// prior option's row should render `<label> ✓` and the cursor (`❯`) returns to it, so a
 	// stray Enter re-confirms the same answer instead of overwriting it with row 0.
-	it("Tab back to a single-select tab marks the prior option with ` ✔`", async () => {
+	it("Tab back to a single-select tab marks the prior option with ` ✓`", async () => {
 		const tool = register();
 		const renderedAfterBack: string[][] = [];
 		const { custom } = driveCustom((c, done) => {
@@ -627,14 +627,14 @@ describe("ask_user_question — multi-question tab cycling flow", () => {
 		const ctx = { hasUI: true, ui: { custom } } as never;
 		await tool.execute?.("tc", twoParams as never, undefined as never, undefined as never, ctx);
 		const lines = renderedAfterBack[0]!;
-		expect(lines.some((l) => l.includes("B ✔"))).toBe(true);
-		expect(lines.some((l) => l.includes("A ✔"))).toBe(false);
+		expect(lines.some((l) => l.includes("B ✓"))).toBe(true);
+		expect(lines.some((l) => l.includes("A ✓"))).toBe(false);
 		expect(lines.some((l) => l.includes("❯ 2. B"))).toBe(true);
 	});
 
-	// Confirmed-row + custom text: prior typed text replaces "Type something." and gets ` ✔`.
+	// Confirmed-row + custom text: prior typed text replaces "Type something." and gets ` ✓`.
 	// Re-entering the kind:'other' row pre-fills the input buffer so the typed text is preserved.
-	it("Tab back after `Type something.` → row reads `<text> ✔` and buffer is restored", async () => {
+	it("Tab back after `Type something.` → row reads `<text> ✓` and buffer is restored", async () => {
 		const tool = register();
 		const renderedAfterBack: string[][] = [];
 		const renderedOnOtherRow: string[][] = [];
@@ -657,16 +657,16 @@ describe("ask_user_question — multi-question tab cycling flow", () => {
 		const ctx = { hasUI: true, ui: { custom } } as never;
 		await tool.execute?.("tc", twoParams as never, undefined as never, undefined as never, ctx);
 		const back = renderedAfterBack[0]!;
-		expect(back.some((l) => l.includes("Hello ✔"))).toBe(true);
+		expect(back.some((l) => l.includes("Hello ✓"))).toBe(true);
 		expect(back.some((l) => l.includes("Type something."))).toBe(false);
 		expect(back.some((l) => l.includes("❯ 1. A"))).toBe(true);
 		const onOther = renderedOnOtherRow[0]!;
 		expect(onOther.some((l) => l.includes("Hello") && l.includes(CURSOR_MARKER))).toBe(true);
 	});
 
-	// Multi-select keeps its existing `[✔]` rendering — the new single-select marker must
+	// Multi-select keeps its existing `[✓]` rendering — the new single-select marker must
 	// NOT also render on multi-select tabs.
-	it("Tab back to a multi-select tab keeps `[✔]` and does NOT add a trailing ` ✔`", async () => {
+	it("Tab back to a multi-select tab keeps `[✓]` and does NOT add a trailing ` ✓`", async () => {
 		const mixedSingleMulti = {
 			questions: [
 				{
@@ -690,9 +690,9 @@ describe("ask_user_question — multi-question tab cycling flow", () => {
 		const ctx = { hasUI: true, ui: { custom } } as never;
 		await tool.execute?.("tc", mixedSingleMulti as never, undefined as never, undefined as never, ctx);
 		const lines = renderedAfterBack[0]!;
-		expect(lines.some((l) => l.includes("[✔]") && l.includes("FE"))).toBe(true);
-		// Trailing ` ✔` is the single-select marker; multi-select must not gain it.
-		expect(lines.some((l) => /FE\s+✔(?!\])/.test(l))).toBe(false);
+		expect(lines.some((l) => l.includes("[✓]") && l.includes("FE"))).toBe(true);
+		// Trailing ` ✓` is the single-select marker; multi-select must not gain it.
+		expect(lines.some((l) => /FE\s+✓(?!\])/.test(l))).toBe(false);
 	});
 });
 

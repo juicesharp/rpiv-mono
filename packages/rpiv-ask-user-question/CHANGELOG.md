@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Row check marks use U+2713 (`✓`) instead of U+2714 (`✔`).** U+2714 is absent from some monospace fonts (for example ComicShannsMono Nerd Font); fontconfig then falls back to Noto Color Emoji, which kitty renders as a blank cell, so a confirmed option looked unmarked. U+2713 is already used by the transcript receipt and resolves to a scalable fallback. (#332)
+
 ## [2.15.0] - 2026-10-24
 
 ### Added

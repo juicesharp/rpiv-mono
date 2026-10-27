@@ -74,11 +74,11 @@ describe("OptionListView — inputBuffer prop", () => {
 });
 
 describe("OptionListView — confirmed-index passthrough", () => {
-	it("setProps({confirmed: { index: 1 }}) renders ' ✔' on row 2", () => {
+	it("setProps({confirmed: { index: 1 }}) renders ' ✓' on row 2", () => {
 		const v = makeView(sampleItems);
 		v.setProps(props({ selectedIndex: 0, focused: true, confirmed: { index: 1 } }));
 		const lines = v.render(40);
-		expect(lines.some((l) => l.includes("Beta ✔"))).toBe(true);
+		expect(lines.some((l) => l.includes("Beta ✓"))).toBe(true);
 	});
 
 	it("omitting confirmed in setProps clears the marker", () => {
@@ -86,7 +86,7 @@ describe("OptionListView — confirmed-index passthrough", () => {
 		v.setProps(props({ confirmed: { index: 1 } }));
 		v.setProps(props());
 		const lines = v.render(40);
-		expect(lines.join("\n").includes("✔")).toBe(false);
+		expect(lines.join("\n").includes("✓")).toBe(false);
 	});
 });
 
