@@ -3,9 +3,9 @@ import type { WrappingSelectItem } from "../../view/components/wrapping-select.t
 
 /**
  * Which row in the active tab should be marked as "previously confirmed"? Drives the
- * `WrappingSelect` confirmed-row indicator (label + ` ✔`) when the user navigates back
+ * `WrappingSelect` confirmed-row indicator (label + ` ✓`) when the user navigates back
  * to a question they already answered. Returns `undefined` when no marker should be drawn —
- * multi-select handles its own `[✔]` boxes via `multiSelectChecked`, and a missing/non-matching
+ * multi-select handles its own `[✓]` boxes via `multiSelectChecked`, and a missing/non-matching
  * answer (defensive) silently skips the marker.
  */
 export function selectConfirmedIndicator(

@@ -734,12 +734,12 @@ describe("PreviewPane composes OptionListView state into render output", () => {
 		],
 	};
 
-	it("setConfirmedIndex(1) renders ` ✔` on row 2 even when cursor is on row 0", () => {
+	it("setConfirmedIndex(1) renders ` ✓` on row 2 even when cursor is on row 0", () => {
 		const { pane, optionListView } = makePane(noPreviewQuestion, () => 120);
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "", confirmed: { index: 1 } });
 		const lines = pane.render(120);
-		expect(lines.some((l) => l.includes("Beta ✔"))).toBe(true);
-		expect(lines.some((l) => l.includes("Alpha ✔"))).toBe(false);
+		expect(lines.some((l) => l.includes("Beta ✓"))).toBe(true);
+		expect(lines.some((l) => l.includes("Alpha ✓"))).toBe(false);
 	});
 
 	it("setConfirmedIndex(undefined) clears the marker", () => {
@@ -747,7 +747,7 @@ describe("PreviewPane composes OptionListView state into render output", () => {
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "", confirmed: { index: 1 } });
 		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
 		const lines = pane.render(120);
-		expect(lines.join("\n")).not.toContain("✔");
+		expect(lines.join("\n")).not.toContain("✓");
 	});
 
 	it("OptionListView.setProps({inputBuffer:'Hello'}) flows to the inline-input row render", () => {

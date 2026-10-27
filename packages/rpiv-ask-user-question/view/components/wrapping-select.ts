@@ -45,7 +45,7 @@ export class WrappingSelect implements Component {
 	private static readonly ACTIVE_POINTER = "❯ ";
 	private static readonly INACTIVE_POINTER = "  ";
 	private static readonly NUMBER_SEPARATOR = ". ";
-	private static readonly CONFIRMED_MARK = " ✔";
+	private static readonly CONFIRMED_MARK = " ✓";
 	private static readonly MIN_CONTENT_WIDTH = 1;
 
 	private readonly items: readonly WrappingSelectItem[];
@@ -60,7 +60,7 @@ export class WrappingSelect implements Component {
 	private inputCursorOffset: number | undefined = undefined;
 	/**
 	 * Index of the row that was previously confirmed for this list (e.g. the user's prior
-	 * answer when re-entering a multi-question tab). Renders `<label> ✔` in the active-row
+	 * answer when re-entering a multi-question tab). Renders `<label> ✓` in the active-row
 	 * styling but WITHOUT the `❯` pointer — pointer is reserved for the live cursor. When
 	 * `selectedIndex === confirmedIndex && focused`, the active rendering wins (no double-mark).
 	 */
@@ -68,7 +68,7 @@ export class WrappingSelect implements Component {
 	/**
 	 * When set together with `confirmedIndex`, replaces the row's static label at render time.
 	 * Used for the `kind: "other"` sentinel — its label is "Type something." but if the user's
-	 * prior answer was custom text, we render that text instead (e.g. `4. Hello ✔`).
+	 * prior answer was custom text, we render that text instead (e.g. `4. Hello ✓`).
 	 */
 	private confirmedLabelOverride: string | undefined = undefined;
 
@@ -105,7 +105,7 @@ export class WrappingSelect implements Component {
 	/**
 	 * Mark a previously-confirmed row. Pass `undefined` to clear. `labelOverride` replaces
 	 * the row's static `item.label` at render time — used for the `kind: "other"` sentinel so
-	 * the row reads `Hello ✔` instead of `Type something. ✔` when the prior answer was custom
+	 * the row reads `Hello ✓` instead of `Type something. ✓` when the prior answer was custom
 	 * text.
 	 */
 	setConfirmedIndex(index: number | undefined, labelOverride?: string): void {
@@ -227,7 +227,7 @@ export class WrappingSelect implements Component {
 
 	/**
 	 * Derive the confirmed-rendering facts for one row: the final label (custom draft
-	 * or confirmed-override aware) and whether the ✔ mark applies.
+	 * or confirmed-override aware) and whether the ✓ mark applies.
 	 */
 	private deriveConfirmedState(item: WrappingSelectItem, index: number): { label: string; isConfirmed: boolean } {
 		// Keep an in-flight custom draft visible even while the cursor browses another row.
