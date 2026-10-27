@@ -1,3 +1,5 @@
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
 import { BEL, registerAskUserQuestionTool } from "./ask-user-question.ts";
@@ -10,6 +12,14 @@ function register() {
 	const { pi, captured } = createMockPi();
 	registerAskUserQuestionTool(pi);
 	return captured.tools.get("ask_user_question")!;
+}
+
+function writeConfig(value: unknown): string {
+	const dir = join(process.env.HOME ?? "", ".config", "rpiv-ask-user-question");
+	mkdirSync(dir, { recursive: true });
+	const file = join(dir, "config.json");
+	writeFileSync(file, JSON.stringify(value));
+	return file;
 }
 
 function registerWithCapture() {
@@ -130,6 +140,23 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 			expect(stdout.stdoutWrite.mock.invocationCallOrder[0]).toBeLessThan(select.mock.invocationCallOrder[0]);
 		} finally {
 			stdout.restore();
+		}
+	});
+
+	it("does not write BEL when the bell config is false", async () => {
+		const configFile = writeConfig({ bell: false });
+		const stdout = mockStdout(true);
+		try {
+			const tool = register();
+			const select = vi.fn(async (_t: string, options: string[]) => options[0]);
+
+			await run(tool, SINGLE, ctxRpc({ select }));
+
+			expect(select).toHaveBeenCalledOnce();
+			expect(stdout.stdoutWrite).not.toHaveBeenCalled();
+		} finally {
+			stdout.restore();
+			rmSync(configFile, { force: true });
 		}
 	});
 

@@ -5,6 +5,7 @@ import {
 	COLLAPSE_KEY_OFF,
 	formatKeySpecForDisplay,
 	loadConfig,
+	resolveBell,
 	resolveCollapseKey,
 	resolveNotesKey,
 	validateGuidanceFields,
@@ -75,7 +76,7 @@ function rejectWithoutUi() {
 async function runRpcPath(pi: ExtensionAPI, ui: DialogUI, typed: QuestionParams, toolCallId: string) {
 	emitAskUserBlockedEvent(pi, true, toolCallId);
 	try {
-		emitTerminalAttention();
+		emitTerminalAttention(resolveBell(loadConfig()));
 		return buildQuestionnaireResponse(await runRpcQuestionnaire(ui, typed), typed);
 	} finally {
 		emitAskUserBlockedEvent(pi, false, toolCallId);
@@ -100,13 +101,14 @@ const ERROR_STALE_MODULE_CACHE =
 export const BEL = "\x07";
 
 /**
- * Emit one portable terminal attention signal without touching redirected output.
+ * Emit one portable terminal attention signal unless the `bell` config disables it.
  * Writes to stdout rather than rpiv-warp's `/dev/tty` transport: the `isTTY` gate
  * both proves an interactive terminal owns the coming wait and keeps the byte out
  * of piped RPC transports (VS Code pendant, Zed) — a `/dev/tty` write would ring
  * even when the questionnaire renders in a remote host's own UI.
  */
-function emitTerminalAttention(): void {
+function emitTerminalAttention(enabled: boolean): void {
+	if (!enabled) return;
 	try {
 		if (process.stdout.isTTY) process.stdout.write(BEL);
 	} catch {
@@ -393,7 +395,7 @@ async function runTuiPath(pi: ExtensionAPI, ctx: ExtensionContext, typed: Questi
 		// Pi's editor slot (#253); the overlay only while another questionnaire holds the slot,
 		// or stacked when another overlay is already on screen (see below).
 		presentation = resolvePresentation();
-		emitTerminalAttention();
+		emitTerminalAttention(resolveBell(config));
 		let result = await mount(presentation);
 		if (result === YIELD_TO_OVERLAY) {
 			// Another overlay was on screen: stack on top of it instead (see mustYieldInlineSlot).

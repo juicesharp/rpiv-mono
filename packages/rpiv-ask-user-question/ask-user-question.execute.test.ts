@@ -1,3 +1,5 @@
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
 import { BEL, registerAskUserQuestionTool } from "./ask-user-question.ts";
@@ -25,6 +27,14 @@ const BASE_PARAMS = {
 		},
 	],
 };
+
+function writeConfig(value: unknown): string {
+	const dir = join(process.env.HOME ?? "", ".config", "rpiv-ask-user-question");
+	mkdirSync(dir, { recursive: true });
+	const file = join(dir, "config.json");
+	writeFileSync(file, JSON.stringify(value));
+	return file;
+}
 
 describe("ask_user_question.execute — early returns", () => {
 	it("returns cancelled result + ERROR_NO_UI when !hasUI", async () => {
@@ -105,6 +115,31 @@ describe("ask_user_question.execute — terminal attention", () => {
 			expect(stdout.stdoutWrite.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
 		} finally {
 			stdout.restore();
+		}
+	});
+
+	it("does not write BEL when the bell config is false", async () => {
+		const configFile = writeConfig({ bell: false });
+		const stdout = mockStdout(true);
+		try {
+			const mockEmit = vi.fn();
+			const { pi, captured } = createMockPi({
+				events: { emit: mockEmit, on: vi.fn(() => () => {}) },
+			});
+			registerAskUserQuestionTool(pi);
+			const tool = captured.tools.get("ask_user_question")!;
+			const custom = vi.fn(async () => ({ answers: [], cancelled: true }));
+			const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
+
+			await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);
+
+			expect(stdout.stdoutWrite).not.toHaveBeenCalled();
+			expect(custom).toHaveBeenCalledOnce();
+			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
+		} finally {
+			stdout.restore();
+			rmSync(configFile, { force: true });
 		}
 	});
 

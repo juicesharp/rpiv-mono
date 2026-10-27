@@ -53,6 +53,7 @@ Optional. Settings live in `~/.config/rpiv-ask-user-question/config.json`; the f
 | --- | --- | --- |
 | `collapseKey` | Key that collapses and expands the dialog. Accepts Pi keybinding ids such as `alt+o`; `"off"` disables the shortcut. | `"ctrl+]"` |
 | `notesKey` | Key that opens the notes editor. Any single character, including non-Latin ones such as `т`, or a Pi keybinding id such as `ctrl+n`. | `"n"` |
+| `bell` | Ring the terminal bell when the questionnaire starts waiting. Set `false` to suppress the attention signal when a bell makes your terminal window grab focus. | `true` |
 | `guidance.description` | Full replacement for the tool description the model sees. A non-empty string replaces the built-in text entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line description of the tool in the system prompt — tune how eagerly the model asks. | built-in snippet |
 | `guidance.promptGuidelines` | Usage guidelines given to the model, as a list of strings. | 4 built-in guidelines |

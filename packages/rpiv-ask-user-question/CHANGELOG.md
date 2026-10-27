@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`bell` config option.** Set `bell: false` in `~/.config/rpiv-ask-user-question/config.json` to suppress the terminal BEL the questionnaire emits when it starts waiting. The bell can make a terminal window request attention and a compositor focus it, stealing focus from another application. The prompt and `rpiv:ask-user:blocked` events are unchanged, so external notifiers still fire. Defaults to `true`. (#333)
+
 ## [2.15.0] - 2026-10-24
 
 ### Added
