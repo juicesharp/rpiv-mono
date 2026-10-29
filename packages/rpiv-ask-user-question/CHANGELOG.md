@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A resumed session no longer crashes when a provider serialized the questions array as a string.** Some providers send the nested `questions` array as a JSON string. Pi decodes that before the tool runs, so the questionnaire worked, but a replay of the session handed the recorded string straight to the transcript renderers, which called `.map` on it and took Pi down with `args.questions.map is not a function`. The `Ask` line and the receipt now decode the recorded arguments the same way the tool already does, and any shape that still is not an array draws as no questions instead of throwing.
+
 ## [2.15.0] - 2026-10-24
 
 ### Added
