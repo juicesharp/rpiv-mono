@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { t } from "../state/i18n-bridge.ts";
 import { NO_INPUT_PLACEHOLDER } from "../tool/format-answer.ts";
+import { prepareQuestionArguments } from "../tool/normalize-params.ts";
 import {
 	isQuestionnaireResult,
 	type QuestionAnswer,
@@ -16,6 +17,18 @@ const RECOMMENDED_SUFFIX = /\s*\(Recommended\)$/;
 
 type ToolResultView = { content: ReadonlyArray<{ type: string; text?: string }>; details?: unknown };
 
+/**
+ * The recorded arguments as questions. A provider can double-encode the nested
+ * array as a JSON string, and Pi hands that raw shape to the renderers when it
+ * replays a session; `prepareQuestionArguments` decodes it, as it already does
+ * before execution (#244). Anything that still is not an array renders as no
+ * questions, so a malformed transcript cannot throw out of the render path.
+ */
+function recordedQuestions(args: QuestionParams | undefined): QuestionParams["questions"] {
+	const { questions } = prepareQuestionArguments(args ?? {});
+	return Array.isArray(questions) ? questions : [];
+}
+
 /** Lines laid out at render time, so wrapping and truncation follow the terminal width. */
 class WidthLines implements Component {
 	constructor(private readonly layout: (width: number) => string[]) {}
@@ -27,7 +40,9 @@ class WidthLines implements Component {
 
 /** `Ask Format · Migration`: the headers name the questions. */
 export function renderAskCall(args: QuestionParams | undefined, theme: Theme): Component {
-	const headers = (args?.questions ?? []).map((q) => q?.header).filter(Boolean);
+	const headers = recordedQuestions(args)
+		.map((q) => q?.header)
+		.filter(Boolean);
 	const title = theme.fg("toolTitle", theme.bold("Ask"));
 	const text = headers.length > 0 ? `${title} ${theme.fg("accent", headers.join(" · "))}` : title;
 	return new WidthLines((width) => [truncateToWidth(text, width, "…")]);
@@ -52,10 +67,10 @@ export function renderAskResult(
 	if (details.cancelled) {
 		return new WidthLines(() => [theme.fg("dim", `✗ ${t("transcript.no_answer", "no answer")}`)]);
 	}
-	const questions = args?.questions ?? [];
+	const questions = recordedQuestions(args);
 	return new WidthLines((width) =>
 		questions.length > 1
-			? tableLines(details, args as QuestionParams, theme, options.expanded, width)
+			? tableLines(details, questions, theme, options.expanded, width)
 			: singleLines(details, questions[0]?.question, theme, options.expanded, width),
 	);
 }
@@ -75,14 +90,14 @@ function singleLines(
 
 function tableLines(
 	details: QuestionnaireResult,
-	args: QuestionParams,
+	questions: QuestionParams["questions"],
 	theme: Theme,
 	expanded: boolean,
 	width: number,
 ): string[] {
-	const headerWidth = Math.max(...args.questions.map((q) => visibleWidth(q.header)));
+	const headerWidth = Math.max(...questions.map((q) => visibleWidth(q.header)));
 	const answerIndent = " ".repeat(INDENT.length + headerWidth + COLUMN_GAP.length);
-	const lines = args.questions.flatMap((q, i) => {
+	const lines = questions.flatMap((q, i) => {
 		const answer = details.answers.find((a) => a.questionIndex === i);
 		const header = q.header + " ".repeat(headerWidth - visibleWidth(q.header));
 		const row = hanging(`${INDENT}${theme.fg("muted", header)}${COLUMN_GAP}`, answerText(answer, theme), width);
