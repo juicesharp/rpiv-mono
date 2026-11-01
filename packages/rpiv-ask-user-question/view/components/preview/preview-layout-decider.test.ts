@@ -15,11 +15,50 @@ import {
 
 const opt = (label: string): WrappingSelectItem => ({ kind: "option", label });
 
+const optWithDesc = (label: string, description: string): WrappingSelectItem => ({
+	kind: "option",
+	label,
+	description,
+});
+
 const question = (options: Array<{ label: string; preview?: string }>, multiSelect?: boolean): QuestionData => ({
 	question: "Test?",
 	header: "Test",
 	options: options.map((o) => ({ label: o.label, description: "", preview: o.preview })),
 	...(multiSelect !== undefined ? { multiSelect } : {}),
+});
+
+describe("adaptiveLeftWidth", () => {
+	// prefixW for totalForNumbering=2 is 1 digit + 4 ("❯ " + ". ") = 5; confirmedOverhead = 2.
+	const OVERHEAD = 7;
+
+	it("label-only items keep the label-driven width", () => {
+		expect(adaptiveLeftWidth([opt("x".repeat(40)), opt("y")], 2, 200)).toBe(40 + OVERHEAD);
+		// An empty description is ignored, same as a missing one.
+		expect(adaptiveLeftWidth([optWithDesc("x".repeat(40), ""), opt("y")], 2, 200)).toBe(40 + OVERHEAD);
+	});
+
+	it("longest description drives the width so it wraps to at most two lines", () => {
+		// 60-col description → target content width 30 → column 30 + 7 = 37.
+		expect(adaptiveLeftWidth([optWithDesc("A", "d".repeat(60))], 2, 200)).toBe(30 + OVERHEAD);
+	});
+
+	it("label wins when it is wider than half the longest description", () => {
+		expect(adaptiveLeftWidth([optWithDesc("x".repeat(80), "d".repeat(60))], 2, 200)).toBe(80 + OVERHEAD);
+	});
+
+	it("respects MAX_LEFT_RATIO ceiling even with long descriptions", () => {
+		expect(adaptiveLeftWidth([optWithDesc("A", "d".repeat(300))], 2, 120)).toBe(Math.floor(120 * MAX_LEFT_RATIO));
+	});
+
+	it("floors at MIN_LEFT when descriptions are short", () => {
+		expect(adaptiveLeftWidth([optWithDesc("A", "short")], 2, 200)).toBe(MIN_LEFT);
+	});
+
+	it("description width is measured in display columns (CJK counts double)", () => {
+		// 26 Han chars → 52 display columns → half-target 26 → column 26 + 7 = 33.
+		expect(adaptiveLeftWidth([optWithDesc("选项", "汉".repeat(26))], 2, 200)).toBe(26 + OVERHEAD);
+	});
 });
 
 describe("crossTabMaxLeftWidth", () => {

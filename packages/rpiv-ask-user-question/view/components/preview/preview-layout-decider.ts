@@ -38,13 +38,20 @@ export function decideLayout(terminalWidth: number, paneWidth: number): PreviewL
 }
 
 /**
- * Compute the adaptive left column width from option labels.
+ * Compute the adaptive left column width from option labels and descriptions.
  * Pure function — deterministic for a given (items, totalForNumbering, paneWidth).
  *
  * Pipeline:
- *   1. Measure: longest visible label width + prefix overhead + confirmed-mark overhead
+ *   1. Measure: max of the longest visible label and half the longest description
+ *      width (target: the longest description wraps to at most 2 lines), plus the
+ *      prefix overhead and the confirmed-mark overhead
  *   2. Clamp: floor MIN_LEFT, ceiling paneWidth * MAX_LEFT_RATIO
  *   3. Safety net: never exceed available = paneWidth - GAP - MIN_PREVIEW_WIDTH
+ *
+ * Descriptions are measured because they share the column with the label rows:
+ * sizing from labels alone leaves a sentence-length description only
+ * (columnWidth − prefix) columns wide, wrapping it into a few characters per
+ * line and ballooning the dialog height (which is content-driven).
  */
 export function adaptiveLeftWidth(
 	items: readonly WrappingSelectItem[],
@@ -54,11 +61,14 @@ export function adaptiveLeftWidth(
 	const prefixW = String(Math.max(1, totalForNumbering)).length + 4; // digits + "❯ " + ". "
 	const confirmedOverhead = CONFIRMED_OVERHEAD; // visibleWidth(" ✔") = 2 (space + ✔ codepoint)
 	let maxLabel = 0;
+	let maxDesc = 0;
 	for (const item of items) {
 		const w = visibleWidth(item.label);
 		if (w > maxLabel) maxLabel = w;
+		const d = item.description ? visibleWidth(item.description) : 0;
+		if (d > maxDesc) maxDesc = d;
 	}
-	const desired = maxLabel + prefixW + confirmedOverhead;
+	const desired = Math.max(maxLabel, Math.ceil(maxDesc / 2)) + prefixW + confirmedOverhead;
 	const ratioCapped = Math.min(desired, Math.floor(paneWidth * MAX_LEFT_RATIO));
 	const available = paneWidth - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
 	return Math.max(MIN_LEFT, Math.min(ratioCapped, Math.max(1, available)));
