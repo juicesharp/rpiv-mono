@@ -1,4 +1,5 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
+import type { QuestionData } from "../../../tool/types.ts";
 import type { WrappingSelectItem } from "../wrapping-select.ts";
 
 /** Min terminal/pane width for the side-by-side layout to engage. */
@@ -92,6 +93,39 @@ export function crossTabMaxLeftWidth(
 		const totalForNumbering = items.length;
 		const tabWidth = adaptiveLeftWidth(items, totalForNumbering, paneWidth);
 		if (tabWidth > max) max = tabWidth;
+	}
+	return max;
+}
+
+/**
+ * Rigid-content probe: the widest non-wrappable line across all options' previews —
+ * lines inside fenced code blocks and table rows. Returns 0 when nothing rigid is
+ * present (no previews, or prose only).
+ *
+ * Prose is ignored on purpose: markdown wraps it to whatever width it gets, so it
+ * never justifies a wider column on its own. Fenced code, ASCII diagrams and table
+ * rows are rigid — cutting them loses information, so their width is what the
+ * preview column must be able to hold whole.
+ *
+ * Pure function — O(total chars) per question; no Markdown invocation, no cache
+ * interaction.
+ */
+export function previewRigidWidth(question: QuestionData): number {
+	let max = 0;
+	for (const option of question.options) {
+		const text = option.preview;
+		if (!text) continue;
+		let inFence = false;
+		for (const line of text.split("\n")) {
+			const trimmed = line.trimStart();
+			if (trimmed.startsWith("```")) {
+				inFence = !inFence;
+				continue;
+			}
+			if (!inFence && !trimmed.startsWith("|")) continue;
+			const w = visibleWidth(line.replace(/ +$/, ""));
+			if (w > max) max = w;
+		}
 	}
 	return max;
 }

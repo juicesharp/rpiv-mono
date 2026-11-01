@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { QuestionData } from "../../../tool/types.ts";
 import type { WrappingSelectItem } from "../wrapping-select.ts";
 import {
 	adaptiveLeftWidth,
@@ -8,6 +9,7 @@ import {
 	MIN_LEFT,
 	MIN_PREVIEW_WIDTH,
 	PREVIEW_COLUMN_GAP,
+	previewRigidWidth,
 } from "./preview-layout-decider.ts";
 
 const opt = (label: string): WrappingSelectItem => ({ kind: "option", label });
@@ -16,6 +18,12 @@ const optWithDesc = (label: string, description: string): WrappingSelectItem => 
 	kind: "option",
 	label,
 	description,
+});
+
+const question = (options: Array<{ label: string; preview?: string }>): QuestionData => ({
+	question: "Test?",
+	header: "Test",
+	options: options.map((o) => ({ label: o.label, description: "", preview: o.preview })),
 });
 
 describe("adaptiveLeftWidth", () => {
@@ -110,6 +118,45 @@ describe("crossTabMaxLeftWidth", () => {
 		const itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]> = [[opt("a")]];
 		expect(() => crossTabMaxLeftWidth(tabs, itemsByTab, 120)).not.toThrow();
 		expect(crossTabMaxLeftWidth(tabs, itemsByTab, 120)).toBe(MIN_LEFT);
+	});
+});
+
+describe("previewRigidWidth", () => {
+	it("returns 0 when no option has a preview", () => {
+		expect(previewRigidWidth(question([{ label: "A" }, { label: "B" }]))).toBe(0);
+	});
+
+	it("returns 0 for prose-only previews — markdown wraps prose to any width", () => {
+		const q = question([{ label: "A", preview: "a plain sentence\nanother prose line" }]);
+		expect(previewRigidWidth(q)).toBe(0);
+	});
+
+	it("measures the widest line inside fenced code blocks", () => {
+		const q = question([{ label: "A", preview: "```\nshort\n" + "x".repeat(80) + "\nshorter\n```" }]);
+		expect(previewRigidWidth(q)).toBe(80);
+	});
+
+	it("measures table rows outside fences", () => {
+		const q = question([{ label: "A", preview: "intro prose\n| col | col |" }]);
+		expect(previewRigidWidth(q)).toBe("| col | col |".length);
+	});
+
+	it("takes the max across all options", () => {
+		const q = question([
+			{ label: "A", preview: "```\n" + "y".repeat(30) + "\n```" },
+			{ label: "B", preview: "```\n" + "z".repeat(60) + "\n```" },
+		]);
+		expect(previewRigidWidth(q)).toBe(60);
+	});
+
+	it("ignores trailing spaces on rigid lines", () => {
+		const q = question([{ label: "A", preview: "```\ncode   \n```" }]);
+		expect(previewRigidWidth(q)).toBe(4);
+	});
+
+	it("measures indented fenced lines at their full visible width", () => {
+		const q = question([{ label: "A", preview: "```\n    " + "x".repeat(10) + "\n```" }]);
+		expect(previewRigidWidth(q)).toBe(14);
 	});
 });
 

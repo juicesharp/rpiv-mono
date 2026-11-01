@@ -608,6 +608,81 @@ describe("PreviewPane — content-sized left column (no slack donation)", () => 
 	});
 });
 
+describe("PreviewPane — content-aware side-by-side switching", () => {
+	const rigidPreview = (rigidWidth: number): string => "```\n" + "x".repeat(rigidWidth) + "\n```";
+	const rigidQ = (rigidWidth: number): QuestionData => ({
+		question: "pick",
+		header: "pick",
+		options: [
+			{ label: "A", description: "", preview: rigidPreview(rigidWidth) },
+			{ label: "B", description: "" },
+		],
+	});
+	// Stacked renders the preview block at the full pane width (box at column 0);
+	// side-by-side indents it after the options column.
+	const renderedMode = (lines: string[]): string => {
+		const top = lines.find((line) => line.includes("┌"))!;
+		return top.indexOf("┌") === 0 ? "stacked" : "side-by-side";
+	};
+
+	it("prose previews stay side-by-side down to PREVIEW_MIN_WIDTH", () => {
+		const proseQ: QuestionData = {
+			question: "pick",
+			header: "pick",
+			options: [
+				{ label: "A", description: "", preview: "plain prose preview" },
+				{ label: "B", description: "" },
+			],
+		};
+		for (const w of [100, 110, 120, 160]) {
+			const { pane, optionListView } = makePane(proseQ, () => w);
+			optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
+			expect(renderedMode(pane.render(w))).toBe("side-by-side");
+		}
+	});
+
+	it("a rigid fenced line holds side-by-side while the right column fits it whole", () => {
+		// 80-col rigid line + 5 box overhead = 85; with left = MIN_LEFT(30) the right
+		// column is width − 32, so the boundary sits at width 117.
+		for (const w of [117, 120, 160]) {
+			const { pane, optionListView } = makePane(rigidQ(80), () => w);
+			optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
+			expect(renderedMode(pane.render(w))).toBe("side-by-side");
+		}
+	});
+
+	it("the same rigid line stacks once the right column would cut it", () => {
+		for (const w of [110, 116]) {
+			const { pane, optionListView } = makePane(rigidQ(80), () => w);
+			optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
+			expect(renderedMode(pane.render(w))).toBe("stacked");
+		}
+	});
+
+	it("a rigid line in a non-selected option also forces the downgrade", () => {
+		const q: QuestionData = {
+			question: "pick",
+			header: "pick",
+			options: [
+				{ label: "A", description: "", preview: "prose" },
+				{ label: "B", description: "", preview: rigidPreview(80) },
+			],
+		};
+		const { pane, optionListView } = makePane(q, () => 110);
+		optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
+		expect(renderedMode(pane.render(110))).toBe("stacked");
+	});
+
+	it("height invariants hold across the switching boundary", () => {
+		const { pane, optionListView } = makePane(rigidQ(80), () => 120);
+		for (let w = 100; w <= 125; w++) {
+			optionListView.setProps({ selectedIndex: 0, focused: true, inputBuffer: "" });
+			expect(pane.naturalHeight(w)).toBe(pane.render(w).length);
+			expect(pane.maxNaturalHeight(w)).toBeGreaterThanOrEqual(pane.naturalHeight(w));
+		}
+	});
+});
+
 describe("renderBorderedBox helper", () => {
 	it("wraps lines in 4-sided border with `┌─┐│└┘` corners", () => {
 		const out = renderBorderedBox(["hello"], 20, (s) => s);
