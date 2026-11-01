@@ -305,14 +305,13 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 			this.notesAffordance(),
 			maxRows,
 		);
-		const boxWidth = Math.max(1, visibleWidth(contentLines[0] ?? ""));
-		const boxAlignedPad = Math.max(PREVIEW_PADDING_LEFT, colWidth - boxWidth);
+		// Left-aligned: every line gets the column's 1-col padding and is clipped to
+		// the column. The previous right-alignment parked narrower boxes at the far
+		// edge of the column (boxAlignedPad = colWidth − boxWidth), leaving a wide
+		// empty gap between the options column and the preview box.
 		return contentLines.map((line) => {
 			if (line === "") return "";
-			// A line wider than the box (a long-locale notes affordance) slides left to
-			// stay fully visible; truncation engages only when the column itself runs out.
-			const pad = Math.max(PREVIEW_PADDING_LEFT, Math.min(boxAlignedPad, colWidth - visibleWidth(line)));
-			return `${" ".repeat(pad)}${truncateToWidth(line, colWidth - pad, "")}`;
+			return `${" ".repeat(PREVIEW_PADDING_LEFT)}${truncateToWidth(line, colWidth - PREVIEW_PADDING_LEFT, "")}`;
 		});
 	}
 }

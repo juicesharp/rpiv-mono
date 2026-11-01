@@ -10,7 +10,7 @@ import {
 import { MultiSelectView } from "../view/components/multi-select-view.ts";
 import { OptionListView } from "../view/components/option-list-view.ts";
 import { PreviewBlockRenderer } from "../view/components/preview/preview-block-renderer.ts";
-import { crossTabLeftWidthWithDonation } from "../view/components/preview/preview-layout-decider.ts";
+import { crossTabLeftWidth } from "../view/components/preview/preview-layout-decider.ts";
 import type { PreviewPaneProps } from "../view/components/preview/preview-pane.ts";
 import { PreviewPane } from "../view/components/preview/preview-pane.ts";
 import { SubmitPicker } from "../view/components/submit-picker.ts";
@@ -224,11 +224,9 @@ class QuestionnaireBuilder {
 	 * is set before any rendering occurs).
 	 */
 	private injectGlobalLeftWidth(tabs: ReadonlyArray<TabComponents>): void {
-		const questions = this.questions;
 		const itemsByTab = this.itemsByTab;
-		const tabsDescriptor = questions.map((q) => ({ multiSelect: q.multiSelect }));
-		const globalLeftWidth = (paneWidth: number): number =>
-			crossTabLeftWidthWithDonation(tabsDescriptor, itemsByTab, questions, paneWidth);
+		const tabsDescriptor = this.questions.map((q) => ({ multiSelect: q.multiSelect }));
+		const globalLeftWidth = (paneWidth: number): number => crossTabLeftWidth(tabsDescriptor, itemsByTab, paneWidth);
 		for (const tab of tabs) {
 			tab.preview.setGlobalLeftWidth(globalLeftWidth);
 		}
