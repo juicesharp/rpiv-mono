@@ -13,7 +13,7 @@
  *   config     — persisted config + provider:id key codec
  *   state      — in-memory model/effort selection
  *   policy     — disabledForModels blocklist + blocked predicates
- *   inventory  — globalThis tool-inventory cache + serializer
+ *   inventory  — globalThis active-tool-name cache
  *   context    — branch-message massaging
  *   prompt     — system-prompt loader
  *   execute    — the advisor side-call
@@ -31,7 +31,7 @@ export {
 	registerModelSelectHandler,
 	registerThinkingLevelSelectHandler,
 } from "./handlers.ts";
-export { getInventoryMessage, stableStringify } from "./inventory.ts";
+export { getInventoryMessage, MAX_INVENTORY_CHARS } from "./inventory.ts";
 export { ADVISOR_TOOL_NAME } from "./messages.ts";
 export { setDisabledForModels } from "./policy.ts";
 export { DEFAULT_PROMPT_GUIDELINES, DEFAULT_PROMPT_SNIPPET, registerAdvisorTool } from "./register.ts";

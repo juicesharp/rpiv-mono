@@ -137,7 +137,7 @@ export async function executeAdvisor(
 	const branchMessages = ensureUserTailForAdvisor(
 		stripInflightAdvisorCall(stripToolDeclarations(convertToLlm(sessionMessages))),
 	);
-	const inventoryMessage = getInventoryMessage(pi.getAllTools());
+	const inventoryMessage = getInventoryMessage(pi.getActiveTools());
 	const messages: Message[] = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
 
 	onUpdate?.({
