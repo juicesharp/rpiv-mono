@@ -107,6 +107,18 @@ indexes are in `details.unanswered`. Both are absent when every question is answ
 A cancelled result always reads as the decline in text; its note, if any, survives only
 in `details.globalNote`.
 
+## Terminal program status
+
+On Pi 1.5.0+, inline questionnaires request `blocked` program status with kind `question`
+through `ctx.ui.custom()`. Pi manages the OSC 7501 record while the component is mounted
+and restores its status when the component closes. The fixed message, `Waiting for your
+answer`, keeps question and answer text out of the terminal status record.
+
+Older Pi versions ignore this option. Overlay fallbacks do not request it because Pi
+currently supports it only for inline components; `rpiv:ask-user:blocked` remains available
+for status integrations on all presentation paths. Progress reporting is not exposed by
+Pi's `blocked` option.
+
 ## Event contract
 
 Everything here imports from the `/events` subpath.

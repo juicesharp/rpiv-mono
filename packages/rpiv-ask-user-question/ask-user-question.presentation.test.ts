@@ -17,7 +17,11 @@ type Factory = (
 	keybindings: unknown,
 	done: (result: QuestionnaireResult) => void,
 ) => QuestionnaireSessionComponent;
-type CustomOptions = { overlay?: boolean; overlayOptions?: unknown };
+type CustomOptions = {
+	overlay?: boolean;
+	overlayOptions?: unknown;
+	blocked?: { kind: string; message: string };
+};
 
 const DOWN = "\x1b[B";
 const ENTER = "\r";
@@ -100,13 +104,36 @@ describe("inline presentation", () => {
 		writeConfig(config);
 		const { run, ctx, onTerminalInput } = setup(async () => ({ answers: [], cancelled: true }));
 		await run(twoOptions);
-		expect(vi.mocked(ctx.ui.custom).mock.calls[0]?.[1]).toEqual({ overlay: false });
+		expect(vi.mocked(ctx.ui.custom).mock.calls[0]?.[1]).toEqual({
+			overlay: false,
+			blocked: { kind: "question", message: "Waiting for your answer" },
+		});
 		expect(onTerminalInput).not.toHaveBeenCalled();
+	});
+
+	it.each([1, 4])("reports a fixed, private blocked message for %i questions — #345", async (count) => {
+		const { run } = setup(async (_factory, options) => {
+			expect(options).toEqual({
+				overlay: false,
+				blocked: { kind: "question", message: "Waiting for your answer" },
+			});
+			return { answers: [], cancelled: true };
+		});
+		await run({
+			questions: Array.from({ length: count }, (_, i) => ({
+				...twoOptions.questions[0],
+				question: `Private question ${i + 1}?\nDo not publish this text.`,
+				header: `Private ${i + 1}`,
+			})),
+		});
 	});
 
 	it("collapses to a visible row without a raw listener, and still submits", async () => {
 		const { run, ctx, onTerminalInput } = setup(async (factory, options) => {
-			expect(options).toEqual({ overlay: false });
+			expect(options).toEqual({
+				overlay: false,
+				blocked: { kind: "question", message: "Waiting for your answer" },
+			});
 			let result: QuestionnaireResult | undefined;
 			const component = mount(factory, 24, (answer) => {
 				result = answer;
@@ -215,7 +242,7 @@ describe("inline presentation", () => {
 	it("degrades a concurrent questionnaire to the overlay instead of replacing the mounted one", async () => {
 		const modes: Array<boolean | undefined> = [];
 		const pending: Array<() => void> = [];
-		const { run } = setup(
+		const { run, ctx } = setup(
 			(_factory, options) =>
 				new Promise((resolve) => {
 					modes.push(options?.overlay);
@@ -228,6 +255,9 @@ describe("inline presentation", () => {
 		expect(modes).toEqual([false, true]);
 		for (const settle of pending) settle();
 		await Promise.all([first, second]);
+		const options = vi.mocked(ctx.ui.custom).mock.calls.map((call) => call[1] as CustomOptions);
+		expect(options[0]?.blocked).toEqual({ kind: "question", message: "Waiting for your answer" });
+		expect(options[1]).not.toHaveProperty("blocked");
 
 		// The slot is free again once both settle.
 		const third = run(twoOptions);
@@ -261,7 +291,9 @@ describe("inline presentation", () => {
 		);
 		const result = await run(twoOptions);
 		expect(calls.map((o) => o?.overlay)).toEqual([false, true]);
+		expect(calls[0]?.blocked).toEqual({ kind: "question", message: "Waiting for your answer" });
 		expect(calls[1]).toMatchObject({ overlayOptions: { anchor: "bottom-center" } });
+		expect(calls[1]).not.toHaveProperty("blocked");
 		// Stacked over another overlay, collapse must not hide (Pi pops the TOPMOST overlay on
 		// close), so no raw reopen listener is registered and collapse keeps a visible row.
 		expect(onTerminalInput).not.toHaveBeenCalled();
@@ -296,6 +328,7 @@ describe("overlay fallback", () => {
 			overlay: true,
 			overlayOptions: { anchor: "bottom-center", maxHeight: "100%" },
 		});
+		expect(vi.mocked(ctx.ui.custom).mock.calls[0]?.[1]).not.toHaveProperty("blocked");
 		expect(onTerminalInput).toHaveBeenCalledOnce();
 		expect(removeListener).toHaveBeenCalledOnce();
 	});
