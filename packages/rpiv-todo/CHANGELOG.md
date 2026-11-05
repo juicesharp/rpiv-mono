@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Overlay overflow summary now reflects overall task counts.** When the task list exceeded the widget row budget, the `+N more` overflow line broke down only the hidden rows (e.g. `(5 completed, 5 pending)` for a 20-task list with 10 visible pending tasks), which was misleading and hardcoded `pending` for all hidden unfinished tasks. The parenthetical breakdown now reports the overall list status counts (`completed`, `in progress`, `pending`), consistently matching the header totals.
+
 ## [2.15.0] - 2026-10-24
 
 ### Fixed

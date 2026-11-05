@@ -56,8 +56,9 @@ by status.
   of the turn, then drop at the start of the next one; the panel disappears
   entirely when the list empties.
 - **The overlay never eats your terminal.** Past the row budget it drops
-  completed tasks first, truncates unfinished ones last, and tells you what it
-  hid with `+3 more (2 completed, 1 pending)`.
+  completed tasks first, truncates unfinished ones last, and summarizes overall
+  task status with `+N more (X completed, Y in progress, Z pending)` matching
+  the header counts.
 - **The agent can sequence work, not just list it.** `blockedBy` dependencies are
   validated before anything is written — dangling ids, deleted dependencies,
   self-blocks, and cycles are all rejected.
