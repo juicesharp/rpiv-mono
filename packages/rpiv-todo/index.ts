@@ -353,6 +353,11 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	pi.on("agent_before_settle", async (event, ctx) => {
 		const id = sessionIdOf(ctx);
 		if (id === undefined || event.continue) return;
+		// Pi only honours a continuation when the boundary still has a runnable
+		// context (`_buildBoundaryContext().canContinue`). A headless `-p` run ends
+		// with the assistant's own reply and nothing queued, so asking there only
+		// logs "requested continuation without runnable model context".
+		if (!event.context?.canContinue) return;
 		if (!shouldForceReview(id, getTodos(id), getSyncSettings())) return;
 		markContinueOffered(id);
 		return { continue: true };

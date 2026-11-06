@@ -262,6 +262,21 @@ describe("context sync — stale list reminder", () => {
 });
 
 describe("context sync — settle boundary", () => {
+	/** A boundary event with a runnable context, the shape Pi builds when it can continue. */
+	const boundary = (over: Record<string, unknown> = {}) => ({
+		type: "agent_before_settle",
+		entries: [],
+		continue: false,
+		context: {
+			canContinue: true,
+			contextEntries: [],
+			contextMessages: [],
+			llmMessages: [],
+			pendingMessages: [],
+		},
+		...over,
+	});
+
 	async function stale(): Promise<Handlers> {
 		const h = setup([stateEntry([task(1, "in_progress")])]);
 		await h.start({ type: "session_start", reason: "startup" }, h.ctx());
@@ -272,26 +287,32 @@ describe("context sync — settle boundary", () => {
 
 	it("requests one continuation when a stale list is about to be left behind", async () => {
 		const h = await stale();
-		const result = await h.settle({ type: "agent_before_settle", entries: [], continue: false }, h.ctx());
-		expect(result).toEqual({ continue: true });
+		expect(await h.settle(boundary(), h.ctx())).toEqual({ continue: true });
 	});
 
 	it("asks at most once per reminder", async () => {
 		const h = await stale();
-		await h.settle({ type: "agent_before_settle", entries: [], continue: false }, h.ctx());
-		expect(await h.settle({ type: "agent_before_settle", entries: [], continue: false }, h.ctx())).toBeUndefined();
+		await h.settle(boundary(), h.ctx());
+		expect(await h.settle(boundary(), h.ctx())).toBeUndefined();
 	});
 
 	it("does nothing when Pi already has a continuation", async () => {
 		const h = await stale();
-		expect(await h.settle({ type: "agent_before_settle", entries: [], continue: true }, h.ctx())).toBeUndefined();
+		expect(await h.settle(boundary({ continue: true }), h.ctx())).toBeUndefined();
 	});
 
 	it("does nothing when nothing is stale", async () => {
 		const h = setup([stateEntry([task(1, "in_progress")])]);
 		await h.start({ type: "session_start", reason: "startup" }, h.ctx());
 		await injectedText(h);
-		expect(await h.settle({ type: "agent_before_settle", entries: [], continue: false }, h.ctx())).toBeUndefined();
+		expect(await h.settle(boundary(), h.ctx())).toBeUndefined();
+	});
+
+	it("does not ask when the boundary has no runnable context (headless `-p`)", async () => {
+		// Pi rejects `continue` here with "requested continuation without runnable
+		// model context", so the reminder just waits for the next real turn.
+		const h = await stale();
+		expect(await h.settle(boundary({ context: { canContinue: false } }), h.ctx())).toBeUndefined();
 	});
 });
 
@@ -301,7 +322,21 @@ describe("context sync — no session writes", () => {
 		await h.start({ type: "session_start", reason: "resume" }, h.ctx());
 		await injectedText(h);
 		for (let i = 0; i < 5; i++) await turn(h);
-		await h.settle({ type: "agent_before_settle", entries: [], continue: false }, h.ctx());
+		await h.settle(
+			{
+				type: "agent_before_settle",
+				entries: [],
+				continue: false,
+				context: {
+					canContinue: true,
+					contextEntries: [],
+					contextMessages: [],
+					llmMessages: [],
+					pendingMessages: [],
+				},
+			},
+			h.ctx(),
+		);
 		await injectedText(h);
 
 		expect(h.captured.entries).toEqual([]);
