@@ -1,4 +1,5 @@
 import type { Task } from "../tool/types.ts";
+import { __resetSyncState } from "./context-sync.ts";
 import { EMPTY_STATE, type TaskState } from "./state.ts";
 
 /**
@@ -122,4 +123,5 @@ export function clearActiveRenderSession(): void {
 export function __resetState(): void {
 	sessions.clear();
 	activeRenderSession = "";
+	__resetSyncState();
 }

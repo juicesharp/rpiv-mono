@@ -7,6 +7,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The model is told the task list again when a compaction has removed it from its context.** The tasks themselves always survived — replay restores them from the branch — but a compaction replaces the messages before its boundary with a summary, so the `todo` results the model was working from are gone, and it kept issuing `update` calls against a list it could no longer see. Statuses drifted while the overlay looked correct. `session_start`, `session_compact` and `session_tree` now check whether the model can still see the list (a `custom` state entry is never sent to the model, and a `todo` result before a compaction boundary no longer is) and arm a one-shot resync only when it cannot. A plain `/resume` of a complete transcript stays untouched — a live `pi -c` run showed that appending the list there was pure duplicate cost. The text is rendered by the `context_with_system` hook rather than written to the session, so it cannot be summarized away and never grows the branch. ([#222](https://github.com/juicesharp/rpiv-mono/issues/222))
+- **A stale list is nudged back into view.** After `staleAfterTurns` (default 12) turns without a successful `todo` call, the next request carries the outstanding tasks and a reconcile instruction, subject to `reminderCooldownTurns` (default 12). When the run is about to settle with that reminder still armed, Pi is asked for exactly one continuation so the reconcile is not silently dropped; the guard is single-shot per reminder, so it cannot loop, and a later reminder re-opens it so an ignored one does not latch the guard for the rest of the session. Nothing is ever auto-completed: a reminder never changes a task's status. ([#159](https://github.com/juicesharp/rpiv-mono/issues/159))
+- Three configuration keys: `contextSync` (master switch, default `true`), `staleAfterTurns`, and `reminderCooldownTurns`. See `docs/configuration.md`.
+
 ## [2.15.0] - 2026-10-24
 
 ### Fixed

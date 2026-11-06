@@ -21,14 +21,25 @@
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.ts";
+import { COLLAPSE_KEY_OFF, getSyncSettings, resolveCollapseKey } from "./config.ts";
+import {
+	beginTurn,
+	consumePendingInjection,
+	evictSyncSession,
+	markContinueOffered,
+	markResyncPending,
+	noteTodoSuccess,
+	noteTurnEnd,
+	shouldForceReview,
+} from "./state/context-sync.ts";
 import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
-import { replayFromBranch } from "./state/replay.ts";
+import { isTodoStateVisibleToModel, replayFromBranch } from "./state/replay.ts";
 import {
 	clearActiveRenderSession,
 	evictSession,
 	getActiveRenderSession,
 	getRenderState,
+	getTodos,
 	replaceState,
 	setActiveRenderSession,
 	sid,
@@ -115,6 +126,23 @@ function isStaleCtxError(e: unknown): boolean {
 }
 
 /**
+ * Resolve the session id from an event ctx, or `undefined` when the ctx has
+ * been invalidated by a session replacement mid-run. The context-sync handlers
+ * are advisory: a stale ctx must skip the request, never fail it.
+ */
+function sessionIdOf(ctx: unknown): string | undefined {
+	// Some hosts (and older handler tests) invoke lifecycle events without a ctx.
+	// Context sync is advisory, so a missing session just means "skip".
+	if (!ctx || typeof ctx !== "object" || !("sessionManager" in ctx)) return undefined;
+	try {
+		return sid(ctx as Parameters<typeof sid>[0]);
+	} catch (e) {
+		if (!isStaleCtxError(e)) throw e;
+		return undefined;
+	}
+}
+
+/**
  * Render a caught `unknown` as a human-readable message — the `instanceof Error`
  * dance collapsed to one place. Local copy of the `formatError` in
  * packages/rpiv-workflow/internal-utils.ts:56-58 (that module disclaims its
@@ -184,6 +212,11 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		try {
 			const id = sid(ctx);
 			replaceState(id, replayFromBranch(ctx));
+			// The store is correct again, but the model's view may not be: re-state the
+			// list only when the model can no longer see it (issue #222). A plain
+			// `/resume` of a complete transcript keeps its `todo` tool results, so it
+			// must NOT be injected.
+			armResyncIfInvisible(id, ctx);
 			isForeground = id === getActiveRenderSession();
 		} catch (e) {
 			if (!isStaleCtxError(e)) throw e;
@@ -191,12 +224,21 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		if (isForeground) await updateTodoOverlay(true);
 	};
 
+	/** Arm the one-shot resync when the model cannot see the current list. */
+	function armResyncIfInvisible(id: string, ctx: Parameters<typeof isTodoStateVisibleToModel>[0]): void {
+		const hasTasks = getTodos(id).some((task) => task.status !== "deleted");
+		if (hasTasks && !isTodoStateVisibleToModel(ctx)) markResyncPending(id);
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		let id: string;
 		try {
 			id = sid(ctx);
 			// Every session replays into its OWN data slot (Phase 1 isolation).
 			replaceState(id, replayFromBranch(ctx));
+			// `/resume` and `-c` restore the overlay; whether the model also needs the
+			// list re-stated depends on the range the newest compaction kept.
+			armResyncIfInvisible(id, ctx);
 		} catch (e) {
 			// Parity with compact/tree/shutdown: session_start is the fresh-ctx event
 			// so the stale risk is low, but a stale/throwing ctx has nothing to bind —
@@ -237,6 +279,7 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		}
 		// The shutting-down session's own data slot is always evicted.
 		evictSession(s);
+		evictSyncSession(s);
 		// Overlay teardown is sid-gated: a child shutdown (distinct sid) must not
 		// dispose the foreground's overlay. Only the foreground's own shutdown
 		// (or an unknown/stale sid) tears it down and clears the pointer.
@@ -261,8 +304,13 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 
 	// Reads getTodos() at render time; do NOT call replayFromBranch here
 	// (branch is stale — message_end runs after tool_execution_end).
-	pi.on("tool_execution_end", async (event) => {
+	pi.on("tool_execution_end", async (event, ctx) => {
+		const id = sessionIdOf(ctx);
 		if (event.toolName !== TOOL_NAME || event.isError) return;
+		// A successful `todo` call is the only signal that the model is back in
+		// sync; it also covers nested calls (codemode) which emit this event
+		// without landing a standalone toolResult on the branch.
+		if (id !== undefined) noteTodoSuccess(id);
 		try {
 			await updateTodoOverlay();
 		} catch (e) {
@@ -274,6 +322,56 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 			if (isStaleOverlayModuleError(e)) throw e;
 			console.warn(`[rpiv-todo] overlay refresh failed (will retry on next update): ${formatError(e)}`);
 		}
+	});
+
+	// --- Context sync (issues #159 / #222) -------------------------------------
+	//
+	// The task data is durable (custom entries); the model's view of it is not.
+	// Everything below re-states statuses on demand and never mutates a task.
+
+	// Count turns that produced no successful `todo` call and arm the stale
+	// reminder. Nothing is injected here — the text waits for the next real
+	// request, so an idle or tool-only stretch costs no tokens.
+	// A turn boundary clears the turn-scoped "a todo succeeded" flag, so an
+	// out-of-order tool event can never credit the next turn.
+	pi.on("turn_start", async (_event, ctx) => {
+		const id = sessionIdOf(ctx);
+		if (id !== undefined) beginTurn(id);
+	});
+
+	pi.on("turn_end", async (event, ctx) => {
+		const id = sessionIdOf(ctx);
+		if (id === undefined) return;
+		const hadTodo = event.toolResults.some((r) => r.toolName === TOOL_NAME && !r.isError);
+		noteTurnEnd(id, getTodos(id), getSyncSettings(), hadTodo);
+	});
+
+	// Final actionable boundary: one forced review per reminder. The
+	// text still comes from the next `context_with_system`, never from a
+	// persisted entry — a `custom_message` here would be summarized away and
+	// would grow the transcript on every settle.
+	pi.on("agent_before_settle", async (event, ctx) => {
+		const id = sessionIdOf(ctx);
+		if (id === undefined || event.continue) return;
+		if (!shouldForceReview(id, getTodos(id), getSyncSettings())) return;
+		markContinueOffered(id);
+		return { continue: true };
+	});
+
+	// Per-request injection. Runs after every `context` handler and does not
+	// persist anything: a normal request, with nothing pending, returns
+	// undefined and pays zero tokens.
+	pi.on("context_with_system", async (event, ctx) => {
+		const id = sessionIdOf(ctx);
+		if (id === undefined) return;
+		const text = consumePendingInjection(id, getTodos(id), getSyncSettings());
+		if (!text) return;
+		return {
+			messages: [
+				...event.messages,
+				{ role: "user", content: [{ type: "text" as const, text }], timestamp: Date.now() },
+			],
+		};
 	});
 
 	// Evaluate the lazy graph after startup while Pi's boot-time dependency paths

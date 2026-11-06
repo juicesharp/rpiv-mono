@@ -81,3 +81,77 @@ export function replayFromBranch(ctx: { sessionManager: { getBranch(): Iterable<
 	}
 	return fromEntries ?? fromToolResults ?? { tasks: [...EMPTY_STATE.tasks], nextId: EMPTY_STATE.nextId };
 }
+
+/**
+ * Whether the model can still SEE the current list in its own context.
+ *
+ * Two things are distinguished here on purpose, because conflating them was a
+ * real over-injection bug (a plain `pi -c` resumed a complete transcript and
+ * still got a redundant list appended on every start):
+ *
+ * - `custom` entries (`rpiv-todo-state`) are never projected into the model's
+ *   messages — they only feed replay — so they never count as visible.
+ * - A `todo` `toolResult` IS visible, but a compaction replaces the messages
+ *   before its boundary with a summary, so such a result stops being visible
+ *   the moment a later compaction entry exists. The boundary can appear either
+ *   as a raw `compaction` entry or, on a reopened session, as a projected
+ *   `compactionSummary` message — both must be recognised, or a resumed
+ *   compacted session looks like a complete one.
+ *
+ * A session restored with a complete transcript therefore needs nothing; one
+ * restored from behind a compaction boundary (or one whose list was only ever
+ * written by a nested call such as codemode, which leaves no `toolResult`) does.
+ */
+export function isTodoStateVisibleToModel(ctx: { sessionManager: { getBranch(): Iterable<unknown> } }): boolean {
+	const entries = [...ctx.sessionManager.getBranch()].map(
+		(entry) =>
+			entry as {
+				id?: string;
+				type?: string;
+				customType?: string;
+				firstKeptEntryId?: string;
+				message?: { role?: string; toolName?: string };
+			},
+	);
+
+	// The newest compaction boundary plus the first entry it kept. `getBranch()`
+	// may already be compaction-aware (older entries omitted) or the raw path, so
+	// both readings are handled: the kept range starts at `firstKeptEntryId` when
+	// that entry is present, otherwise right after the boundary.
+	let boundaryIndex = -1;
+	let firstKeptId: string | undefined;
+	entries.forEach((e, i) => {
+		const isBoundary = e.type === "compaction" || e.message?.role === "compactionSummary";
+		if (!isBoundary) return;
+		boundaryIndex = i;
+		firstKeptId = e.firstKeptEntryId;
+	});
+
+	let visibleFrom = 0;
+	if (boundaryIndex >= 0) {
+		const keptIndex = firstKeptId ? entries.findIndex((e) => e.id === firstKeptId) : -1;
+		// A compaction keeps entries that precede it on the branch; a missing id
+		// means the list is already projected, leaving only what follows.
+		visibleFrom = keptIndex >= 0 ? keptIndex : boundaryIndex + 1;
+	}
+
+	// The newest state source decides. A `todo` toolResult IS visible, but a
+	// nested call (codemode's `ctx.executeTool`) only appends the `custom`
+	// snapshot — it leaves no toolResult behind. When that snapshot is newer than
+	// the last visible result, the model is looking at an older list, so the
+	// presence of some earlier result must not be read as "in sync".
+	let lastStateSource = -1;
+	let lastToolResult = -1;
+	entries.forEach((e, i) => {
+		if (e.type === "custom" && e.customType === "rpiv-todo-state") lastStateSource = i;
+		else if (e.type === "message" && e.message?.role === "toolResult" && e.message.toolName === "todo") {
+			lastToolResult = i;
+		}
+	});
+
+	// The newest source is the custom snapshot: nothing in the model's context
+	// carries it, so the list must be re-stated regardless of older results.
+	if (lastStateSource > lastToolResult) return false;
+
+	return lastToolResult >= 0 && lastToolResult >= visibleFrom;
+}

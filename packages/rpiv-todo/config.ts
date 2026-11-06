@@ -1,9 +1,24 @@
 import type { GuidanceFields } from "@juicesharp/rpiv-config";
 import { loadJsonConfigWithLegacyFallback, validateGuidanceFields } from "@juicesharp/rpiv-config";
+import type { SyncSettings } from "./state/context-sync.ts";
 
 interface TodoConfig {
 	guidance?: GuidanceFields;
 	maxWidgetLines?: number;
+	/**
+	 * Turns without a successful `todo` call before the model is reminded of the
+	 * open tasks. Defaults to 12. Set to `0` to disable the stale reminder.
+	 */
+	staleAfterTurns?: number;
+	/**
+	 * Minimum number of turns between two stale reminders. Defaults to 12.
+	 */
+	reminderCooldownTurns?: number;
+	/**
+	 * Master switch for the whole context-sync feature. Defaults to `true`. Set to
+	 * `false` to keep the overlay only, with nothing ever added to a request.
+	 */
+	contextSync?: boolean;
 	/**
 	 * Key spec for the overlay collapse/expand shortcut, in the same format as
 	 * pi-coding-agent keybinding ids (`modifier+key`, e.g. `ctrl+shift+t`, `alt+o`).
@@ -26,6 +41,12 @@ export const DEFAULT_COLLAPSE_KEY: CollapseKeySpec = "ctrl+shift+t";
 /** Sentinel value for `collapseKey` that disables the collapse shortcut entirely. */
 export const COLLAPSE_KEY_OFF: CollapseKeySpec = "off";
 
+/** Default number of turns without a `todo` call before a reminder is due. */
+export const DEFAULT_STALE_AFTER_TURNS = 12;
+
+/** Default minimum gap, in turns, between two stale reminders. */
+export const DEFAULT_REMINDER_COOLDOWN_TURNS = 12;
+
 export function loadConfig(): TodoConfig {
 	return loadJsonConfigWithLegacyFallback<TodoConfig>("rpiv-todo");
 }
@@ -39,6 +60,25 @@ export function getMaxWidgetLines(): number {
 	const lines = config.maxWidgetLines;
 	if (typeof lines !== "number" || lines < 3) return DEFAULT_MAX_WIDGET_LINES;
 	return lines;
+}
+
+/**
+ * Context-sync thresholds, read fresh on every use (no `/reload` needed) — the
+ * same contract as `getMaxWidgetLines` and `resolveCollapseKey`.
+ *
+ * `staleAfterTurns: 0` disables the stale reminder without disabling the
+ * resync that follows compaction/resume, which is the part that repairs actual
+ * state loss.
+ */
+export function getSyncSettings(): SyncSettings {
+	const config = loadConfig();
+	const stale = config.staleAfterTurns;
+	const cooldown = config.reminderCooldownTurns;
+	return {
+		enabled: config.contextSync !== false,
+		staleAfterTurns: typeof stale === "number" && stale >= 0 ? stale : DEFAULT_STALE_AFTER_TURNS,
+		reminderCooldownTurns: typeof cooldown === "number" && cooldown >= 0 ? cooldown : DEFAULT_REMINDER_COOLDOWN_TURNS,
+	};
 }
 
 // Named keys accepted by pi-tui's `matchesKey` (keys.js switch on the parsed base key).

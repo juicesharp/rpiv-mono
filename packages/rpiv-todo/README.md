@@ -58,6 +58,13 @@ by status.
 - **The overlay never eats your terminal.** Past the row budget it drops
   completed tasks first, truncates unfinished ones last, and tells you what it
   hid with `+3 more (2 completed, 1 pending)`.
+- **The model gets the list back when a compaction has hidden it.** The tasks
+  always survived; the model's memory of them did not, once a compaction replaced
+  the messages it was working from. The next request then re-states the list, and
+  a long stretch without a `todo` call gets a short reminder of what is still
+  open. A plain `/resume` of a complete transcript is left alone — the model can
+  already see the list there. Nothing is written to the session and no status is
+  ever changed for you.
 - **The agent can sequence work, not just list it.** `blockedBy` dependencies are
   validated before anything is written — dangling ids, deleted dependencies,
   self-blocks, and cycles are all rejected.
@@ -83,6 +90,9 @@ Optional. Create `~/.config/rpiv-todo/config.json` (or
 | --- | --- | --- |
 | `maxWidgetLines` | Content rows the overlay may use, heading included. Minimum `3`. Applies on the next repaint. Pi's tool-output expansion mode shows all tasks. | `12` |
 | `collapseKey` | Key that collapses and expands the panel, in Pi keybinding form (`alt+o`, `ctrl+shift+t`). Set `"off"` to register no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
+| `contextSync` | Re-state the task list to the model after a compaction, `/resume` or tree switch, and nudge a stale list. Set `false` to disable every injection. | `true` |
+| `staleAfterTurns` | Turns without a `todo` call before the model is reminded of the open tasks. `0` disables just the reminder. | `12` |
+| `reminderCooldownTurns` | Minimum turns between two reminders. | `12` |
 | `guidance` | Replaces the built-in instructions the extension gives the model about when and how to use the todo list. Needs `/reload`. | _(built-ins)_ |
 
 A missing or malformed file falls back to these defaults. `rpiv-todo` only reads
