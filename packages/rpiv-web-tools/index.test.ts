@@ -35,6 +35,7 @@ beforeEach(() => {
 	delete process.env.YDC_API_KEY;
 	delete process.env.JINA_API_KEY;
 	delete process.env.FIRECRAWL_API_KEY;
+	delete process.env.OUTCRAWL_API_KEY;
 	delete process.env.PERPLEXITY_API_KEY;
 	delete process.env.SEARXNG_API_KEY;
 	delete process.env.SEARXNG_URL;
@@ -128,6 +129,18 @@ const PROVIDER_MATRIX = [
 		authHeader: "Authorization" as string | null,
 	},
 	{
+		provider: "outcrawl",
+		envVar: "OUTCRAWL_API_KEY",
+		urlMatcher: (u: string) => u.includes("api.outcrawl.ai/v1/search"),
+		buildResponse: () =>
+			JSON.stringify({
+				hits: [{ title: "T", url: "https://x", snippet: "snip", rank: 1 }],
+				usage: { credits: "1" },
+			}),
+		emptyResponse: () => JSON.stringify({ hits: [] }),
+		authHeader: "Authorization" as string | null,
+	},
+	{
 		provider: "perplexity",
 		envVar: "PERPLEXITY_API_KEY",
 		urlMatcher: (u: string) => u.includes("api.perplexity.ai"),
@@ -163,7 +176,12 @@ describe.each(PROVIDER_MATRIX)(
 			if (authHeader) {
 				const headers = stub.calls[0].init?.headers as Record<string, string>;
 				const headerVal = headers[authHeader];
-				if (provider === "jina" || provider === "firecrawl" || provider === "perplexity") {
+				if (
+					provider === "jina" ||
+					provider === "firecrawl" ||
+					provider === "outcrawl" ||
+					provider === "perplexity"
+				) {
 					expect(headerVal).toBe("Bearer env-key");
 				} else {
 					expect(headerVal).toBe("env-key");
@@ -189,7 +207,12 @@ describe.each(PROVIDER_MATRIX)(
 			if (authHeader) {
 				const headers = stub.calls[0].init?.headers as Record<string, string>;
 				const headerVal = headers[authHeader];
-				if (provider === "jina" || provider === "firecrawl" || provider === "perplexity") {
+				if (
+					provider === "jina" ||
+					provider === "firecrawl" ||
+					provider === "outcrawl" ||
+					provider === "perplexity"
+				) {
 					expect(headerVal).toBe("Bearer config-key");
 				} else {
 					expect(headerVal).toBe("config-key");
@@ -579,6 +602,12 @@ const FETCH_ERROR_MATRIX: ReadonlyArray<{
 		label: "Firecrawl",
 	},
 	{
+		provider: "outcrawl",
+		envVar: "OUTCRAWL_API_KEY",
+		fetchUrlMatcher: (u) => u.includes("api.outcrawl.ai/v1/scrape"),
+		label: "Outcrawl",
+	},
+	{
 		provider: "youcom",
 		envVar: "YOUCOM_API_KEY",
 		fetchUrlMatcher: (u) => u.includes("ydc-index.io/v1/contents"),
@@ -854,6 +883,79 @@ describe("web_fetch.execute — provider fetch", () => {
 			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Page content") });
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Scraped Page") });
+	});
+
+	it("outcrawl fetch uses /v1/scrape endpoint", async () => {
+		process.env.OUTCRAWL_API_KEY = "k";
+		writeConfig({ provider: "outcrawl" });
+		const stub = stubFetch([
+			{
+				match: (u) => u.includes("api.outcrawl.ai/v1/scrape"),
+				response: () =>
+					new Response(
+						JSON.stringify({
+							url: "https://x.com/",
+							statusCode: 200,
+							markdown: "# Title\nPage content",
+							metadata: { title: "Scraped Page" },
+						}),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_fetch")
+			?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx());
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Page content") });
+		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("Scraped Page") });
+		expect(JSON.parse(stub.calls[0].init?.body as string)).toEqual({
+			url: "https://x.com",
+			formats: ["markdown"],
+		});
+	});
+
+	it("outcrawl fetch throws on empty markdown", async () => {
+		process.env.OUTCRAWL_API_KEY = "k";
+		writeConfig({ provider: "outcrawl" });
+		stubFetch([
+			{
+				match: (u) => u.includes("api.outcrawl.ai/v1/scrape"),
+				response: () =>
+					new Response(JSON.stringify({ statusCode: 200, metadata: { title: "T" } }), { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await expect(
+			captured.tools
+				.get("web_fetch")
+				?.execute?.("tc", { url: "https://x.com" }, undefined as never, undefined as never, createMockCtx()),
+		).rejects.toThrow(/no content returned/);
+	});
+
+	it("outcrawl search posts query and limit to /v1/search and maps hits", async () => {
+		process.env.OUTCRAWL_API_KEY = "k";
+		writeConfig({ provider: "outcrawl" });
+		const stub = stubFetch([
+			{
+				match: (u) => u.includes("api.outcrawl.ai/v1/search"),
+				response: () =>
+					new Response(
+						JSON.stringify({
+							hits: [{ title: "Hit", url: "https://hit.example/a", snippet: "About hit", rank: 1 }],
+						}),
+						{ status: 200 },
+					),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		const r = await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "hello", max_results: 4 }, undefined as never, undefined as never, createMockCtx());
+		expect(JSON.parse(stub.calls[0].init?.body as string)).toEqual({ query: "hello", limit: 4 });
+		expect(r?.details).toMatchObject({
+			results: [{ title: "Hit", url: "https://hit.example/a", snippet: "About hit" }],
+		});
 	});
 
 	it("firecrawl fetch throws on success=true with empty markdown", async () => {
@@ -1170,6 +1272,7 @@ describe("/web-tools command", () => {
 			"You.com",
 			"Jina",
 			"Firecrawl",
+			"Outcrawl",
 			"Perplexity",
 			"SearXNG",
 			"Ollama",

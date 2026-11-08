@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Outcrawl search+fetch provider.** A new `FullProvider` backed by Outcrawl's Search API (`POST /v1/search`) and Scrape API (`POST /v1/scrape`). Fetch returns markdown with `contentType: "text/markdown"`. Configure it with `OUTCRAWL_API_KEY` or through `/web-tools`.
+
 ## [2.15.0] - 2026-10-24
 
 ### Added
