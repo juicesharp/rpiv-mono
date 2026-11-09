@@ -229,7 +229,11 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 		const scroll = this.props.previewScroll ?? 0;
 		if (allowance === undefined || options.length + STACKED_GAP_ROWS + fullBlock <= allowance) {
 			return {
-				lines: [...options, ...gap, ...this.previewBlock.renderBlock(width, selectedIndex, mode, affordance, undefined, scroll)],
+				lines: [
+					...options,
+					...gap,
+					...this.previewBlock.renderBlock(width, selectedIndex, mode, affordance, undefined, scroll),
+				],
 				focus,
 			};
 		}

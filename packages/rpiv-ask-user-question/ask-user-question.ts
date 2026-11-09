@@ -7,6 +7,8 @@ import {
 	loadConfig,
 	resolveCollapseKey,
 	resolveNotesKey,
+	resolvePreviewScrollDownKey,
+	resolvePreviewScrollUpKey,
 	validateGuidanceFields,
 } from "./config.ts";
 import {
@@ -202,6 +204,8 @@ function makeSessionFactory(config: {
 	itemsByTab: WrappingSelectItem[][];
 	collapseKey: string;
 	notesKey: string;
+	previewScrollUpKey: string;
+	previewScrollDownKey: string;
 	canReopenWhileHidden: boolean;
 	presentation: Presentation;
 	sessionRef: SessionRef;
@@ -214,6 +218,8 @@ function makeSessionFactory(config: {
 		itemsByTab,
 		collapseKey,
 		notesKey,
+		previewScrollUpKey,
+		previewScrollDownKey,
 		canReopenWhileHidden,
 		presentation,
 		sessionRef,
@@ -266,6 +272,8 @@ function makeSessionFactory(config: {
 			},
 			collapseKey,
 			notesKey,
+			previewScrollUpKey,
+			previewScrollDownKey,
 			canReopenWhileHidden,
 			rowBudget: rowBudgetForHost(tui.terminal, presentation.rowBudget),
 		});
@@ -294,6 +302,8 @@ async function mountQuestionnaire(config: {
 	itemsByTab: WrappingSelectItem[][];
 	collapseKey: string;
 	notesKey: string;
+	previewScrollUpKey: string;
+	previewScrollDownKey: string;
 	presentation: Presentation;
 	open: OpenQuestionnaire;
 	Session: SessionModule["QuestionnaireSession"];
@@ -375,6 +385,8 @@ async function runTuiPath(pi: ExtensionAPI, ctx: ExtensionContext, typed: Questi
 		const config = loadConfig();
 		const collapseKey = resolveCollapseKey(config);
 		const notesKey = resolveNotesKey(config);
+		const previewScrollUpKey = resolvePreviewScrollUpKey(config);
+		const previewScrollDownKey = resolvePreviewScrollDownKey(config);
 		const mount = (p: Presentation) =>
 			Promise.race([
 				mountQuestionnaire({
@@ -383,6 +395,8 @@ async function runTuiPath(pi: ExtensionAPI, ctx: ExtensionContext, typed: Questi
 					itemsByTab,
 					collapseKey,
 					notesKey,
+					previewScrollUpKey,
+					previewScrollDownKey,
 					presentation: p,
 					open,
 					Session: QuestionnaireSession,

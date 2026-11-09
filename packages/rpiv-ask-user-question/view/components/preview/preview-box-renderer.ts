@@ -42,7 +42,7 @@ export function renderBorderedBox(
 	width: number,
 	colorFn: (s: string) => string,
 	hidden = 0,
-	scroll?: { up: boolean; down: boolean },
+	scroll?: { up: boolean; down: boolean; upLabel?: string; downLabel?: string },
 ): string[] {
 	const dashSpan = Math.max(1, width - BORDER_HORIZONTAL_OVERHEAD);
 	const contentInner = Math.max(1, dashSpan - 2 * BORDER_INNER_PADDING_HORIZONTAL);
@@ -56,16 +56,20 @@ export function renderBorderedBox(
 	if (hidden > 0) {
 		// No scroll info → pre-scroll ✂ marker (pure truncation indicator). With scroll info,
 		// the indicator names the key that moves toward remaining content in each direction.
+		// `upLabel`/`downLabel` override the default PgUp/PgDn copy when the user configures
+		// `previewScrollUpKey`/`previewScrollDownKey` to a different spec.
 		const up = scroll?.up === true;
 		const down = scroll?.down === true;
+		const upLabel = scroll?.upLabel ?? "PgUp";
+		const downLabel = scroll?.downLabel ?? "PgDn";
 		const indicator =
 			scroll === undefined
 				? ` ✂ ── ${hidden} lines hidden ── `
 				: up && down
-					? ` ▲ ${hidden} lines hidden · PgUp/PgDn ▼ `
+					? ` ▲ ${hidden} lines hidden · ${upLabel}/${downLabel} ▼ `
 					: down
-						? ` ✂ ${hidden} lines hidden · PgDn ▼ `
-						: ` ▲ PgUp · ${hidden} lines hidden `;
+						? ` ✂ ${hidden} lines hidden · ${downLabel} ▼ `
+						: ` ▲ ${upLabel} · ${hidden} lines hidden `;
 		const space = dashSpan - indicator.length;
 		const leftFill = "─".repeat(Math.max(0, Math.floor(space / 2)));
 		const rightFill = "─".repeat(Math.max(0, space - leftFill.length));

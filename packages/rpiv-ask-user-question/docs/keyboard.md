@@ -18,7 +18,7 @@ adapts to the size of your terminal.
 | `Ctrl+G` | Open Pi's configured external editor with the current custom-answer draft. | `Type something.` input |
 | `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
 | `Ctrl+]` | Collapse or expand the dialog. Configurable via `collapseKey`. | Everywhere, including while collapsed |
-| `PageUp` / `PageDown` | Scroll the focused option's preview content by ~one screenful when it overflows the preview height budget. | Question tabs whose focused option carries a preview |
+| `PageUp` / `PageDown` | Scroll the focused option's preview content by ~one screenful when it overflows the preview height budget. Rebindable via `previewScrollUpKey`/`previewScrollDownKey`. | Question tabs whose focused option carries a preview |
 
 The table names the default keys; the dialog actually follows your Pi keybindings.
 Confirm listens to both `tui.select.confirm` and `tui.input.submit`, and a key bound to
@@ -147,6 +147,13 @@ The bottom border doubles as the scroll indicator:
 `↑`/`↓` keep their option-navigation meaning while a preview is focused; only `PageUp`/
 `PageDown` move inside the preview. The same scrolling applies in both the side-by-side
 (≥100 columns) and the stacked (narrow terminal) layouts.
+
+The scroll keys are configurable via `previewScrollUpKey` and `previewScrollDownKey` in
+`~/.config/pi/rpiv-ask-user-question.json` (or the project-local equivalent), using the
+same key-spec format as `collapseKey` — e.g. `"ctrl+u"` / `"ctrl+d"` for a vi-style
+binding, or `"alt+k"` / `"alt+j"`. Each replaces its respective PageUp/PageDown default;
+pass `"off"` to disable that direction entirely. The bottom-border indicator reflects
+the configured key names.
 
 ## Layout
 

@@ -82,6 +82,8 @@ function makeRuntime(over: Partial<QuestionnaireRuntime> = {}): QuestionnaireRun
 		collapseKey: "ctrl+]",
 		notesKey: "n",
 		previewMaxScroll: undefined,
+		previewScrollUpKey: "pageup",
+		previewScrollDownKey: "pagedown",
 		...over,
 	};
 }
@@ -1135,5 +1137,73 @@ describe("routeKey — collapse/expand (Ctrl+] toggle + collapsed-mode lockout)"
 
 		expect(() => routeKey(BYTE_CTRL_RBRACKET, makeState(), runtime as QuestionnaireRuntime)).not.toThrow();
 		expect(routeKey(BYTE_CTRL_RBRACKET, makeState(), runtime as QuestionnaireRuntime)).toEqual({ kind: "ignore" });
+	});
+});
+
+describe("routeKey — preview scroll keys", () => {
+	const BYTE_PAGEUP = "\x1b[5~";
+	const BYTE_PAGEDOWN = "\x1b[6~";
+
+	it("PageDown emits preview_scroll with a positive delta on a single-select tab", () => {
+		expect(routeKey(BYTE_PAGEDOWN, makeState(), makeRuntime())).toEqual({
+			kind: "preview_scroll",
+			delta: 10,
+		});
+	});
+
+	it("PageUp emits preview_scroll with a negative delta", () => {
+		expect(routeKey(BYTE_PAGEUP, makeState({ previewScroll: 15 }), makeRuntime())).toEqual({
+			kind: "preview_scroll",
+			delta: -10,
+		});
+	});
+
+	it("PageDown clamps to the last frame's previewMaxScroll instead of overshooting", () => {
+		// previewScroll=8, reported max=12 → only 4 rows actually remain; PageDown
+		// moves those 4 instead of stepping 10 into phantom rows (#210).
+		expect(
+			routeKey(BYTE_PAGEDOWN, makeState({ previewScroll: 8 }), makeRuntime({ previewMaxScroll: 12 })),
+		).toEqual({ kind: "preview_scroll", delta: 4 });
+	});
+
+	it("further PageDown presses at the bottom are swallowed so the next PageUp responds at once", () => {
+		expect(
+			routeKey(BYTE_PAGEDOWN, makeState({ previewScroll: 12 }), makeRuntime({ previewMaxScroll: 12 })),
+		).toEqual({ kind: "ignore" });
+	});
+
+	it("multi-select questions ignore the scroll keys (previews are single-select only)", () => {
+		const multi = makeRuntime({ questions: [makeQuestion({ multiSelect: true })], isMulti: false });
+		expect(routeKey(BYTE_PAGEDOWN, makeState(), multi)).toEqual({ kind: "ignore" });
+		expect(routeKey(BYTE_PAGEUP, makeState(), multi)).toEqual({ kind: "ignore" });
+	});
+
+	it("a configured spec replaces the PageUp/PageDown default", () => {
+		const runtime = makeRuntime({ previewScrollDownKey: "ctrl+d" });
+		// Ctrl+D (ETX, byte 0x04) triggers the scroll; PgDn falls through to ignore.
+		expect(routeKey("\x04", makeState(), runtime)).toEqual({ kind: "preview_scroll", delta: 10 });
+		expect(routeKey(BYTE_PAGEDOWN, makeState(), runtime)).toEqual({ kind: "ignore" });
+	});
+
+	it("'off' disables the direction entirely", () => {
+		const runtime = makeRuntime({ previewScrollDownKey: "off" });
+		expect(routeKey(BYTE_PAGEDOWN, makeState(), runtime)).toEqual({ kind: "ignore" });
+		// The other direction still works.
+		expect(routeKey(BYTE_PAGEUP, makeState({ previewScroll: 5 }), runtime)).toEqual({
+			kind: "preview_scroll",
+			delta: -10,
+		});
+	});
+
+	it("a missing key spec falls back to the PageUp/PageDown defaults", () => {
+		// A Pi process can retain the older outer module while a package update
+		// replaced the lazily imported QuestionnaireSession graph — the new fields
+		// arrive undefined at runtime. Same defensive pattern as `collapseKey`.
+		const runtime = makeRuntime() as unknown as { previewScrollDownKey?: string };
+		delete runtime.previewScrollDownKey;
+		expect(routeKey(BYTE_PAGEDOWN, makeState(), runtime as QuestionnaireRuntime)).toEqual({
+			kind: "preview_scroll",
+			delta: 10,
+		});
 	});
 });

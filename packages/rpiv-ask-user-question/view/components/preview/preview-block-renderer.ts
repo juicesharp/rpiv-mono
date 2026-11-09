@@ -82,6 +82,10 @@ export interface PreviewBlockRendererConfig {
 	markdownTheme: MarkdownTheme;
 	/** Resolved notes key (`resolveNotesKey` output), named by the affordance. */
 	notesKey: string;
+	/** Display label for the preview-scroll-up key (e.g. `"PgUp"`, `"Ctrl+U"`). */
+	scrollUpLabel?: string;
+	/** Display label for the preview-scroll-down key. */
+	scrollDownLabel?: string;
 }
 
 /**
@@ -98,6 +102,8 @@ export class PreviewBlockRenderer {
 	private readonly theme: Theme;
 	private readonly cache: MarkdownContentCache;
 	private readonly notesKey: string;
+	private readonly scrollUpLabel: string | undefined;
+	private readonly scrollDownLabel: string | undefined;
 	/**
 	 * The scroll offset most recently used by `renderBlock` after clamping to the real
 	 * overflow (0 when the last render had no overflow). Read by `PreviewPane` so the
@@ -114,6 +120,8 @@ export class PreviewBlockRenderer {
 	constructor(config: PreviewBlockRendererConfig) {
 		this.theme = config.theme;
 		this.notesKey = config.notesKey;
+		this.scrollUpLabel = config.scrollUpLabel;
+		this.scrollDownLabel = config.scrollDownLabel;
 		this.cache = new MarkdownContentCache(config.question, config.theme, config.markdownTheme);
 	}
 
@@ -177,6 +185,8 @@ export class PreviewBlockRenderer {
 		const boxedLines = renderBorderedBox(contentLines, boxWidth, colorFn, totalHidden, {
 			up: canUp,
 			down: canDown,
+			upLabel: this.scrollUpLabel,
+			downLabel: this.scrollDownLabel,
 		});
 		if (!fit.affordance) return boxedLines;
 

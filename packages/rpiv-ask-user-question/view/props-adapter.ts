@@ -106,21 +106,24 @@ export class QuestionnairePropsAdapter {
 	 * to the currently focused option (see `previewScrollRenderedFor`).
 	 */
 	lastRenderedPreviewScroll(currentTab: number): number | undefined {
-		const pane = this.tabsByIndex[selectActivePreviewPaneIndex(currentTab, this.questions.length)]?.preview ??
+		const pane =
+			this.tabsByIndex[selectActivePreviewPaneIndex(currentTab, this.questions.length)]?.preview ??
 			this.tabsByIndex[0]?.preview;
 		return pane?.lastRenderedScroll;
 	}
 
 	/** Total overflow rows of the active pane’s last rendered preview (clamped-to-real helper for PageDown). */
 	lastRenderedPreviewTotalHidden(currentTab: number): number | undefined {
-		const pane = this.tabsByIndex[selectActivePreviewPaneIndex(currentTab, this.questions.length)]?.preview ??
+		const pane =
+			this.tabsByIndex[selectActivePreviewPaneIndex(currentTab, this.questions.length)]?.preview ??
 			this.tabsByIndex[0]?.preview;
 		return pane?.lastTotalHidden;
 	}
 
 	/** Whether the active pane's last render was for the given option row (see PreviewPane docs). */
 	previewScrollRenderedFor(optionIndex: number, currentTab: number): boolean {
-		const pane = this.tabsByIndex[selectActivePreviewPaneIndex(currentTab, this.questions.length)]?.preview ??
+		const pane =
+			this.tabsByIndex[selectActivePreviewPaneIndex(currentTab, this.questions.length)]?.preview ??
 			this.tabsByIndex[0]?.preview;
 		return pane?.renderedScrollForIndex === optionIndex;
 	}

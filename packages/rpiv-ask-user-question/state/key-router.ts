@@ -414,23 +414,26 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 		return nextNavOnDown(state, runtime);
 	}
 
-	// PageUp/PageDown scroll the focused option's preview when it overflows its height
+	// PageUp/PageDown (or the keys configured via `previewScrollUpKey` / `previewScrollDownKey`)
+	// scroll the focused option's preview when it overflows its height
 	// budget. Preview content exists only on single-select questions (the schema rejects
 	// previews for multiSelect), and the submit tab / notes / inputMode paths already
 	// returned above, so reaching this point means a question tab with the option list
 	// focused. The action fires unconditionally — a focused option without a preview, or
 	// a preview that fits, simply leaves `previewScroll` clamped at 0 by the reducer.
 	if (!q.multiSelect) {
-		if (matchesKey(data, Key.pageUp)) {
-			// State only ever decreases toward 0 (clamped by the reducer), so PageUp can
+		const upSpec = typeof runtime.previewScrollUpKey === "string" ? runtime.previewScrollUpKey : "pageup";
+		const downSpec = typeof runtime.previewScrollDownKey === "string" ? runtime.previewScrollDownKey : "pagedown";
+		if (upSpec !== "off" && matchesKey(data, upSpec as Parameters<typeof matchesKey>[1])) {
+			// State only ever decreases toward 0 (clamped by the reducer), so scroll-up can
 			// never overscroll — a plain step is enough.
 			return { kind: "preview_scroll", delta: -PREVIEW_SCROLL_STEP };
 		}
-		if (matchesKey(data, Key.pageDown)) {
+		if (downSpec !== "off" && matchesKey(data, downSpec as Parameters<typeof matchesKey>[1])) {
 			// Snap to the rendered bottom: when the last frame reported the focused preview’s
 			// total overflow, step at most that far past the current offset. Reaching the end
-			// swallows further PageDown presses (delta <= 0), so no phantom rows accumulate
-			// and the next PageUp responds immediately.
+			// swallows further scroll-down presses (delta <= 0), so no phantom rows accumulate
+			// and the next scroll-up responds immediately.
 			const max = runtime.previewMaxScroll;
 			const delta =
 				max === undefined

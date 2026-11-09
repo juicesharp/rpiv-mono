@@ -49,6 +49,10 @@ export interface QuestionnaireBuildConfig {
 	collapseKey: string;
 	/** Resolved notes key (`resolveNotesKey` output), threaded to the hints that name it. */
 	notesKey: string;
+	/** Display label for the preview-scroll-up key (e.g. `"PgUp"`, `"Ctrl+U"`). */
+	previewScrollUpLabel?: string;
+	/** Display label for the preview-scroll-down key. */
+	previewScrollDownLabel?: string;
 	/**
 	 * Maps `tui.terminal.rows` to the rows the dialog may render — identity for the
 	 * overlay, a capped share for the inline editor slot (`../presentation.ts`). Applied
@@ -126,6 +130,8 @@ class QuestionnaireBuilder {
 	private readonly getCurrentTab: () => number;
 	private readonly collapseKey: string;
 	private readonly notesKey: string;
+	private readonly previewScrollUpLabel: string | undefined;
+	private readonly previewScrollDownLabel: string | undefined;
 	private readonly rowBudget: (terminalRows: number) => number;
 
 	private readonly selectTheme: WrappingSelectTheme;
@@ -145,6 +151,8 @@ class QuestionnaireBuilder {
 		this.getCurrentTab = config.getCurrentTab;
 		this.collapseKey = config.collapseKey;
 		this.notesKey = config.notesKey;
+		this.previewScrollUpLabel = config.previewScrollUpLabel;
+		this.previewScrollDownLabel = config.previewScrollDownLabel;
 		this.rowBudget = config.rowBudget;
 
 		this.selectTheme = this.makeSelectTheme();
@@ -196,6 +204,8 @@ class QuestionnaireBuilder {
 			theme: this.theme,
 			markdownTheme: this.markdownTheme,
 			notesKey: this.notesKey,
+			scrollUpLabel: this.previewScrollUpLabel,
+			scrollDownLabel: this.previewScrollDownLabel,
 		});
 		const preview = new PreviewPane({
 			question,

@@ -79,4 +79,8 @@ export interface QuestionnaireRuntime {
 	collapseKey: string;
 	/** Key that opens the notes editor (`resolveNotesKey` output: `"n"` by default). */
 	notesKey: string;
+	/** Preview-scroll-up key spec (`resolvePreviewScrollUpKey` output: `"pageup"` by default, `"off"` disables). */
+	previewScrollUpKey: string;
+	/** Preview-scroll-down key spec (`resolvePreviewScrollDownKey` output: `"pagedown"` by default, `"off"` disables). */
+	previewScrollDownKey: string;
 }

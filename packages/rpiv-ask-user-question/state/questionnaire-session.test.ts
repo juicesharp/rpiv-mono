@@ -87,6 +87,8 @@ function makeSession(options: SessionTestOptions = {}) {
 		editInput: options.editInput ?? (async () => undefined),
 		collapseKey: "off",
 		notesKey: "n",
+		previewScrollUpKey: "pageup",
+		previewScrollDownKey: "pagedown",
 		canReopenWhileHidden: false,
 		rowBudget: (rows) => rows,
 	});

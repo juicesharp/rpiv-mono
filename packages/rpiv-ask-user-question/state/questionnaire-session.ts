@@ -24,6 +24,10 @@ export interface QuestionnaireSessionConfig {
 	collapseKey: string;
 	/** Key that opens the notes editor (`resolveNotesKey` output). */
 	notesKey: string;
+	/** Preview-scroll-up key spec (`resolvePreviewScrollUpKey` output). */
+	previewScrollUpKey: string;
+	/** Preview-scroll-down key spec (`resolvePreviewScrollDownKey` output). */
+	previewScrollDownKey: string;
 	/**
 	 * True iff `execute()` registered the raw `ctx.ui.onTerminalInput` listener — the only
 	 * path that can reach a hidden overlay. Gates the `set_overlay_hidden` effect: a host
@@ -79,6 +83,8 @@ export class QuestionnaireSession {
 	private readonly editInput: QuestionnaireSessionConfig["editInput"];
 	private readonly collapseKey: string;
 	private readonly notesKey: string;
+	private readonly previewScrollUpKey: string;
+	private readonly previewScrollDownKey: string;
 	private readonly canReopenWhileHidden: boolean;
 	private inputEditorOpen = false;
 
@@ -103,6 +109,8 @@ export class QuestionnaireSession {
 		this.editInput = config.editInput;
 		this.collapseKey = config.collapseKey;
 		this.notesKey = config.notesKey;
+		this.previewScrollUpKey = config.previewScrollUpKey;
+		this.previewScrollDownKey = config.previewScrollDownKey;
 		this.canReopenWhileHidden = config.canReopenWhileHidden;
 
 		const built = buildQuestionnaire({
@@ -115,6 +123,8 @@ export class QuestionnaireSession {
 			getCurrentTab: () => this.state.currentTab,
 			collapseKey: this.collapseKey,
 			notesKey: this.notesKey,
+			previewScrollUpLabel: formatKeySpecForDisplay(this.previewScrollUpKey),
+			previewScrollDownLabel: formatKeySpecForDisplay(this.previewScrollDownKey),
 			rowBudget: config.rowBudget,
 		});
 
@@ -259,6 +269,8 @@ export class QuestionnaireSession {
 			collapseKey: this.collapseKey,
 			notesKey: this.notesKey,
 			previewMaxScroll: this.previewMaxScrollFor(),
+			previewScrollUpKey: this.previewScrollUpKey,
+			previewScrollDownKey: this.previewScrollDownKey,
 		};
 	}
 
@@ -287,7 +299,7 @@ export class QuestionnaireSession {
 		return this.viewAdapter.lastRenderedPreviewTotalHidden(s.currentTab);
 	}
 
-		private currentItem(): WrappingSelectItem | undefined {
+	private currentItem(): WrappingSelectItem | undefined {
 		const arr = this.itemsByTab[this.state.currentTab] ?? [];
 		return this.state.optionIndex < arr.length ? arr[this.state.optionIndex] : undefined;
 	}
