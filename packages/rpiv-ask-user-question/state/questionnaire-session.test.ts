@@ -72,6 +72,7 @@ interface SessionTestOptions {
 	itemsByTab?: WrappingSelectItem[][];
 	editInput?: (value: string) => Promise<string | undefined>;
 	keybindings?: typeof keybindings;
+	vimKeys?: boolean;
 }
 
 function makeSession(options: SessionTestOptions = {}) {
@@ -87,6 +88,7 @@ function makeSession(options: SessionTestOptions = {}) {
 		editInput: options.editInput ?? (async () => undefined),
 		collapseKey: "off",
 		notesKey: "n",
+		vimKeys: options.vimKeys ?? false,
 		canReopenWhileHidden: false,
 		rowBudget: (rows) => rows,
 	});
@@ -97,6 +99,39 @@ function focusCustomAnswer(session: QuestionnaireSession): void {
 	session.dispatch(DOWN);
 	session.dispatch(DOWN);
 }
+
+describe("QuestionnaireSession — vim navigation", () => {
+	it("answers with the row j moved to once vimKeys is on", () => {
+		const { session, done } = makeSession({ vimKeys: true });
+		session.dispatch("j");
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith({
+			answers: [{ questionIndex: 0, question: "Which?", kind: "option", answer: "B" }],
+			cancelled: false,
+		});
+	});
+
+	it("leaves j and k as text inside Type something.", () => {
+		const { session, done } = makeSession({ vimKeys: true });
+		focusCustomAnswer(session);
+		session.dispatch("jk");
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith({
+			answers: [{ questionIndex: 0, question: "Which?", kind: "custom", answer: "jk" }],
+			cancelled: false,
+		});
+	});
+
+	it("keeps the arrows as the only row navigation by default", () => {
+		const { session, done } = makeSession();
+		session.dispatch("j");
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith({
+			answers: [{ questionIndex: 0, question: "Which?", kind: "option", answer: "A" }],
+			cancelled: false,
+		});
+	});
+});
 
 describe("QuestionnaireSession — custom-answer drafts", () => {
 	it("answers with a row's digit like Enter on it", () => {

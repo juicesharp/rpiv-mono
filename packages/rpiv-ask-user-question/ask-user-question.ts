@@ -7,6 +7,7 @@ import {
 	loadConfig,
 	resolveCollapseKey,
 	resolveNotesKey,
+	resolveVimKeys,
 	validateGuidanceFields,
 } from "./config.ts";
 import {
@@ -221,6 +222,7 @@ function makeSessionFactory(config: {
 	itemsByTab: WrappingSelectItem[][];
 	collapseKey: string;
 	notesKey: string;
+	vimKeys: boolean;
 	canReopenWhileHidden: boolean;
 	presentation: Presentation;
 	sessionRef: SessionRef;
@@ -233,6 +235,7 @@ function makeSessionFactory(config: {
 		itemsByTab,
 		collapseKey,
 		notesKey,
+		vimKeys,
 		canReopenWhileHidden,
 		presentation,
 		sessionRef,
@@ -285,6 +288,7 @@ function makeSessionFactory(config: {
 			},
 			collapseKey,
 			notesKey,
+			vimKeys,
 			canReopenWhileHidden,
 			rowBudget: rowBudgetForHost(tui.terminal, presentation.rowBudget),
 		});
@@ -313,6 +317,7 @@ async function mountQuestionnaire(config: {
 	itemsByTab: WrappingSelectItem[][];
 	collapseKey: string;
 	notesKey: string;
+	vimKeys: boolean;
 	presentation: Presentation;
 	open: OpenQuestionnaire;
 	Session: SessionModule["QuestionnaireSession"];
@@ -398,6 +403,7 @@ async function runTuiPath(pi: ExtensionAPI, ctx: ExtensionContext, typed: Questi
 		const config = loadConfig();
 		const collapseKey = resolveCollapseKey(config);
 		const notesKey = resolveNotesKey(config);
+		const vimKeys = resolveVimKeys(config);
 		const mount = (p: Presentation) =>
 			Promise.race([
 				mountQuestionnaire({
@@ -406,6 +412,7 @@ async function runTuiPath(pi: ExtensionAPI, ctx: ExtensionContext, typed: Questi
 					itemsByTab,
 					collapseKey,
 					notesKey,
+					vimKeys,
 					presentation: p,
 					open,
 					Session: QuestionnaireSession,

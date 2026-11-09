@@ -27,6 +27,20 @@ function matchesNotesKey(data: string, notesKey: unknown): boolean {
 	return data === key || matchesKey(data, key as Parameters<typeof matchesKey>[1]);
 }
 
+const VIM_UP_KEY = "k";
+const VIM_DOWN_KEY = "j";
+
+/**
+ * Vim's `j`/`k` as extra row navigation, once `vimKeys` is on. Matched through pi-tui so
+ * a terminal speaking the Kitty keyboard protocol (CSI-u) reaches them too, and yielded to
+ * a `notesKey` set to the same letter — an explicit notes binding keeps its meaning.
+ */
+function matchesVimNav(data: string, key: string, runtime: QuestionnaireRuntime): boolean {
+	return (
+		runtime.vimKeys === true && runtime.notesKey !== key && matchesKey(data, key as Parameters<typeof matchesKey>[1])
+	);
+}
+
 export type QuestionnaireAction =
 	| { kind: "nav"; nextIndex: number; inputValue: string }
 	| { kind: "input_clear" }
@@ -58,6 +72,17 @@ export interface QuestionnaireKeybindings {
 // pi defaults both names resolve to `enter`, so matching either is equivalent.
 function isConfirm(kb: QuestionnaireKeybindings, data: string): boolean {
 	return kb.matches(data, KEYBIND_CONFIRM) || kb.matches(data, KEYBIND_SUBMIT);
+}
+
+// Up/down row navigation: the `tui.select.*` bindings first, then the optional vim
+// letters. Only option lists and the Submit picker read these — notes and the inline
+// input are routed before row navigation, so `j`/`k` typed there stay text.
+function isListUp(kb: QuestionnaireKeybindings, data: string, runtime: QuestionnaireRuntime): boolean {
+	return kb.matches(data, KEYBIND_UP) || matchesVimNav(data, VIM_UP_KEY, runtime);
+}
+
+function isListDown(kb: QuestionnaireKeybindings, data: string, runtime: QuestionnaireRuntime): boolean {
+	return kb.matches(data, KEYBIND_DOWN) || matchesVimNav(data, VIM_DOWN_KEY, runtime);
 }
 
 export function wrapTab(index: number, total: number): number {
@@ -224,8 +249,8 @@ function routeSubmitTab(
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
 	const tab = tabSwitchAction(data, state, runtime);
 	if (tab) return tab;
-	if (kb.matches(data, KEYBIND_UP) || kb.matches(data, KEYBIND_DOWN)) {
-		const delta = kb.matches(data, KEYBIND_DOWN) ? 1 : -1;
+	if (isListUp(kb, data, runtime) || isListDown(kb, data, runtime)) {
+		const delta = isListDown(kb, data, runtime) ? 1 : -1;
 		const next = wrapTab(state.submitChoiceIndex + delta, 2);
 		return { kind: "submit_nav", nextIndex: (next === 1 ? 1 : 0) as 0 | 1 };
 	}
@@ -387,10 +412,10 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 		return { kind: "notes_enter" };
 	}
 
-	if (kb.matches(data, KEYBIND_UP)) {
+	if (isListUp(kb, data, runtime)) {
 		return prevNavOnUp(state, runtime);
 	}
-	if (kb.matches(data, KEYBIND_DOWN)) {
+	if (isListDown(kb, data, runtime)) {
 		return nextNavOnDown(state, runtime);
 	}
 

@@ -24,6 +24,13 @@ export interface AskUserQuestionConfig {
 	 * key spec in the `collapseKey` format, e.g. `"ctrl+n"`.
 	 */
 	notesKey?: string;
+	/**
+	 * Also move between rows with Vim's `j` (down) and `k` (up). Defaults to `false`.
+	 * Only row navigation changes: `j` and `k` keep typing in the `Type something.`
+	 * row and in the notes editor, and a `notesKey` set to one of them keeps that
+	 * meaning instead.
+	 */
+	vimKeys?: boolean;
 }
 
 // Named keys accepted by pi-tui's `matchesKey` (keys.js switch on the parsed base key).
@@ -84,6 +91,14 @@ export function resolveNotesKey(config: Pick<AskUserQuestionConfig, "notesKey">)
 	if ([...raw].length === 1) return raw;
 	const spec = raw.toLowerCase();
 	return isValidCollapseKeySpec(spec) && !NOTES_KEY_RESERVED.has(spec) ? spec : DEFAULT_NOTES_KEY;
+}
+
+/**
+ * Whether Vim's `j`/`k` join `↓`/`↑` as row navigation. Only the boolean `true` turns it
+ * on: a missing value, or one of the wrong type, keeps the dialog on the arrows alone.
+ */
+export function resolveVimKeys(config: Pick<AskUserQuestionConfig, "vimKeys">): boolean {
+	return config.vimKeys === true;
 }
 
 /** A single-character notes key shows as configured (`n`, not `N`); a spec is display-cased. */

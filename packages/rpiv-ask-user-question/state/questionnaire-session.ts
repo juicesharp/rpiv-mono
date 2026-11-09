@@ -24,6 +24,8 @@ export interface QuestionnaireSessionConfig {
 	collapseKey: string;
 	/** Key that opens the notes editor (`resolveNotesKey` output). */
 	notesKey: string;
+	/** Whether Vim's `j`/`k` also move between rows (`resolveVimKeys` output). */
+	vimKeys: boolean;
 	/**
 	 * True iff `execute()` registered the raw `ctx.ui.onTerminalInput` listener — the only
 	 * path that can reach a hidden overlay. Gates the `set_overlay_hidden` effect: a host
@@ -78,6 +80,7 @@ export class QuestionnaireSession {
 	private readonly editInput: QuestionnaireSessionConfig["editInput"];
 	private readonly collapseKey: string;
 	private readonly notesKey: string;
+	private readonly vimKeys: boolean;
 	private readonly canReopenWhileHidden: boolean;
 	private inputEditorOpen = false;
 
@@ -102,6 +105,7 @@ export class QuestionnaireSession {
 		this.editInput = config.editInput;
 		this.collapseKey = config.collapseKey;
 		this.notesKey = config.notesKey;
+		this.vimKeys = config.vimKeys;
 		this.canReopenWhileHidden = config.canReopenWhileHidden;
 
 		const built = buildQuestionnaire({
@@ -257,6 +261,7 @@ export class QuestionnaireSession {
 			items: this.itemsByTab[this.state.currentTab] ?? [],
 			collapseKey: this.collapseKey,
 			notesKey: this.notesKey,
+			vimKeys: this.vimKeys,
 		};
 	}
 
