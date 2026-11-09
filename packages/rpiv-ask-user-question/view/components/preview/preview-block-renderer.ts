@@ -98,6 +98,18 @@ export class PreviewBlockRenderer {
 	private readonly theme: Theme;
 	private readonly cache: MarkdownContentCache;
 	private readonly notesKey: string;
+	/**
+	 * The scroll offset most recently used by `renderBlock` after clamping to the real
+	 * overflow (0 when the last render had no overflow). Read by `PreviewPane` so the
+	 * session can re-sync its canonical `previewScroll` to the actually rendered offset.
+	 */
+	lastClampedScroll = 0;
+	/**
+	 * Total overflow rows (content rows above the budget) of the last rendered block,
+	 * 0 when the last render fit. Read together with `lastClampedScroll` by the session
+	 * so PageDown can clamp to the real scrollable range (no phantom overscroll).
+	 */
+	lastTotalHidden = 0;
 
 	constructor(config: PreviewBlockRendererConfig) {
 		this.theme = config.theme;
@@ -134,6 +146,11 @@ export class PreviewBlockRenderer {
 	 * the option carries a preview; the row is emitted (empty when gated) whenever the block keeps
 	 * it, so the row count only depends on the fit. Under a `maxRows` allowance the box always closes and its bottom border
 	 * counts the lines left out; with no room for a box the block is empty.
+	 *
+	 * `scrollOffset` (rows, clamped to the actual overflow) scrolls the box body when the
+	 * rendered preview exceeds `contentBudget`: the bottom border then reports remaining
+	 * lines above/below (▲/▼) instead of the plain ✂ marker. Optional for caller convenience
+	 * and test ergonomics — absent means offset 0 (top).
 	 */
 	renderBlock(
 		width: number,
@@ -141,17 +158,26 @@ export class PreviewBlockRenderer {
 		mode: PreviewLayoutMode,
 		affordance: NotesAffordance,
 		maxRows?: number,
+		scrollOffset = 0,
 	): string[] {
 		const maxInnerWidth = innerWidthFor(width);
 		const raw = this.cache.bodyFor(optionIndex, maxInnerWidth);
 		const fit = fitBlock(raw.length, mode, maxRows);
 		if (!fit) return [];
-		const hidden = raw.length - fit.contentRows;
-		const contentLines = hidden > 0 ? raw.slice(0, fit.contentRows) : raw;
+		const totalHidden = Math.max(0, raw.length - fit.contentRows);
+		const offset = totalHidden > 0 ? Math.max(0, Math.min(scrollOffset, totalHidden)) : 0;
+		this.lastClampedScroll = offset;
+		this.lastTotalHidden = totalHidden;
+		const contentLines = totalHidden > 0 ? raw.slice(offset, offset + fit.contentRows) : raw;
+		const canUp = offset > 0;
+		const canDown = offset < totalHidden;
 
 		const { boxWidth } = computeBoxDimensions(contentLines, maxInnerWidth);
 		const colorFn = (s: string) => this.theme.fg("accent", s);
-		const boxedLines = renderBorderedBox(contentLines, boxWidth, colorFn, hidden);
+		const boxedLines = renderBorderedBox(contentLines, boxWidth, colorFn, totalHidden, {
+			up: canUp,
+			down: canDown,
+		});
 		if (!fit.affordance) return boxedLines;
 
 		const text =

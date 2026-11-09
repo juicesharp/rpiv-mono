@@ -60,6 +60,7 @@ function makeState(over: Partial<QuestionnaireState> = {}): QuestionnaireState {
 		submitChoiceIndex: 0,
 		notesDraft: "",
 		collapsed: false,
+		previewScroll: 0,
 		...over,
 	};
 }
@@ -80,6 +81,7 @@ function makeRuntime(over: Partial<QuestionnaireRuntime> = {}): QuestionnaireRun
 		items,
 		collapseKey: "ctrl+]",
 		notesKey: "n",
+		previewMaxScroll: undefined,
 		...over,
 	};
 }

@@ -116,6 +116,7 @@ describe("QuestionnairePropsAdapter.apply", () => {
 			selectedIndex: 1,
 			focused: true,
 			inputMode: false,
+			previewScroll: 0,
 		});
 	});
 

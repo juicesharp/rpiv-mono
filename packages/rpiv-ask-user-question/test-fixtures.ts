@@ -45,6 +45,7 @@ export function makeQuestionnaireState(over: Partial<QuestionnaireState> = {}): 
 		submitChoiceIndex: over.submitChoiceIndex ?? 0,
 		notesDraft: over.notesDraft ?? "",
 		collapsed: over.collapsed ?? false,
+		previewScroll: over.previewScroll ?? 0,
 	};
 }
 

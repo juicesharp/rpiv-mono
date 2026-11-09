@@ -62,6 +62,11 @@ export interface PreviewPaneProps {
 	 * early-returns below so the inline input isn't cramped into the narrow left column.
 	 */
 	inputMode: boolean;
+	/**
+	 * Scroll offset inside the focused option's preview block (rows). Optional for
+	 * construction-time compatibility — absent means "from the top" (offset 0).
+	 */
+	previewScroll?: number;
 }
 
 export interface PreviewPaneConfig {
@@ -98,6 +103,17 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 	 * option, and the preview box shrinks but always closes (#210).
 	 */
 	private rowAllowance: number | undefined;
+	/**
+	 * Render-report channel for scroll de-accumulation: after every preview render,
+	 * `lastRenderedScroll` holds the offset the preview block actually used (clamped)
+	 * and `renderedScrollForIndex` the option index that offset belongs to. The session
+	 * re-syncs its canonical `previewScroll` to this pair before each key dispatch, so
+	 * PageDown/PageUp overscroll past the end can never accumulate phantom rows.
+	 */
+	lastRenderedScroll = 0;
+	renderedScrollForIndex = -1;
+	/** Total overflow rows of the last rendered preview (see PreviewBlockRenderer.lastTotalHidden). */
+	lastTotalHidden = 0;
 	/**
 	 * Cross-tab max left-width getter. Set exactly once by `buildQuestionnaire.injectGlobalLeftWidth`
 	 * before any render. Initialized to a throwing sentinel so missing injection is a hard fail
@@ -147,17 +163,40 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 		this.optionListView.invalidate();
 	}
 
+	private clearScrollReport(): void {
+		this.lastRenderedScroll = 0;
+		this.renderedScrollForIndex = -1;
+		this.lastTotalHidden = 0;
+	}
+
+	private captureScrollReport(): void {
+		this.lastRenderedScroll = this.previewBlock.lastClampedScroll;
+		this.lastTotalHidden = this.previewBlock.lastTotalHidden;
+		this.renderedScrollForIndex = this.props.selectedIndex;
+	}
+
 	render(width: number): string[] {
-		if (this.question.multiSelect === true) return this.optionListView.render(width);
+		if (this.question.multiSelect === true) {
+			this.clearScrollReport();
+			return this.optionListView.render(width);
+		}
 		// Spec: hide the preview pane entirely when no option carries a `preview`.
-		if (!this.previewBlock.hasAnyPreview()) return this.optionListView.render(width);
+		if (!this.previewBlock.hasAnyPreview()) {
+			this.clearScrollReport();
+			return this.optionListView.render(width);
+		}
 		// `inputMode` (typing on the "other" custom-answer row): the preview is irrelevant —
 		// the row sits at index `options.length`, out of bounds for any option's preview — so
 		// render the option list at the full pane width instead of the cramped left column.
 		// Side-by-side + preview block resume verbatim on nav-away (inputMode clears).
-		if (this.props.inputMode) return this.optionListView.render(width);
+		if (this.props.inputMode) {
+			this.clearScrollReport();
+			return this.optionListView.render(width);
+		}
 
-		return this.layout(width).lines;
+		const out = this.layout(width).lines;
+		this.captureScrollReport();
+		return out;
 	}
 
 	/**
@@ -187,9 +226,10 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 		const gap = Array<string>(STACKED_GAP_ROWS).fill("");
 		const allowance = this.rowAllowance;
 		const fullBlock = this.previewBlock.blockHeight(width, selectedIndex, mode);
+		const scroll = this.props.previewScroll ?? 0;
 		if (allowance === undefined || options.length + STACKED_GAP_ROWS + fullBlock <= allowance) {
 			return {
-				lines: [...options, ...gap, ...this.previewBlock.renderBlock(width, selectedIndex, mode, affordance)],
+				lines: [...options, ...gap, ...this.previewBlock.renderBlock(width, selectedIndex, mode, affordance, undefined, scroll)],
 				focus,
 			};
 		}
@@ -200,7 +240,7 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 			Math.min(fullBlock, allowance - STACKED_GAP_ROWS - Math.min(options.length, optionsFloor));
 		const roomy = previewRowsWith(focusRows + 2);
 		const previewRows = roomy >= MIN_BOX_ROWS ? roomy : previewRowsWith(focusRows);
-		const block = this.previewBlock.renderBlock(width, selectedIndex, mode, affordance, previewRows);
+		const block = this.previewBlock.renderBlock(width, selectedIndex, mode, affordance, previewRows, scroll);
 		const optionRows = allowance - (block.length > 0 ? STACKED_GAP_ROWS + block.length : 0);
 		const windowed = windowLines(options, Math.max(1, optionRows), focus, this.theme);
 		return {
@@ -304,6 +344,7 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 			mode,
 			this.notesAffordance(),
 			maxRows,
+			this.props.previewScroll ?? 0,
 		);
 		const boxWidth = Math.max(1, visibleWidth(contentLines[0] ?? ""));
 		const boxAlignedPad = Math.max(PREVIEW_PADDING_LEFT, colWidth - boxWidth);

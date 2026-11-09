@@ -101,6 +101,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		submitChoiceIndex: 0,
 		notesDraft: "",
 		collapsed: false,
+		previewScroll: 0,
 	};
 	const previewPane = over.previewPane ?? stubPreviewPane(["<PREVIEW>"]);
 	const tabsByIndex: ReadonlyArray<TabComponents> =
@@ -281,6 +282,7 @@ describe("Dialog overflow — submit tab", () => {
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,
+			previewScroll: 0,
 			...over,
 		};
 	}
@@ -503,6 +505,7 @@ describe("Dialog overflow — notes open on the Submit tab (NFR-2)", () => {
 			submitChoiceIndex: 0,
 			notesDraft: "",
 			collapsed: false,
+			previewScroll: 0,
 			...over,
 		};
 	}
