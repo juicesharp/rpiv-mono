@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Terminals show that Pi is waiting for your answer while a questionnaire is open.** Terminals and dashboards that read OSC 7501 program status (iTerm2, Rex, Herdr) kept showing Pi as working while a questionnaire waited, so their attention cues never fired. The questionnaire now asks Pi to report `blocked` with kind `question`: inline questionnaires on Pi 1.5.0+, overlay fallbacks on Pi 1.5.1+, and an overlay stays blocked while collapsed or covered by another one. The status says only "Waiting for your answer", in your language, never the question or your answers. Older Pi versions ignore it, and `rpiv:ask-user:blocked` is unchanged. Thanks @derrik-fleming ([#345](https://github.com/juicesharp/rpiv-mono/issues/345)).
+
 ## [2.15.0] - 2026-10-24
 
 ### Added

@@ -32,5 +32,7 @@
   "rpc.custom_answer_title": "Tapez votre réponse :",
 
   "transcript.not_answered": "sans réponse",
-  "transcript.no_answer": "aucune réponse"
+  "transcript.no_answer": "aucune réponse",
+
+  "status.blocked": "En attente de votre réponse"
 }

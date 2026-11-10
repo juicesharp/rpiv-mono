@@ -1,12 +1,14 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
+import { applyLocale, registerStrings } from "@juicesharp/rpiv-i18n";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerAskUserQuestionTool } from "./ask-user-question.ts";
 import { HOST_ALLOCATED_ROWS, resolvePresentation } from "./presentation.ts";
+import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
 import type { QuestionnaireSessionComponent } from "./state/questionnaire-session.ts";
 import type { QuestionnaireResult } from "./tool/types.ts";
 import { HINT_PART_CANCEL } from "./view/dialog-builder.ts";
@@ -17,7 +19,11 @@ type Factory = (
 	keybindings: unknown,
 	done: (result: QuestionnaireResult) => void,
 ) => QuestionnaireSessionComponent;
-type CustomOptions = { overlay?: boolean; overlayOptions?: unknown };
+type CustomOptions = {
+	overlay?: boolean;
+	overlayOptions?: unknown;
+	blocked?: { kind: string; message: string };
+};
 
 const DOWN = "\x1b[B";
 const ENTER = "\r";
@@ -100,13 +106,36 @@ describe("inline presentation", () => {
 		writeConfig(config);
 		const { run, ctx, onTerminalInput } = setup(async () => ({ answers: [], cancelled: true }));
 		await run(twoOptions);
-		expect(vi.mocked(ctx.ui.custom).mock.calls[0]?.[1]).toEqual({ overlay: false });
+		expect(vi.mocked(ctx.ui.custom).mock.calls[0]?.[1]).toEqual({
+			overlay: false,
+			blocked: { kind: "question", message: "Waiting for your answer" },
+		});
 		expect(onTerminalInput).not.toHaveBeenCalled();
+	});
+
+	it.each([1, 4])("reports a fixed, private blocked message for %i questions — #345", async (count) => {
+		const { run } = setup(async (_factory, options) => {
+			expect(options).toEqual({
+				overlay: false,
+				blocked: { kind: "question", message: "Waiting for your answer" },
+			});
+			return { answers: [], cancelled: true };
+		});
+		await run({
+			questions: Array.from({ length: count }, (_, i) => ({
+				...twoOptions.questions[0],
+				question: `Private question ${i + 1}?\nDo not publish this text.`,
+				header: `Private ${i + 1}`,
+			})),
+		});
 	});
 
 	it("collapses to a visible row without a raw listener, and still submits", async () => {
 		const { run, ctx, onTerminalInput } = setup(async (factory, options) => {
-			expect(options).toEqual({ overlay: false });
+			expect(options).toEqual({
+				overlay: false,
+				blocked: { kind: "question", message: "Waiting for your answer" },
+			});
 			let result: QuestionnaireResult | undefined;
 			const component = mount(factory, 24, (answer) => {
 				result = answer;
@@ -215,7 +244,7 @@ describe("inline presentation", () => {
 	it("degrades a concurrent questionnaire to the overlay instead of replacing the mounted one", async () => {
 		const modes: Array<boolean | undefined> = [];
 		const pending: Array<() => void> = [];
-		const { run } = setup(
+		const { run, ctx } = setup(
 			(_factory, options) =>
 				new Promise((resolve) => {
 					modes.push(options?.overlay);
@@ -228,6 +257,9 @@ describe("inline presentation", () => {
 		expect(modes).toEqual([false, true]);
 		for (const settle of pending) settle();
 		await Promise.all([first, second]);
+		const options = vi.mocked(ctx.ui.custom).mock.calls.map((call) => call[1] as CustomOptions);
+		expect(options[0]?.blocked).toEqual({ kind: "question", message: "Waiting for your answer" });
+		expect(options[1]?.blocked).toEqual({ kind: "question", message: "Waiting for your answer" });
 
 		// The slot is free again once both settle.
 		const third = run(twoOptions);
@@ -261,7 +293,9 @@ describe("inline presentation", () => {
 		);
 		const result = await run(twoOptions);
 		expect(calls.map((o) => o?.overlay)).toEqual([false, true]);
+		expect(calls[0]?.blocked).toEqual({ kind: "question", message: "Waiting for your answer" });
 		expect(calls[1]).toMatchObject({ overlayOptions: { anchor: "bottom-center" } });
+		expect(calls[1]?.blocked).toEqual({ kind: "question", message: "Waiting for your answer" });
 		// Stacked over another overlay, collapse must not hide (Pi pops the TOPMOST overlay on
 		// close), so no raw reopen listener is registered and collapse keeps a visible row.
 		expect(onTerminalInput).not.toHaveBeenCalled();
@@ -288,12 +322,53 @@ describe("inline presentation", () => {
 	});
 });
 
+describe("terminal status message", () => {
+	const localesDir = join(dirname(new URL(import.meta.url).pathname), "locales");
+	const locale = (file: string) => JSON.parse(readFileSync(join(localesDir, file), "utf8")) as Record<string, string>;
+
+	afterEach(() => applyLocale("en"));
+
+	it("every locale translates the blocked status message", () => {
+		for (const file of readdirSync(localesDir).filter((f) => f.endsWith(".json"))) {
+			expect(locale(file)["status.blocked"], file).toBeTruthy();
+		}
+	});
+
+	it("reports the blocked status in the active locale", async () => {
+		const uk = locale("uk.json");
+		registerStrings(I18N_NAMESPACE, { uk });
+		applyLocale("uk");
+		const { run, ctx } = setup(async () => ({ answers: [], cancelled: true }));
+		await run(twoOptions);
+		const options = vi.mocked(ctx.ui.custom).mock.calls[0]?.[1] as CustomOptions;
+		expect(options.blocked).toEqual({ kind: "question", message: uk["status.blocked"] });
+	});
+});
+
 describe("overlay fallback", () => {
+	it.each([1, 4])("reports a fixed, private blocked message for %i questions", async (count) => {
+		const { run } = setup(async (_factory, options) => {
+			expect(options?.overlay).toBe(true);
+			expect(options?.blocked).toEqual({ kind: "question", message: "Waiting for your answer" });
+			return { answers: [], cancelled: true };
+		});
+		await withInlineSlotHeld(() =>
+			run({
+				questions: Array.from({ length: count }, (_, i) => ({
+					...twoOptions.questions[0],
+					question: `Private question ${i + 1}?\nDo not publish this text.`,
+					header: `Private ${i + 1}`,
+				})),
+			}).then(() => {}),
+		);
+	});
+
 	it("opens a focused overlay with the raw collapse listener while another questionnaire holds the slot", async () => {
 		const { run, ctx, onTerminalInput, removeListener } = setup(async () => ({ answers: [], cancelled: true }));
 		await withInlineSlotHeld(() => run(twoOptions).then(() => {}));
 		expect(vi.mocked(ctx.ui.custom).mock.calls[0]?.[1]).toMatchObject({
 			overlay: true,
+			blocked: { kind: "question", message: "Waiting for your answer" },
 			overlayOptions: { anchor: "bottom-center", maxHeight: "100%" },
 		});
 		expect(onTerminalInput).toHaveBeenCalledOnce();
