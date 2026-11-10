@@ -121,6 +121,13 @@ type SessionModule = typeof import("./state/questionnaire-session.ts");
 
 type SessionRef = { current: import("./state/questionnaire-session.ts").QuestionnaireSession | null };
 type OverlayHandleRef = { current: OverlayHandle | undefined };
+/**
+ * Pi's `custom()` options plus `blocked` (OSC 7501 program status): honoured inline on Pi 1.5.0+
+ * and for overlays on 1.5.1+, ignored by older Pi, whose typings lack it.
+ */
+type CustomOptions = NonNullable<Parameters<ExtensionContext["ui"]["custom"]>[1]> & {
+	blocked?: { kind: "question"; message: string };
+};
 
 type SessionLoad =
 	| { ok: true; module: SessionModule }
@@ -308,30 +315,28 @@ async function mountQuestionnaire(config: {
 	// may emit `setHidden` only when it was actually registered; otherwise collapse falls
 	// back to the visible one-line row.
 	const canReopenWhileHidden = removeOverlayInputListener !== undefined;
-	// Pi owns the OSC 7501 lifecycle: inline on 1.5.0+, overlays on 1.5.1+.
-	// Keep these inferred so the options also compile against pre-1.5 Pi typings.
-	// Resolved per mount so a /languages switch reaches the next questionnaire.
+	// Pi owns the OSC 7501 lifecycle. Resolved per mount so a /languages switch reaches the next questionnaire.
 	const blocked = { kind: "question" as const, message: t("status.blocked", "Waiting for your answer") };
-	const inlineOptions = { overlay: false, blocked };
+	const options: CustomOptions = presentation.overlay
+		? {
+				overlay: true,
+				blocked,
+				overlayOptions: {
+					anchor: "bottom-center",
+					width: "100%",
+					maxHeight: "100%",
+					margin: { left: 0, right: 0, bottom: 0 },
+				},
+				onHandle: (handle) => {
+					overlayHandleRef.current = handle;
+					sessionRef.current?.setOverlayHandle(handle);
+				},
+			}
+		: { overlay: false, blocked };
 	try {
 		return await ctx.ui.custom<QuestionnaireResult>(
 			makeSessionFactory({ ...config, canReopenWhileHidden, sessionRef }),
-			presentation.overlay
-				? {
-						...inlineOptions,
-						overlay: true,
-						overlayOptions: {
-							anchor: "bottom-center",
-							width: "100%",
-							maxHeight: "100%",
-							margin: { left: 0, right: 0, bottom: 0 },
-						},
-						onHandle: (handle) => {
-							overlayHandleRef.current = handle;
-							sessionRef.current?.setOverlayHandle(handle);
-						},
-					}
-				: inlineOptions,
+			options,
 		);
 	} finally {
 		removeOverlayInputListener?.();
