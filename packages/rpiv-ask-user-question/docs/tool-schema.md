@@ -114,7 +114,8 @@ Questionnaires request `blocked` program status with kind `question` through
 on Pi 1.5.1+. Pi manages the OSC 7501 record and its cleanup. Overlay status remains blocked
 while an unanswered questionnaire is hidden or covered by another overlay; closing one
 questionnaire does not clear another pending question's status. The fixed message,
-`Waiting for your answer`, keeps question and answer text out of the terminal status record.
+`Waiting for your answer` (translated as `status.blocked`), keeps question and answer text out of
+the terminal status record.
 
 Older Pi versions still render questionnaires but ignore unsupported `blocked` metadata.
 `rpiv:ask-user:blocked` remains available for status integrations on all presentation paths.

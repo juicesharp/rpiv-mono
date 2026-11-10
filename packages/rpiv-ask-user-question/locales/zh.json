@@ -34,5 +34,7 @@
   "rpc.custom_answer_title": "输入你的回答：",
 
   "transcript.not_answered": "未回答",
-  "transcript.no_answer": "无回答"
+  "transcript.no_answer": "无回答",
+
+  "status.blocked": "等待你的回答"
 }

@@ -310,7 +310,8 @@ async function mountQuestionnaire(config: {
 	const canReopenWhileHidden = removeOverlayInputListener !== undefined;
 	// Pi owns the OSC 7501 lifecycle: inline on 1.5.0+, overlays on 1.5.1+.
 	// Keep these inferred so the options also compile against pre-1.5 Pi typings.
-	const blocked = { kind: "question" as const, message: "Waiting for your answer" };
+	// Resolved per mount so a /languages switch reaches the next questionnaire.
+	const blocked = { kind: "question" as const, message: t("status.blocked", "Waiting for your answer") };
 	const inlineOptions = { overlay: false, blocked };
 	try {
 		return await ctx.ui.custom<QuestionnaireResult>(

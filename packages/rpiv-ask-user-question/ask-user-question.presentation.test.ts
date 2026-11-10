@@ -1,12 +1,14 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
+import { applyLocale, registerStrings } from "@juicesharp/rpiv-i18n";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerAskUserQuestionTool } from "./ask-user-question.ts";
 import { HOST_ALLOCATED_ROWS, resolvePresentation } from "./presentation.ts";
+import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
 import type { QuestionnaireSessionComponent } from "./state/questionnaire-session.ts";
 import type { QuestionnaireResult } from "./tool/types.ts";
 import { HINT_PART_CANCEL } from "./view/dialog-builder.ts";
@@ -317,6 +319,29 @@ describe("inline presentation", () => {
 		fail = false;
 		await run(twoOptions);
 		expect(modes).toEqual([false, false]);
+	});
+});
+
+describe("terminal status message", () => {
+	const localesDir = join(dirname(new URL(import.meta.url).pathname), "locales");
+	const locale = (file: string) => JSON.parse(readFileSync(join(localesDir, file), "utf8")) as Record<string, string>;
+
+	afterEach(() => applyLocale("en"));
+
+	it("every locale translates the blocked status message", () => {
+		for (const file of readdirSync(localesDir).filter((f) => f.endsWith(".json"))) {
+			expect(locale(file)["status.blocked"], file).toBeTruthy();
+		}
+	});
+
+	it("reports the blocked status in the active locale", async () => {
+		const uk = locale("uk.json");
+		registerStrings(I18N_NAMESPACE, { uk });
+		applyLocale("uk");
+		const { run, ctx } = setup(async () => ({ answers: [], cancelled: true }));
+		await run(twoOptions);
+		const options = vi.mocked(ctx.ui.custom).mock.calls[0]?.[1] as CustomOptions;
+		expect(options.blocked).toEqual({ kind: "question", message: uk["status.blocked"] });
 	});
 });
 

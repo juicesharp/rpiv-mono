@@ -35,5 +35,7 @@
   "rpc.custom_answer_title": "Type your answer:",
 
   "transcript.not_answered": "not answered",
-  "transcript.no_answer": "no answer"
+  "transcript.no_answer": "no answer",
+
+  "status.blocked": "Waiting for your answer"
 }
