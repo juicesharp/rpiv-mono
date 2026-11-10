@@ -109,15 +109,16 @@ in `details.globalNote`.
 
 ## Terminal program status
 
-On Pi 1.5.0+, inline questionnaires request `blocked` program status with kind `question`
-through `ctx.ui.custom()`. Pi manages the OSC 7501 record while the component is mounted
-and restores its status when the component closes. The fixed message, `Waiting for your
-answer`, keeps question and answer text out of the terminal status record.
+Questionnaires request `blocked` program status with kind `question` through
+`ctx.ui.custom()`: supported for inline questionnaires on Pi 1.5.0+ and overlay fallbacks
+on Pi 1.5.1+. Pi manages the OSC 7501 record and its cleanup. Overlay status remains blocked
+while an unanswered questionnaire is hidden or covered by another overlay; closing one
+questionnaire does not clear another pending question's status. The fixed message,
+`Waiting for your answer`, keeps question and answer text out of the terminal status record.
 
-Older Pi versions ignore this option. Overlay fallbacks do not request it because Pi
-currently supports it only for inline components; `rpiv:ask-user:blocked` remains available
-for status integrations on all presentation paths. Progress reporting is not exposed by
-Pi's `blocked` option.
+Older Pi versions still render questionnaires but ignore unsupported `blocked` metadata.
+`rpiv:ask-user:blocked` remains available for status integrations on all presentation paths.
+Progress reporting is not exposed by Pi's `blocked` option.
 
 ## Event contract
 

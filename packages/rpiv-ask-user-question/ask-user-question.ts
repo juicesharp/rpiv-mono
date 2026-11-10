@@ -308,17 +308,16 @@ async function mountQuestionnaire(config: {
 	// may emit `setHidden` only when it was actually registered; otherwise collapse falls
 	// back to the visible one-line row.
 	const canReopenWhileHidden = removeOverlayInputListener !== undefined;
-	// Pi 1.5+ owns the OSC 7501 lifecycle for inline prompts; older hosts ignore `blocked`.
-	// Keep this inferred so the options also compile against pre-1.5 Pi typings.
-	const inlineOptions = {
-		overlay: false,
-		blocked: { kind: "question" as const, message: "Waiting for your answer" },
-	};
+	// Pi owns the OSC 7501 lifecycle: inline on 1.5.0+, overlays on 1.5.1+.
+	// Keep these inferred so the options also compile against pre-1.5 Pi typings.
+	const blocked = { kind: "question" as const, message: "Waiting for your answer" };
+	const inlineOptions = { overlay: false, blocked };
 	try {
 		return await ctx.ui.custom<QuestionnaireResult>(
 			makeSessionFactory({ ...config, canReopenWhileHidden, sessionRef }),
 			presentation.overlay
 				? {
+						...inlineOptions,
 						overlay: true,
 						overlayOptions: {
 							anchor: "bottom-center",
