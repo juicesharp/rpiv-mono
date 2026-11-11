@@ -15,6 +15,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Completed rows no longer vanish when a subagent starts.** A completed task stays visible until the foreground session starts its next agent run, but a child session's start, such as a subagent's, also cleared them. Only the foreground session's own run hides them now. When the hidden rows were the last ones, the panel now disappears instead of leaving an empty frame. Thanks @AxelMrak ([#326](https://github.com/juicesharp/rpiv-mono/pull/326)).
 
+### Changed
+
+- **The `action` parameter now has a schema description.** It was the only `todo` parameter without one. The description says that every call needs it and what each action does, so a model is less likely to send the task fields alone on its first call and be rejected. Thanks @JohannesBertens ([#320](https://github.com/juicesharp/rpiv-mono/pull/320)).
+
 ## [2.15.0] - 2026-10-24
 
 ### Fixed

@@ -132,7 +132,10 @@ const CreateTaskInputSchema = Type.Object({
 });
 
 export const TodoParamsSchema = Type.Object({
-	action: StringEnum(["create", "update", "list", "get", "delete", "clear"] as const),
+	action: StringEnum(["create", "update", "list", "get", "delete", "clear"] as const, {
+		description:
+			"Required in every call — the operation to perform: create (one task by subject, or several with tasks[]), update (change an existing task by id), list, get (one task by id), delete (tombstone by id), clear (reset all).",
+	}),
 	subject: Type.Optional(
 		Type.String({
 			description: "Task subject line (required for create unless tasks[] is set)",

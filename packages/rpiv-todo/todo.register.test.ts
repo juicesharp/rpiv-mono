@@ -67,6 +67,12 @@ describe("registerTodoTool — registration shape", () => {
 			tasks: [{ subject: "a" }],
 		});
 	});
+
+	it("describes the required `action` discriminator", () => {
+		const { tool } = setup();
+		const schema = tool.parameters as { properties?: Record<string, { description?: string }> };
+		expect(schema.properties?.action?.description).toMatch(/^Required in every call/);
+	});
 });
 
 describe("registerTodoTool — execute mutates module state", () => {
