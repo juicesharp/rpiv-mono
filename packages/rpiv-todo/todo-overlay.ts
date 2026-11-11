@@ -201,8 +201,9 @@ export class TodoOverlay {
 
 		const totalHidden = layout.hiddenCompleted + layout.truncatedTail;
 		const overflowParts: string[] = [];
-		if (layout.hiddenCompleted > 0) overflowParts.push(`${layout.hiddenCompleted} ${formatStatusLabel("completed")}`);
-		if (layout.truncatedTail > 0) overflowParts.push(`${layout.truncatedTail} ${formatStatusLabel("pending")}`);
+		if (counts.completed > 0) overflowParts.push(`${counts.completed} ${formatStatusLabel("completed")}`);
+		if (counts.inProgress > 0) overflowParts.push(`${counts.inProgress} ${formatStatusLabel("in_progress")}`);
+		if (counts.pending > 0) overflowParts.push(`${counts.pending} ${formatStatusLabel("pending")}`);
 		const more = t("overlay.more", OVERLAY_MORE);
 		const summary =
 			overflowParts.length > 0 ? `+${totalHidden} ${more} (${overflowParts.join(", ")})` : `+${totalHidden} ${more}`;

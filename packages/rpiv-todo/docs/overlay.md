@@ -60,7 +60,8 @@ against it. When there are more tasks than fit:
    are the last completed rows to go;
 3. if the unfinished tasks alone still overflow, the tail of that list is
    truncated;
-4. the last row becomes `+N more (X completed, Y pending)`.
+4. the last row becomes `+N more (X completed, Y in progress, Z pending)`
+   reflecting the overall task counts.
 
 Use Pi's tool-output expansion shortcut (`ctrl+o` by default) to expand the
 widget and show every task. Collapsing Pi's tool output reapplies the configured

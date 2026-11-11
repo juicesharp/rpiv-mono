@@ -184,11 +184,13 @@ describe("TodoOverlay — overflow collapse", () => {
 		// Last row is the trailing spacer; the summary sits just above it
 		expect(lines[lines.length - 1]).toBe("");
 		expect(lines[lines.length - 2]).toContain("+2 more");
-		expect(lines[lines.length - 2]).toContain("2 completed");
+		expect(lines[lines.length - 2]).toContain("4 completed");
+		expect(lines[lines.length - 2]).toContain("8 pending");
 	});
 
 	it("truncates pending tail when dropping all completed isn't enough", async () => {
 		// 12 pending tasks → budget=10 → visible first 10, 2 pending truncated.
+		// Summary reflects total counts: "+2 more (12 pending)".
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
 		for (let i = 1; i <= 12; i++) actions.push({ action: "create", subject: `t${i}` });
 		const { widget } = await setup(actions);
@@ -197,14 +199,14 @@ describe("TodoOverlay — overflow collapse", () => {
 		expect(lines[lines.length - 1]).toBe("");
 		const summary = lines[lines.length - 2];
 		expect(summary).toContain("+2 more");
-		expect(summary).toContain("2 pending");
+		expect(summary).toContain("12 pending");
 		expect(summary).not.toContain("completed");
 	});
 
 	it("summary contains both 'completed' and 'pending' when mixed overflow", async () => {
 		// 12 pending + 3 completed = 15 total. budget=10. All 12 pending won't
 		// fit — visible = first 10 pending, truncatedTail = 2 pending, hidden
-		// completed = 3. Summary: "+5 more (3 completed, 2 pending)".
+		// completed = 3. Summary reflects total counts: "+5 more (3 completed, 12 pending)".
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
 		for (let i = 1; i <= 12; i++) actions.push({ action: "create", subject: `p${i}` });
 		for (let i = 13; i <= 15; i++) {
@@ -216,7 +218,24 @@ describe("TodoOverlay — overflow collapse", () => {
 		const summary = widget.render(200).slice(-2)[0];
 		expect(summary).toContain("+5 more");
 		expect(summary).toContain("3 completed");
-		expect(summary).toContain("2 pending");
+		expect(summary).toContain("12 pending");
+	});
+
+	it("summary reflects total counts including in_progress across overflow", async () => {
+		// 20 tasks: 5 completed, 2 in_progress, 13 pending. budget=10.
+		// Total hidden = 10. Summary reflects total counts: "+10 more (5 completed, 2 in progress, 13 pending)".
+		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
+		for (let i = 1; i <= 20; i++) actions.push({ action: "create", subject: `task ${i}` });
+		for (let i = 1; i <= 5; i++) actions.push({ action: "update", id: i, status: "completed" });
+		actions.push({ action: "update", id: 6, status: "in_progress" });
+		actions.push({ action: "update", id: 7, status: "in_progress" });
+
+		const { widget } = await setup(actions);
+		const summary = widget.render(200).slice(-2)[0];
+		expect(summary).toContain("+10 more");
+		expect(summary).toContain("5 completed");
+		expect(summary).toContain("2 in progress");
+		expect(summary).toContain("13 pending");
 	});
 
 	it("hides overflowed completed tasks on the next agent turn too", async () => {
