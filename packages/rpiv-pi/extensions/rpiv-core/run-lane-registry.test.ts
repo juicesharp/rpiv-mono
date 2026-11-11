@@ -23,7 +23,7 @@ import {
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
-	seedPendingUnits,
+	seedUnits,
 	setCurrentSession,
 	setFocusedRun,
 	setLaneAbort,
@@ -747,10 +747,10 @@ describe("run-lane-registry", () => {
 		});
 	});
 
-	describe("seedPendingUnits — pending fan-out seed", () => {
+	describe("seedUnits — pending fan-out seed", () => {
 		it("seeds N pending unit sub-rows keyed by declared array position", () => {
 			recordRun("run-1", "ship");
-			seedPendingUnits("run-1", [
+			seedUnits("run-1", [
 				{ index: 0, label: "phase 1/3" },
 				{ index: 1, label: "phase 2/3" },
 				{ index: 2, label: "phase 3/3" },
@@ -761,7 +761,7 @@ describe("run-lane-registry", () => {
 
 		it("a pending unit flips running on setUnitStarted on the SAME key (the declared index)", () => {
 			recordRun("run-1", "ship");
-			seedPendingUnits("run-1", [
+			seedUnits("run-1", [
 				{ index: 0, label: "phase 1/2" },
 				{ index: 1, label: "phase 2/2" },
 			]);
@@ -775,7 +775,7 @@ describe("run-lane-registry", () => {
 
 		it("sweepRunningUnits flips a never-started pending unit terminal (fail/abort-before-start)", () => {
 			recordRun("run-1", "ship");
-			seedPendingUnits("run-1", [
+			seedUnits("run-1", [
 				{ index: 0, label: "p0" },
 				{ index: 1, label: "p1" },
 			]);
@@ -787,7 +787,7 @@ describe("run-lane-registry", () => {
 
 		it("retireRun flips a never-started pending unit terminal (→ done)", () => {
 			recordRun("run-1", "ship");
-			seedPendingUnits("run-1", [{ index: 0, label: "p0" }]);
+			seedUnits("run-1", [{ index: 0, label: "p0" }]);
 			retireRun("run-1", "completed"); // successful run, unit 0 never fired onUnitStart
 			expect(getUnit("run-1", 0)?.status).toBe("done"); // pending → done, not stuck spinning
 		});
@@ -795,7 +795,7 @@ describe("run-lane-registry", () => {
 		it("is a no-op on a missing run", () => {
 			const listener = vi.fn();
 			subscribeLanes(listener);
-			seedPendingUnits("nope", [{ index: 0, label: "x" }]);
+			seedUnits("nope", [{ index: 0, label: "x" }]);
 			expect(getLane("nope")).toBeUndefined();
 			expect(listener).not.toHaveBeenCalled();
 		});
@@ -997,7 +997,7 @@ describe("run-lane-registry", () => {
 					total: 150,
 				}),
 			);
-			foldStageUsage("run-1");
+			clearUnitLanes("run-1"); // stage transition — banks the units' tokens, then drops them
 			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(100);
 
 			// Resume re-records the SAME id — units are cleared but stageUsage survives.
@@ -1005,6 +1005,26 @@ describe("run-lane-registry", () => {
 			expect(getLane("run-1")?.status).toBe("running"); // reactivated
 			expect(getLane("run-1")?.units.size).toBe(0); // prior units dropped
 			expect(getLane("run-1")?.stageUsage.get("plan")?.input).toBe(100); // survived
+		});
+
+		it("resume reactivation folds the failed attempt's unit tokens into stageUsage before dropping the units", () => {
+			// A failed stage reaches no further stage transition, so its units' tokens sit only on
+			// the retained unit rows until the resume reactivation banks them.
+			const usage = { input: 1000, output: 10, cacheRead: 0, cacheWrite: 0, total: 1010 };
+			recordRun("run-1", "ship");
+			setLaneProgress("run-1", { stageName: "implement", phase: "running" });
+			for (const i of [0, 1, 2]) captureFinalSnapshot("run-1", i, makeUsageSession(`s${i}`, usage));
+			retireRun("run-1", "failed", "boom");
+
+			recordRun("run-1", "ship"); // resume
+			expect(getLane("run-1")?.units.size).toBe(0);
+			expect(getLane("run-1")?.stageUsage.get("implement")).toMatchObject({ input: 3000, output: 30, total: 3030 });
+
+			// The resumed attempt's units add on top at the next transition — spend across both attempts.
+			setLaneProgress("run-1", { stageName: "implement", phase: "running" });
+			captureFinalSnapshot("run-1", 2, makeUsageSession("s2b", usage));
+			clearUnitLanes("run-1");
+			expect(getLane("run-1")?.stageUsage.get("implement")?.input).toBe(4000);
 		});
 
 		it("stageUsage survives retireRun (folded tokens retained after units are gone)", () => {

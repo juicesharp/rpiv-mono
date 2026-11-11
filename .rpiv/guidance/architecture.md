@@ -42,13 +42,14 @@ rpiv-mono/
 | `npm run check:files -- <paths...>` | Path-scoped Biome (`--write --error-on-warnings`) — rewrites ONLY the paths it is given; **the path-scoped auto-fix lint form** a phase's `#### Automated Verification:` uses to stay write-scoped to its own `files:` set |
 | `npm test` | Vitest at root (single runner; `include: ['packages/*/**/*.test.ts']` walks every package) |
 | `npm run build:site` | Build the Astro marketing site (`packages/rpiv-site`) — separate from publish |
-| `npm run coverage` | Vitest with V8 coverage |
+| `npm run coverage` | Vitest with V8 coverage (skips `OUTSIDE_COVERAGE_TESTS` in `vitest.config.ts`) |
+| `npm run test:outside-coverage` | Tests that load packages by path through Pi's real loader; kept out of coverage |
 | `node scripts/release.mjs <patch\|minor\|major\|x.y.z>` | Cut a lockstep release — see `.rpiv/guidance/scripts/architecture.md` |
 | `node scripts/sync-versions.js` | Verify lockstep + rewrite intra-monorepo deps to `^<version>` |
 
 Husky hooks (local-only):
 - `pre-commit` — runs `npm run check:decision-codes` (fail-fast contamination guard) then `npm run check:file-sizes` (fail-fast size-growth ratchet), then `npm run check` (format + typecheck); restages files biome may have rewritten
-- `pre-push` — runs `npm run coverage` (full test + coverage thresholds gate)
+- `pre-push` — runs `npm run coverage` (full test + coverage thresholds gate), then `npm run test:outside-coverage`
 
 # Conventions
 

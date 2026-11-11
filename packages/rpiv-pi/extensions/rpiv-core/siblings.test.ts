@@ -68,6 +68,11 @@ describe("SIBLINGS registry", () => {
 		expect(subagentsEntry?.matches.test("@gotgenes/pi-subagents-utils")).toBe(false);
 	});
 
+	it("marks rpiv-advisor optional and every other sibling required (#167)", () => {
+		const optional = SIBLINGS.filter((s) => s.optional === true).map((s) => s.pkg);
+		expect(optional).toEqual(["npm:@juicesharp/rpiv-advisor"]);
+	});
+
 	it("every entry has non-empty pkg + provides", () => {
 		for (const s of SIBLINGS) {
 			expect(s.pkg.length).toBeGreaterThan(0);

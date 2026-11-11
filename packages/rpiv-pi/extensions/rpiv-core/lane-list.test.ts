@@ -463,12 +463,10 @@ describe("renderStageBreakdown — per-stage token breakdown", () => {
 
 	it("renders a prior stage from folded stageUsage (units already cleared)", () => {
 		recordRun("run-1", "ship");
-		// Stage A: fold its tokens, then clear units (simulating a transition).
+		// Stage A, then a transition: clearUnitLanes banks its tokens into stageUsage and empties units.
 		setLaneProgress("run-1", { stageName: "plan", phase: "running" });
 		seedOrchestratorUsage("run-1", 1000, 0);
-		foldStageUsage("run-1"); // → stageUsage["plan"] = {input:1000,...}
-		// clearUnitLanes empties units (the transition always pairs fold+clear); stageUsage survives.
-		clearUnitLanes("run-1");
+		clearUnitLanes("run-1"); // → stageUsage["plan"] = {input:1000,...}
 		const lines = renderStageBreakdown(identityTheme, W, "run-1");
 		const planLine = lines.find((l) => l.includes("plan")) ?? "";
 		expect(planLine).toContain("plan");
@@ -757,8 +755,7 @@ describe("renderLaneList — run grand total", () => {
 		recordRun("run-1", "ship", { workflow: "ship" });
 		setLaneProgress("run-1", { stageName: "plan", phase: "running" });
 		seedOrchestratorUsage("run-1", 1000, 500); // stage A: ↑1.0k ↓500
-		foldStageUsage("run-1"); // the bridge's transition pairing: fold …
-		clearUnitLanes("run-1"); // … then clear
+		clearUnitLanes("run-1"); // stage transition — banks stage A's tokens, then drops its units
 		setLaneProgress("run-1", { stageName: "build", phase: "running" });
 		seedOrchestratorUsage("run-1", 200, 100); // stage B (current, live units): ↑200 ↓100
 		const lines = renderLaneList(identityTheme, W, { active: false, selection: 0, frame: 0, laneCap: LANE_CAP });

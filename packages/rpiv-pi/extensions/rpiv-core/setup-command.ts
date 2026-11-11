@@ -31,6 +31,11 @@ const msgInstalling = (pkg: string) => `Installing ${pkg}…`;
 const msgInstalledLine = (pkgs: string[]) => `✓ Installed: ${pkgs.join(", ")}`;
 const msgFailedHeader = () => `✗ Failed:`;
 const msgFailedLine = (pkg: string, err: string) => `  ${pkg}: ${err}`;
+const msgOptionalHint = (optional: SiblingPlugin[]) =>
+	[
+		"Optional, not installed — add any with `pi install`:",
+		...optional.map((o) => `  • pi install ${o.pkg}  (provides ${o.provides})`),
+	].join("\n");
 const msgLegacyPruned = (entries: string[]) =>
 	`Removed legacy subagent library from settings.json: ${entries.join(", ")}. Run \`pi uninstall\` to free disk space, then restart Pi.`;
 
@@ -39,7 +44,7 @@ type UI = {
 	confirm: (title: string, body: string) => Promise<boolean>;
 };
 
-function buildConfirmBody(missing: SiblingPlugin[], legacyEntries: string[]): string {
+function buildConfirmBody(missing: SiblingPlugin[], optional: SiblingPlugin[], legacyEntries: string[]): string {
 	const lines: string[] = ["rpiv-pi will apply the following changes:", ""];
 	if (missing.length > 0) {
 		lines.push("Install via `pi install`:");
@@ -50,6 +55,10 @@ function buildConfirmBody(missing: SiblingPlugin[], legacyEntries: string[]): st
 	if (legacyEntries.length > 0) {
 		lines.push(`Remove from \`${settingsPath}\` (deprecated):`);
 		for (const entry of legacyEntries) lines.push(`  • ${entry}`);
+		lines.push("");
+	}
+	if (optional.length > 0) {
+		lines.push(msgOptionalHint(optional));
 		lines.push("");
 	}
 	lines.push(`Your \`${settingsPath}\` will be updated. Proceed?`);
@@ -73,14 +82,21 @@ async function handleSetupCommand(
 		return;
 	}
 
-	const missing = findMissingSiblings(readLoadedSiblingSources(pi));
+	// Optional siblings are named, never installed: the confirm is all-or-nothing, so
+	// installing them would override a user who left one out on purpose (#167).
+	const allMissing = findMissingSiblings(readLoadedSiblingSources(pi));
+	const missing = allMissing.filter((s) => !s.optional);
+	const optional = allMissing.filter((s) => s.optional);
 	const legacyEntries = findLegacySiblings();
 	if (missing.length === 0 && legacyEntries.length === 0) {
-		ctx.ui.notify(MSG_NOTHING_TO_DO, "info");
+		ctx.ui.notify(
+			optional.length > 0 ? `${MSG_NOTHING_TO_DO}\n\n${msgOptionalHint(optional)}` : MSG_NOTHING_TO_DO,
+			"info",
+		);
 		return;
 	}
 
-	const confirmed = await ctx.ui.confirm(MSG_CONFIRM_TITLE, buildConfirmBody(missing, legacyEntries));
+	const confirmed = await ctx.ui.confirm(MSG_CONFIRM_TITLE, buildConfirmBody(missing, optional, legacyEntries));
 	if (!confirmed) {
 		ctx.ui.notify(MSG_CANCELLED, "info");
 		return;

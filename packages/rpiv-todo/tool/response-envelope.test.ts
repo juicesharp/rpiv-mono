@@ -14,7 +14,7 @@ const t = (over: Partial<Task> & { id: number; subject: string }): Task => ({ st
 describe("formatContent", () => {
 	it("create — 'Created #id: subject (pending)'", () => {
 		const state = stateWith(t({ id: 1, subject: "alpha" }));
-		expect(formatContent({ kind: "create", taskId: 1 }, state)).toBe("Created #1: alpha (pending)");
+		expect(formatContent({ kind: "create", taskIds: [1] }, state)).toBe("Created #1: alpha (pending)");
 	});
 
 	it("update — emits transition tuple when statuses differ", () => {
@@ -111,9 +111,16 @@ describe("formatContent", () => {
 		);
 	});
 
-	it("create — defensive fallback when op.taskId is unknown to state", () => {
+	it("create — defensive fallback when an op.taskIds entry is unknown to state", () => {
 		// Defensive branch — exercises the early-return when find() returns undefined.
-		expect(formatContent({ kind: "create", taskId: 999 }, stateWith())).toBe("Created #999");
+		expect(formatContent({ kind: "create", taskIds: [999] }, stateWith())).toBe("Created #999");
+	});
+
+	it("create — one Created line per taskIds entry", () => {
+		const state = stateWith(t({ id: 1, subject: "alpha" }), t({ id: 2, subject: "beta" }));
+		expect(formatContent({ kind: "create", taskIds: [1, 2] }, state)).toBe(
+			"Created #1: alpha (pending)\nCreated #2: beta (pending)",
+		);
 	});
 
 	it("error — 'Error: <message>'", () => {
@@ -126,7 +133,7 @@ describe("formatContent", () => {
 describe("buildToolResult", () => {
 	it("envelope.details mirrors the canonical TaskDetails shape on success", () => {
 		const state = stateWith(t({ id: 1, subject: "alpha" }));
-		const env = buildToolResult("create", { subject: "alpha" }, state, { kind: "create", taskId: 1 });
+		const env = buildToolResult("create", { subject: "alpha" }, state, { kind: "create", taskIds: [1] });
 		expect(env).toEqual({
 			content: [{ type: "text", text: "Created #1: alpha (pending)" }],
 			details: { action: "create", params: { subject: "alpha" }, tasks: state.tasks, nextId: state.nextId },
@@ -156,7 +163,7 @@ describe("formatContent — control characters in model-controlled fields", () =
 		const state = stateWith(
 			t({ id: 1, subject: "evil\u001b[31m", status: "in_progress", activeForm: "clear\u001b[2Jing" }),
 		);
-		expect(formatContent({ kind: "create", taskId: 1 }, state)).toBe("Created #1: evil (pending)");
+		expect(formatContent({ kind: "create", taskIds: [1] }, state)).toBe("Created #1: evil (pending)");
 		expect(formatContent({ kind: "list", includeDeleted: false }, state)).toBe("[in_progress] #1 evil (clearing)");
 	});
 });

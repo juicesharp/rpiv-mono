@@ -14,7 +14,7 @@ import {
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
-	seedPendingUnits,
+	seedUnits,
 	setCurrentSession,
 	setLaneProgress,
 	setLaneStatus,
@@ -787,7 +787,7 @@ describe("LaneDock — fanout unit sub-rows", () => {
 	it("a pending unit sub-row renders the ○ glyph + 'pending' tail (not ✓)", () => {
 		recordRun("run-1", "ship");
 		// Seed a pending unit directly (the onLoopStart fan-out seed); no onUnitStart yet.
-		seedPendingUnits("run-1", [{ index: 0, label: "phase 1/3" }]);
+		seedUnits("run-1", [{ index: 0, label: "phase 1/3" }]);
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");

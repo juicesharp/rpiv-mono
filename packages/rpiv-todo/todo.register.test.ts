@@ -45,6 +45,27 @@ describe("registerTodoTool — registration shape", () => {
 		for (const action of ["create", "update", "list", "get", "delete", "clear"]) {
 			expect(raw).toContain(action);
 		}
+		expect(raw).toContain("tasks");
+	});
+
+	it("requires subject on every tasks[] item in the schema", () => {
+		const { tool } = setup();
+		const items = (tool.parameters as { properties: { tasks: { items: { required?: string[] } } } }).properties.tasks
+			.items;
+		expect(items.required).toEqual(["subject"]);
+	});
+
+	it("names tasks[] batch create in the tool description", () => {
+		const { tool } = setup();
+		expect(tool.description).toContain("tasks[]");
+	});
+
+	it("decodes a double-encoded tasks[] before validation", () => {
+		const { tool } = setup();
+		expect(tool.prepareArguments?.({ action: "create", tasks: '[{"subject":"a"}]' })).toEqual({
+			action: "create",
+			tasks: [{ subject: "a" }],
+		});
 	});
 
 	it("describes the required `action` discriminator and leads guidance with a create example", () => {
@@ -67,6 +88,20 @@ describe("registerTodoTool — execute mutates module state", () => {
 		expect((r1!.details as TaskDetails).action).toBe("create");
 		const r2 = await call(tool, { action: "list" });
 		expect(r2?.content[0]).toMatchObject({ text: expect.stringContaining("first") });
+	});
+
+	it("create with tasks[] seeds every row in one call", async () => {
+		const { tool } = setup();
+		const r = await call(tool, {
+			action: "create",
+			tasks: [{ subject: "Inspect existing implementation" }, { subject: "Add tests for batch create" }],
+		});
+		expect(r?.content[0]).toMatchObject({
+			text: "Created #1: Inspect existing implementation (pending)\nCreated #2: Add tests for batch create (pending)",
+		});
+		const d = r?.details as TaskDetails;
+		expect(d.tasks.map((t) => t.subject)).toEqual(["Inspect existing implementation", "Add tests for batch create"]);
+		expect(d.nextId).toBe(3);
 	});
 
 	it("clear resets module state and nextId", async () => {
@@ -123,6 +158,16 @@ describe("registerTodoTool — renderCall", () => {
 		expect(text).toContain("hello");
 	});
 
+	it("create action with tasks[] renders the batch size", () => {
+		const { tool } = setup();
+		const node = tool.renderCall?.(
+			{ action: "create", tasks: [{ subject: "a" }, { subject: "b" }] } as never,
+			theme,
+			undefined as never,
+		) as unknown as Text;
+		expect((node as unknown as { text: string }).text).toContain("2 tasks");
+	});
+
 	it("update action renders '#id' when the task has not been registered yet", () => {
 		const { tool } = setup();
 		const node = tool.renderCall?.(
@@ -158,6 +203,18 @@ describe("registerTodoTool — renderCall", () => {
 		const { tool } = setup();
 		const node = tool.renderCall?.({ action: "clear" } as never, theme, undefined as never) as unknown as Text;
 		expect((node as unknown as { text: string }).text).toContain("∅");
+	});
+
+	it("a call without an action renders the bare prefix, never 'undefined'", () => {
+		const { tool } = setup();
+		const node = tool.renderCall?.(
+			{ subject: "flat args", id: 1 } as never,
+			theme,
+			undefined as never,
+		) as unknown as Text;
+		const text = (node as unknown as { text: string }).text;
+		expect(text).toContain("todo");
+		expect(text).not.toContain("undefined");
 	});
 });
 
@@ -223,5 +280,33 @@ describe("registerTodoTool — renderResult", () => {
 			undefined as never,
 		) as unknown as Text;
 		expect((node as unknown as { text: string }).text).toContain("✓");
+	});
+
+	it("a rejected mutation renders '✗' with the reason, not the requested status", async () => {
+		const { tool } = setup();
+		const r = await call(tool, { action: "update", id: 99, status: "completed" });
+		const node = tool.renderResult?.(r as never, {} as never, theme, { isError: false } as never) as unknown as Text;
+		const text = (node as unknown as { text: string }).text;
+		expect(text).toContain("✗");
+		expect(text).toContain("#99");
+		expect(text).not.toContain("completed");
+		expect(text).not.toContain("✓");
+	});
+
+	it("a call Pi rejected before execute renders '✗' with the first line of its message", () => {
+		const { tool } = setup();
+		const node = tool.renderResult?.(
+			{
+				content: [{ type: "text", text: 'Validation failed for tool "todo":\n  - action: must be present' }],
+			} as never,
+			{} as never,
+			theme,
+			{ isError: true } as never,
+		) as unknown as Text;
+		const text = (node as unknown as { text: string }).text;
+		expect(text).toContain("✗");
+		expect(text).toContain('Validation failed for tool "todo":');
+		expect(text).not.toContain("must be present");
+		expect(text).not.toContain("✓");
 	});
 });

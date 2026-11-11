@@ -44,13 +44,24 @@ import { isModuleNotFound } from "./utils.ts";
  * Pi's keymap. So the binding is OVERRIDABLE: set `RPIV_LANES_HOTKEY` to a
  * different KeyId to rebind, or to `off`/`none`/empty to disable the hotkey entirely
  * and rely on the always-safe `/lanes` command. `/lanes` is always available.
+ *
+ * Under Windows keybindings (Windows, and Linux under WSL) Pi binds ctrl+q to its reserved
+ * follow-up action (Pi #8372), so Pi skips our shortcut and warns at every launch — the
+ * default there is `alt+l` instead (#252).
  */
 const DEFAULT_HOTKEY = "ctrl+q";
+const WINDOWS_DEFAULT_HOTKEY = "alt+l";
+
+/** Mirrors Pi's `useWindowsKeybindings` (not exported): Windows, or Linux under WSL. */
+function usesWindowsKeybindings(): boolean {
+	const { WSL_DISTRO_NAME, WSL_INTEROP } = process.env;
+	return process.platform === "win32" || (process.platform === "linux" && Boolean(WSL_DISTRO_NAME || WSL_INTEROP));
+}
 
 /** Resolve the switcher hotkey from the environment; undefined = no hotkey. */
 function resolveHotkey(): string | undefined {
 	const raw = process.env.RPIV_LANES_HOTKEY;
-	if (raw === undefined) return DEFAULT_HOTKEY; // back-compat default
+	if (raw === undefined) return usesWindowsKeybindings() ? WINDOWS_DEFAULT_HOTKEY : DEFAULT_HOTKEY; // back-compat default
 	const v = raw.trim();
 	if (v === "" || /^(off|none|false|disabled?)$/i.test(v)) return undefined;
 	return v;

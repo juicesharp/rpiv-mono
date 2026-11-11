@@ -211,3 +211,37 @@ describe("/rpiv-setup — prune-only flow (no missing siblings)", () => {
 		expect(spawnPiInstall).not.toHaveBeenCalled();
 	});
 });
+
+describe("/rpiv-setup — optional siblings are never installed (#167)", () => {
+	const optional = { pkg: "npm:@x/opt", matches: /./, provides: "OPT", optional: true as const };
+	const required = { pkg: "npm:@x/req", matches: /./, provides: "REQ" };
+
+	it("skips confirmation and points at `pi install` when only optional siblings are missing", async () => {
+		vi.mocked(findMissingSiblings).mockReturnValue([optional]);
+		const { pi, captured } = createMockPi();
+		registerSetupCommand(pi);
+		const ctx = createMockCtx({ hasUI: true });
+		await captured.commands.get("rpiv-setup")?.handler("", ctx as never);
+		expect(ctx.ui.confirm).not.toHaveBeenCalled();
+		expect(spawnPiInstall).not.toHaveBeenCalled();
+		const info = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[1] === "info")?.[0] as string;
+		expect(info).toContain("already installed");
+		expect(info).toContain("pi install npm:@x/opt");
+	});
+
+	it("installs only the required siblings and lists the optional one separately", async () => {
+		vi.mocked(findMissingSiblings).mockReturnValue([optional, required]);
+		vi.mocked(spawnPiInstall).mockResolvedValue({ code: 0, stdout: "", stderr: "" } as never);
+		const { pi, captured } = createMockPi();
+		registerSetupCommand(pi);
+		const ctx = createMockCtx({ hasUI: true });
+		(ctx.ui.confirm as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+		await captured.commands.get("rpiv-setup")?.handler("", ctx as never);
+		const body = (ctx.ui.confirm as ReturnType<typeof vi.fn>).mock.calls[0]![1] as string;
+		const [installPart, optionalPart] = body.split("Optional");
+		expect(installPart).toContain("npm:@x/req");
+		expect(installPart).not.toContain("npm:@x/opt");
+		expect(optionalPart).toContain("pi install npm:@x/opt");
+		expect(vi.mocked(spawnPiInstall).mock.calls.map((c) => c[0])).toEqual(["npm:@x/req"]);
+	});
+});

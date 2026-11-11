@@ -2,11 +2,9 @@
  * lane-progress — bridges rpiv-workflow's lifecycle bus into the run-lane
  * registry so the ambient overlay shows LIVE stage progress.
  *
- * The base plan deferred "rich progress" on the premise it needed a new
- * runner→host→registry report path. That path already exists: rpiv-workflow
- * publicly exports `registerLifecycle`, whose docstring literally describes "a
- * rpiv-pi widget" marking stage progress by runId. So this bridge is a cheap,
- * clean-install-safe increment — no host plumbing.
+ * The report path is rpiv-workflow's public `registerLifecycle` bus, which
+ * carries every stage/loop/unit event keyed by runId — so the bridge needs no
+ * runner→host plumbing and stays clean-install-safe.
  *
  * Each lifecycle event maps to `setLaneProgress(ctx.runId, …)`:
  *   - onStageStart → clear the prior stage's fan-out unit sub-rows (every stage kind; it fires
@@ -39,11 +37,10 @@ import { shortFailureReason } from "./lane-failure.ts";
 import { isLaneRelayUiContext } from "./lane-relay-ui.ts";
 import {
 	clearUnitLanes,
-	foldStageUsage,
 	getLane,
 	markUnitDone,
 	retireRun,
-	seedPendingUnits,
+	seedUnits,
 	setLaneProgress,
 	setRecap,
 	setUnitStarted,
@@ -99,6 +96,12 @@ const fanoutRuns = new Set<string>();
  */
 const activeInstances = new Map<string, object>();
 
+/** A seeded unit's status from its `info.settled` entry: undefined (not replayed) → pending. */
+function replayedStatus(failed: boolean | undefined): "pending" | "done" | "failed" {
+	if (failed === undefined) return "pending";
+	return failed ? "failed" : "done";
+}
+
 /**
  * Wire the lifecycle→registry bridge to the ROOT launcher's session_start.
  * Skipped for a detached foreground child (branded relay ui) and any non-UI
@@ -141,21 +144,19 @@ export async function registerLaneProgress(): Promise<void> {
 				activeInstances.set(ctx.runId, ctx.state);
 			},
 			// onStageStart fires for EVERY stage kind — a plain sequential stage (the single-stage
-			// entry announcement, run-stage.ts:221) AND every loop stage, where it fires BEFORE
-			// onLoopStart (announceLoopStart, loop.ts:75→78). So retiring the prior stage's fan-out
-			// unit sub-rows HERE closes the c1 gap (fanout → plain sequential stage: the sequential
-			// stage has no onLoopStart to clear them) and the c2 gap (fanout → non-fanout loop: the
-			// loop's onLoopStart only drops the gate, it never cleared the prior generation).
+			// entry announcement) AND every loop stage, where it fires BEFORE onLoopStart
+			// (`announceLoopStart`). So the prior stage's fan-out unit sub-rows retire HERE, which
+			// covers both follow-ups that have no fanout onLoopStart to clear them: a plain
+			// sequential stage, and a non-fanout loop (whose onLoopStart only drops the gate).
 			// clearUnitLanes is a no-op on an empty map, so the first stage of a run pays nothing.
 			onStageStart: (stage, ctx) => {
-				foldStageUsage(ctx.runId);
 				clearUnitLanes(ctx.runId);
 				setLaneProgress(ctx.runId, { stageName: stage.name, phase: "running" });
 			},
 			onStageRetry: (stage, attempt, ctx) =>
 				setLaneProgress(ctx.runId, { stageName: stage.name, phase: "retry", attempt }),
 			// Carry the stage's failure cause so the dock row can surface WHY
-			// it failed before the run retires — no longer discarded.
+			// it failed before the run retires.
 			onStageError: (stage, error, ctx) => {
 				// Orphan sweep (the asymmetric onUnitStart…onUnitEnd bracket): a fail-fast
 				// halt fired onUnitStart for the halting unit (+ in-flight siblings) with no
@@ -170,19 +171,22 @@ export async function registerLaneProgress(): Promise<void> {
 				// generation. A non-fan-out loop (iterate/assess/verify) drops the gate so its
 				// sequential units never materialize sub-rows.
 				if (info.kind === "fanout") {
-					foldStageUsage(ctx.runId);
 					clearUnitLanes(ctx.runId);
 					fanoutRuns.add(ctx.runId);
-					// Fan out the generation's unit sub-rows as PENDING the instant onLoopStart
-					// fires — BEFORE any onUnitStart. Fanout precomputes its unit list; pull loops
+					// Fan out the generation's unit sub-rows the instant onLoopStart fires — BEFORE
+					// any onUnitStart. Fanout precomputes its unit list; pull loops
 					// (iterate/assess/verify) carry none, so they seed nothing (the guard mirrors
 					// the `units: info.units ?` seed below). The key is the declared array position,
-					// which matches onUnitStart's unit.index (loop-parallel.ts:222-224).
-					if (info.units)
-						seedPendingUnits(
+					// which matches onUnitStart's unit.index. A resumed
+					// generation's replayed units (`info.settled`) fire no unit events, so they are
+					// seeded terminal; every other unit starts pending.
+					if (info.units) {
+						const replayed = new Map((info.settled ?? []).map((s) => [s.index, s.failed]));
+						seedUnits(
 							ctx.runId,
-							info.units.map((u, i) => ({ index: i, label: u.label })),
+							info.units.map((u, i) => ({ index: i, label: u.label, status: replayedStatus(replayed.get(i)) })),
 						);
+					}
 				} else {
 					fanoutRuns.delete(ctx.runId);
 				}
@@ -190,8 +194,9 @@ export async function registerLaneProgress(): Promise<void> {
 					stageName: stage.name,
 					phase: "running",
 					// Fanout precomputes its unit list; pull loops (iterate/assess) discover
-					// units one at a time, so seed total only when the list is known.
-					units: info.units ? { done: 0, total: info.units.length } : undefined,
+					// units one at a time, so seed total only when the list is known. `done` starts
+					// at the replayed count — those units are already complete.
+					units: info.units ? { done: info.settled?.length ?? 0, total: info.units.length } : undefined,
 				});
 			},
 			// Materialize a per-unit
@@ -223,8 +228,8 @@ export async function registerLaneProgress(): Promise<void> {
 				// seeds `units: undefined` for them, so `units` stays undefined here and the
 				// dock omits the `· units x/y` segment (fanout-only sub-progress). The
 				// `prev?.total ?? unit.index + 1` seed is thus unreachable on the pull-loop
-				// path: a pull loop never has a seeded `prev.total`, so the inverted
-				// "1/1 → 2/1 → 3/1" (total frozen at unit.index+1 while done climbed) is gone.
+				// path: a pull loop never has a seeded `prev.total`, so its counter can never
+				// read "1/1 → 2/1 → 3/1" (total frozen at unit.index+1 while done climbs).
 				let units: { done: number; total: number } | undefined;
 				if (isFanout) {
 					const prev = getLane(ctx.runId)?.progress?.units;

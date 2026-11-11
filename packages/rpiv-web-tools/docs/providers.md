@@ -15,7 +15,7 @@ keys — they are stored per provider under `apiKeys.<name>`.
 | Tavily | `tavily` | `TAVILY_API_KEY` | [tavily.com](https://tavily.com) | native extraction (plain text) |
 | Serper | `serper` | `SERPER_API_KEY` | [serper.dev](https://serper.dev) | built-in HTTP → text, honours `raw` |
 | Exa | `exa` | `EXA_API_KEY` | [exa.ai](https://exa.ai) | native extraction (plain text) |
-| You.com | `youcom` | `YOUCOM_API_KEY` | [you.com](https://you.com) | native extraction (markdown) |
+| You.com | `youcom` | `YOUCOM_API_KEY` (or `YDC_API_KEY`) | [you.com](https://you.com) | native extraction (markdown) |
 | Jina | `jina` | `JINA_API_KEY` | [jina.ai/reader](https://jina.ai/reader) | native extraction (markdown) |
 | Firecrawl | `firecrawl` | `FIRECRAWL_API_KEY` | [firecrawl.dev](https://firecrawl.dev) | native extraction (markdown) |
 | Perplexity | `perplexity` | `PERPLEXITY_API_KEY` | [docs.perplexity.ai](https://docs.perplexity.ai/) | built-in HTTP → text, honours `raw` |
@@ -64,7 +64,8 @@ first match wins:
 1. **The provider's own environment variable** (`BRAVE_SEARCH_API_KEY`,
    `TAVILY_API_KEY`, `SERPER_API_KEY`, `EXA_API_KEY`, `YOUCOM_API_KEY`,
    `JINA_API_KEY`, `FIRECRAWL_API_KEY`, `PERPLEXITY_API_KEY`,
-   `SEARXNG_API_KEY`, `OLLAMA_API_KEY`).
+   `SEARXNG_API_KEY`, `OLLAMA_API_KEY`). You.com also reads `YDC_API_KEY`
+   when `YOUCOM_API_KEY` is unset.
 2. **`apiKeys.<provider>`** in the config file.
 3. **Legacy top-level `apiKey`**, Brave only. It is auto-migrated into
    `apiKeys.brave` and deleted from the file on the next `/web-tools` save.

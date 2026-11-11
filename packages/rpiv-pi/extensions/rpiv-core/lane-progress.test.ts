@@ -45,7 +45,7 @@ interface Bundle {
 	) => void;
 	onLoopStart?: (
 		stage: { stageNumber: number; name: string },
-		info: { kind?: string; units?: unknown[] },
+		info: { kind?: string; units?: unknown[]; settled?: Array<{ index: number; failed: boolean }> },
 		ctx: { runId: string; totalStages: number },
 	) => void;
 	onUnitStart?: (
@@ -581,6 +581,46 @@ describe("onLoopStart pending seed (fanout vs pull loops)", () => {
 		expect(getUnit("run-1", 2)).toBeUndefined(); // prior generation's index 2 gone
 		expect(getUnit("run-1", 0)?.status).toBe("pending");
 		expect(getUnit("run-1", 1)?.status).toBe("pending");
+	});
+
+	it("resumed fanout: info.settled seeds replayed units terminal (✓/✗) and the units counter starts at their count", async () => {
+		// A resume re-announces onLoopStart with the FULL unit list; the replayed units fire no
+		// onUnitStart/onUnitEnd, so `settled` is the only signal of their terminal status.
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "implement" };
+		b.onStageStart?.(stage, ctx);
+		b.onLoopStart?.(
+			stage,
+			{
+				kind: "fanout",
+				units: [{}, {}, {}, {}],
+				settled: [
+					{ index: 0, failed: false },
+					{ index: 1, failed: false },
+					{ index: 2, failed: true },
+				],
+			},
+			ctx,
+		);
+		expect([0, 1, 2, 3].map((i) => getUnit("run-1", i)?.status)).toEqual(["done", "done", "failed", "pending"]);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 3, total: 4 });
+		b.onUnitStart?.(stage, { index: 3, label: "phase 4/4" }, ctx);
+		b.onUnitEnd?.(stage, { index: 3 }, {}, ctx);
+		expect(getLane("run-1")?.progress?.units).toEqual({ done: 4, total: 4 });
+	});
+
+	it("resumed fanout that then fails: the failure sweep never repaints a replayed ✓ unit as ✗", async () => {
+		const b = await register();
+		recordRun("run-1", "ship");
+		const ctx = { runId: "run-1", totalStages: 4 };
+		const stage = { stageNumber: 2, name: "implement" };
+		b.onLoopStart?.(stage, { kind: "fanout", units: [{}, {}, {}], settled: [{ index: 0, failed: false }] }, ctx);
+		b.onUnitStart?.(stage, { index: 1, label: "phase 2/3" }, ctx);
+		b.onStageError?.(stage, "boom", ctx);
+		expect(getUnit("run-1", 0)?.status).toBe("done"); // replayed success survives the sweep
+		expect(getUnit("run-1", 1)?.status).toBe("failed");
 	});
 });
 

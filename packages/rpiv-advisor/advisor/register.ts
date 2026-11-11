@@ -4,11 +4,12 @@
  * to executeAdvisor. The guidance overrides are read from persisted config.
  */
 
+import { cleanupSessionResources } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { validateGuidanceFields } from "@juicesharp/rpiv-config";
 import { Type } from "typebox";
 import { loadAdvisorConfig } from "./config.ts";
-import { executeAdvisor } from "./execute.ts";
+import { advisorSessionId, executeAdvisor } from "./execute.ts";
 import { ADVISOR_TOOL_NAME, TOOL_LABEL } from "./messages.ts";
 
 const AdvisorParams = Type.Object({});
@@ -47,5 +48,11 @@ export function registerAdvisorTool(pi: ExtensionAPI): void {
 		async execute(_toolCallId, _params, signal, onUpdate, ctx) {
 			return executeAdvisor(ctx, pi, signal, onUpdate);
 		},
+	});
+	// Pi releases provider resources (e.g. pooled Codex websockets) only for the
+	// executor's session id; without this, a cached advisor socket keeps a
+	// headless `pi -p` process alive until its idle timer fires.
+	pi.on("session_shutdown", async (_event, ctx) => {
+		cleanupSessionResources(advisorSessionId(ctx));
 	});
 }

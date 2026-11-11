@@ -242,6 +242,45 @@ describe("lane-switcher — hotkey resolution", () => {
 		expect(shortcutKey).toBe("ctrl+q");
 	});
 
+	describe("Windows and WSL default (#252)", () => {
+		// Pi binds ctrl+q to its reserved follow-up action under Windows keybindings, so the
+		// default must move off it there — and only there.
+		const orig = Object.getOwnPropertyDescriptor(process, "platform");
+		const setPlatform = (platform: NodeJS.Platform) =>
+			Object.defineProperty(process, "platform", { value: platform, configurable: true });
+		beforeEach(() => {
+			delete process.env[ENV];
+			vi.stubEnv("WSL_DISTRO_NAME", undefined);
+			vi.stubEnv("WSL_INTEROP", undefined);
+		});
+		afterEach(() => {
+			if (orig) Object.defineProperty(process, "platform", orig);
+			vi.unstubAllEnvs();
+		});
+
+		it("defaults to alt+l on Windows", () => {
+			setPlatform("win32");
+			expect(register().shortcutKey).toBe("alt+l");
+		});
+
+		it.each(["WSL_DISTRO_NAME", "WSL_INTEROP"])("defaults to alt+l under WSL (%s set)", (wslVar) => {
+			setPlatform("linux");
+			vi.stubEnv(wslVar, "1");
+			expect(register().shortcutKey).toBe("alt+l");
+		});
+
+		it.each(["darwin", "linux"] as const)("keeps ctrl+q on %s", (platform) => {
+			setPlatform(platform);
+			expect(register().shortcutKey).toBe("ctrl+q");
+		});
+
+		it("still honours RPIV_LANES_HOTKEY on Windows", () => {
+			setPlatform("win32");
+			process.env[ENV] = "ctrl+l";
+			expect(register().shortcutKey).toBe("ctrl+l");
+		});
+	});
+
 	it("registers NO shortcut when disabled (RPIV_LANES_HOTKEY=off) — /lanes still works", () => {
 		process.env[ENV] = "off";
 		const { shortcutKey, lanes } = register();

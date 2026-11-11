@@ -12,7 +12,7 @@
   "hint.newline": "Shift+Enter — новий рядок",
   "hint.clear": "Ctrl+U — очистити",
   "hint.toggle": "Space — перемкнути",
-  "hint.notes": "n — додати нотатки",
+  "hint.notes": "{key} — додати нотатки",
   "hint.tab": "Tab — наступне питання",
   "hint.cancel": "Esc — скасувати",
 
@@ -21,13 +21,18 @@
   "review.incomplete": "⚠ Дайте відповіді на решту питань перед надсиланням:",
 
   "preview.no_preview": "Попередній перегляд недоступний",
-  "preview.notes_affordance": "Нотатки: натисніть n, щоб додати нотатки",
-  "preview.notes_edit_affordance": "Нотатку збережено: натисніть n, щоб змінити",
+  "preview.notes_affordance": "Нотатки: натисніть {key}, щоб додати нотатки",
+  "preview.notes_edit_affordance": "Нотатку збережено: натисніть {key}, щоб змінити",
   "notes.header": "Нотатки:",
   "notes.saved_label": "Нотатка до цієї відповіді:",
 
   "editor.failed": "Помилка зовнішнього редактора",
 
   "rpc.multi_instructions": "Введіть номери всіх відповідних варіантів через кому (наприклад, \"1,3\"). Додайте \"; власна відповідь\", щоб включити власний текст, або введіть лише цей текст.",
-  "rpc.custom_answer_title": "Введіть свою відповідь:"
+  "rpc.custom_answer_title": "Введіть свою відповідь:",
+
+  "transcript.not_answered": "без відповіді",
+  "transcript.no_answer": "відповіді немає",
+
+  "status.blocked": "Чекає на вашу відповідь"
 }

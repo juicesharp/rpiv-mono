@@ -49,7 +49,9 @@ extension only reads it.
 on overflow, the `+N more` summary row both count against it. Only the trailing
 blank spacer sits outside the budget, so `12` renders up to 13 terminal rows.
 
-- Floor of `3`. A number below `3` falls back to the default.
+- `0` turns the overlay off. The `todo` tool and `/todos` keep working, and
+  Pi's tool-output expansion mode does not bring the panel back.
+- Floor of `3`. Any other number below `3` falls back to the default.
 - A non-number falls back to the default.
 - No ceiling.
 - Read fresh on every render, so a change takes effect on the next repaint —
@@ -87,7 +89,7 @@ Examples: `alt+o`, `ctrl+shift+t`, `super+alt+f5`.
 
 `guidance.promptSnippet` (string) and `guidance.promptGuidelines` (array of
 strings) replace the prompt copy the `todo` tool advertises to the model. Both
-are absent by default, in which case the built-in snippet and the eight built-in
+are absent by default, in which case the built-in snippet and the nine built-in
 guideline bullets are used.
 
 - `promptSnippet` must be a non-empty string; an empty string or a wrong type

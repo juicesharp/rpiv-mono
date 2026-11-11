@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +24,12 @@ import {
 	type WorkflowHeader,
 	type WorkflowStage,
 } from "./state/index.ts";
+
+// Pass-through by default; the collision test scripts the draws.
+vi.mock("node:crypto", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:crypto")>();
+	return { ...actual, randomBytes: vi.fn(actual.randomBytes) };
+});
 
 let tmpDir: string;
 
@@ -50,10 +57,13 @@ describe("generateRunId", () => {
 		expect(generateRunId(fixed)).toMatch(/^2026-05-20_15-30-45-[0-9a-f]{4}$/);
 	});
 
-	it("generates distinct ids for two same-second calls (collision protection)", () => {
+	it("draws a fresh suffix per call, so same-second calls get distinct ids (collision protection)", () => {
+		// Scripted draws: 20 real draws from 65536 suffixes collide about once
+		// in 345 runs, so the assertion cannot rest on chance.
+		let draw = 0;
+		vi.mocked(randomBytes).mockImplementation(((size: number) => Buffer.alloc(size, draw++)) as never);
 		const fixed = new Date(2026, 4, 20, 15, 30, 45);
 		const ids = new Set(Array.from({ length: 20 }, () => generateRunId(fixed)));
-		// 20 calls, 65536 possible suffixes — duplicates are astronomically unlikely.
 		expect(ids.size).toBe(20);
 	});
 });

@@ -11,12 +11,19 @@ const localesDir = fileURLToPath(new URL("./locales", import.meta.url));
  * display form. A locale value without the placeholder would silently no-op
  * the `.replace` and render the raw string verbatim.
  */
-const TEMPLATED_KEYS = ["hint.collapse", "hint.expand_line"] as const;
+const TEMPLATED_KEYS = [
+	"hint.collapse",
+	"hint.expand_line",
+	"hint.notes",
+	"review.global_hint",
+	"preview.notes_affordance",
+	"preview.notes_edit_affordance",
+] as const;
 
 describe("locales — {key} placeholder contract", () => {
 	const files = readdirSync(localesDir).filter((f) => f.endsWith(".json"));
 
-	it("en.json defines both templated hint keys (English is the fallback base for every locale)", () => {
+	it("en.json defines every templated hint key (English is the fallback base for every locale)", () => {
 		const en = JSON.parse(readFileSync(join(localesDir, "en.json"), "utf8")) as Record<string, string>;
 		for (const key of TEMPLATED_KEYS) {
 			expect(en[key], `en.json ${key}`).toContain("{key}");

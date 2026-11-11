@@ -32,6 +32,7 @@ beforeEach(() => {
 	delete process.env.SERPER_API_KEY;
 	delete process.env.EXA_API_KEY;
 	delete process.env.YOUCOM_API_KEY;
+	delete process.env.YDC_API_KEY;
 	delete process.env.JINA_API_KEY;
 	delete process.env.FIRECRAWL_API_KEY;
 	delete process.env.PERPLEXITY_API_KEY;
@@ -2002,6 +2003,40 @@ describe("web_search.execute — youcom", () => {
 			?.execute?.("tc", { query: "hello", max_results: 3 }, undefined as never, undefined as never, createMockCtx());
 		const headers = stub.calls[0].init?.headers as Record<string, string>;
 		expect(headers["X-API-Key"]).toBe("env-key");
+	});
+
+	const youcomSearchKey = async () => {
+		const stub = stubFetch([
+			{
+				match: (u) => u.includes("ydc-index.io/v1/search"),
+				response: () => new Response(JSON.stringify({ results: { web: [] } }), { status: 200 }),
+			},
+		]);
+		const { captured } = registerAndCapture();
+		await captured.tools
+			.get("web_search")
+			?.execute?.("tc", { query: "x" }, undefined as never, undefined as never, createMockCtx());
+		const headers = stub.calls[0].init?.headers as Record<string, string>;
+		return headers["X-API-Key"];
+	};
+
+	it("accepts You.com's canonical YDC_API_KEY", async () => {
+		process.env.YDC_API_KEY = "ydc-key";
+		writeConfig({ provider: "youcom" });
+		expect(await youcomSearchKey()).toBe("ydc-key");
+	});
+
+	it("keeps YOUCOM_API_KEY first when both are set", async () => {
+		process.env.YOUCOM_API_KEY = "youcom-key";
+		process.env.YDC_API_KEY = "ydc-key";
+		writeConfig({ provider: "youcom" });
+		expect(await youcomSearchKey()).toBe("youcom-key");
+	});
+
+	it("prefers YDC_API_KEY over a config key, like any env key", async () => {
+		process.env.YDC_API_KEY = "ydc-key";
+		writeConfig({ provider: "youcom", apiKeys: { youcom: "config-key" } });
+		expect(await youcomSearchKey()).toBe("ydc-key");
 	});
 
 	it("falls back to config key", async () => {

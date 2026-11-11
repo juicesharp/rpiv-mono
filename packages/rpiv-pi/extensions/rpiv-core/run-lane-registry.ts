@@ -158,7 +158,7 @@ export function recordRun(runId: string, name: string, meta?: { workflow?: strin
 			existing.workflow = meta?.workflow ?? existing.workflow;
 			existing.input = meta?.input ?? existing.input;
 			existing.status = "running"; // reactivate a retained terminal lane (resume)
-			existing.units.clear(); // drop the prior run's per-unit sessions + terminal snapshots
+			dropUnitLanes(runId, existing); // bank the prior run's unit tokens, drop its sessions + snapshots
 			existing.error = undefined; // clear the prior run's terminal failure reason
 			existing.lastArtifact = undefined; // clear the prior run's primary artifact path
 			existing.recap = undefined; // clear the prior run's end-of-run summary
@@ -432,16 +432,27 @@ export function sweepRunningUnits(runId: string, status: "done" | "failed"): voi
 	if (changed) notify();
 }
 
-/** Clear the per-unit map at a NEW fan-out generation (bridge `onLoopStart`): the
- *  engine resets `cursor.slots` per loop, so the registry shows only the CURRENT
- *  generation's units (a run may fan out several times, reusing indices 0..N).
- *  Settles any dangling `pendingInput` so a child never hangs, and resets the lane
- *  clock. No-op on an empty map (the single-stage / first-generation path). */
+/** Empty a lane's per-unit map WITHOUT losing its tokens: the outgoing units' usage is
+ *  folded into their stage's `stageUsage` bucket first, so `units` and `stageUsage` never
+ *  overlap and nothing is dropped uncounted. The one place units are discarded — shared by
+ *  `clearUnitLanes` (stage / generation transition) and `recordRun` (resume reactivation).
+ *  Reads `progress.stageName`, so it runs BEFORE any caller resets `progress`. */
+function dropUnitLanes(runId: string, entry: LaneEntry): void {
+	foldStageUsage(runId);
+	entry.units.clear();
+}
+
+/** Clear the per-unit map at a stage or fan-out generation transition (bridge
+ *  `onStageStart`/`onLoopStart`): the engine resets `cursor.slots` per loop, so the
+ *  registry shows only the CURRENT generation's units (a run may fan out several times,
+ *  reusing indices 0..N). The outgoing units' tokens are banked into `stageUsage` (see
+ *  `dropUnitLanes`). Settles any dangling `pendingInput` so a child never hangs, and resets
+ *  the lane clock. No-op on an empty map (the single-stage / first-generation path). */
 export function clearUnitLanes(runId: string): void {
 	const entry = state().lanes.get(runId);
 	if (!entry || entry.units.size === 0) return;
 	settleAndEmitCleared(runId, entry, () => {
-		entry.units.clear();
+		dropUnitLanes(runId, entry);
 		entry.needsInputSince = undefined;
 	});
 }
@@ -449,8 +460,8 @@ export function clearUnitLanes(runId: string): void {
 /** Pairwise-accumulate one stage's usage into the `stageUsage` bucket for `runId` +
  *  `stageName` via `addLaneUsage` (so a re-folded stage SUMS, never overwrites). No-op
  *  on undefined usage / missing lane / undefined stageName — a pre-first-stage fold, or a
- *  lane with no live progress, records nothing. Does NOT notify (the paired
- *  `clearUnitLanes`/`setLaneProgress` that follows in the bridge does). */
+ *  lane with no live progress, records nothing. Does NOT notify (the caller's
+ *  own notify covers it). */
 export function addStageUsage(runId: string, stageName: string | undefined, usage: LaneUsage | undefined): void {
 	if (usage === undefined || stageName === undefined) return;
 	const entry = state().lanes.get(runId);
@@ -460,11 +471,12 @@ export function addStageUsage(runId: string, stageName: string | undefined, usag
 }
 
 /** Fold the CURRENT stage's per-unit orchestrator tokens into its `stageUsage` bucket.
- *  Reads the OUTGOING stage name off `progress.stageName` (the bridge calls this BEFORE
- *  `setLaneProgress` flips to the next name and BEFORE `clearUnitLanes` empties `units`),
- *  then folds each unit's effective `unitUsage` (teardown snapshot else live child) into
- *  that stage's bucket via `addStageUsage`. No-op when the stage name is unset or `units`
- *  is empty. Does NOT notify — the paired `clearUnitLanes`/`setLaneProgress` does. */
+ *  Reads the OUTGOING stage name off `progress.stageName` (`dropUnitLanes` runs it BEFORE
+ *  the units are emptied, and the bridge clears BEFORE `setLaneProgress` flips to the next
+ *  name), then folds each unit's effective `unitUsage` (teardown snapshot else live child)
+ *  into that stage's bucket via `addStageUsage`. Does NOT clear `units` — calling it alone
+ *  and then `dropUnitLanes` counts the same units twice. No-op when the stage name is unset
+ *  or `units` is empty. Does NOT notify — the enclosing caller does. */
 export function foldStageUsage(runId: string): void {
 	const lane = state().lanes.get(runId);
 	const stageName = lane?.progress?.stageName;
@@ -472,21 +484,25 @@ export function foldStageUsage(runId: string): void {
 	for (const unit of lane.units.values()) addStageUsage(runId, stageName, unitUsage(unit));
 }
 
-/** Seed the CURRENT fan-out generation's unit sub-rows as PENDING (bridge `onLoopStart`
- *  for a fanout): each declared unit's sub-lane is created FRESH with `status: "pending"`
- *  keyed by its declared array `index`, so the dock fans out the generation the instant
- *  onLoopStart fires — BEFORE any onUnitStart flips a unit running. Does NOT go through
- *  `upsertUnit` (the host's live-session lifecycle seeds "running"); the pending→running
- *  flip is the existing `setUnitStarted` (`onUnitStart`), unchanged, on the SAME map key.
- *  Best-effort: a missing run is a no-op, mirroring every sibling mutator. */
-export function seedPendingUnits(runId: string, units: ReadonlyArray<{ index: number; label: string }>): void {
+/** Seed the CURRENT fan-out generation's unit sub-rows (bridge `onLoopStart` for a
+ *  fanout): each declared unit's sub-lane is created FRESH keyed by its declared array
+ *  `index`, so the dock fans out the generation the instant onLoopStart fires — BEFORE any
+ *  onUnitStart flips a unit running. `status` defaults to "pending"; a resumed generation
+ *  seeds its replayed units terminal ("done"/"failed") because they fire no unit events.
+ *  Does NOT go through `upsertUnit` (the host's live-session lifecycle seeds "running");
+ *  the pending→running flip is `setUnitStarted` (`onUnitStart`) on the SAME map key.
+ *  One notify per seed. Best-effort: a missing run is a no-op, mirroring every sibling mutator. */
+export function seedUnits(
+	runId: string,
+	units: ReadonlyArray<{ index: number; label: string; status?: "pending" | "done" | "failed" }>,
+): void {
 	const entry = state().lanes.get(runId);
 	if (!entry) return;
 	for (const u of units) {
 		entry.units.set(u.index, {
 			index: u.index,
 			label: u.label,
-			status: "pending",
+			status: u.status ?? "pending",
 			currentSession: undefined,
 			pendingInput: [],
 		});

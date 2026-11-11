@@ -1,15 +1,36 @@
-import type { TaskDetails } from "../tool/types.ts";
+import type { Task, TaskDetails, TaskStatus } from "../tool/types.ts";
 import { EMPTY_STATE, type TaskState } from "./state.ts";
+
+const TASK_STATUSES: ReadonlySet<unknown> = new Set<TaskStatus>(["pending", "in_progress", "completed", "deleted"]);
+
+const optional = (value: unknown, valid: (v: unknown) => boolean): boolean => value === undefined || valid(value);
+const isString = (v: unknown): boolean => typeof v === "string";
+
+function isTask(value: unknown): value is Task {
+	if (!value || typeof value !== "object") return false;
+	const t = value as Record<string, unknown>;
+	return (
+		Number.isSafeInteger(t.id) &&
+		typeof t.subject === "string" &&
+		TASK_STATUSES.has(t.status) &&
+		optional(t.description, isString) &&
+		optional(t.activeForm, isString) &&
+		optional(t.owner, isString) &&
+		optional(t.blockedBy, (v) => Array.isArray(v) && v.every((id) => Number.isSafeInteger(id))) &&
+		optional(t.metadata, (v) => typeof v === "object" && v !== null)
+	);
+}
 
 /**
  * Discriminator for `details` envelopes that match the persisted `TaskDetails`
- * shape. Defensive — branch entries from older or corrupt sessions are
- * skipped silently.
+ * shape, down to every task. Defensive — a snapshot from an older or corrupt
+ * session (e.g. a `tasks[]` another extension truncated with a marker string)
+ * is skipped whole, so replay keeps the last valid one.
  */
 export function isTaskDetails(value: unknown): value is TaskDetails {
 	if (!value || typeof value !== "object") return false;
 	const v = value as Record<string, unknown>;
-	return Array.isArray(v.tasks) && typeof v.nextId === "number";
+	return Array.isArray(v.tasks) && v.tasks.every(isTask) && Number.isSafeInteger(v.nextId);
 }
 
 /** Fresh `TaskState` from a persisted snapshot — copies each task so replay never aliases branch data. */

@@ -5,9 +5,12 @@ import {
 	type AskUserQuestionConfig,
 	COLLAPSE_KEY_OFF,
 	DEFAULT_COLLAPSE_KEY,
+	DEFAULT_NOTES_KEY,
 	formatKeySpecForDisplay,
+	formatNotesKeyForDisplay,
 	loadConfig,
 	resolveCollapseKey,
+	resolveNotesKey,
 } from "./config.ts";
 
 describe("formatKeySpecForDisplay", () => {
@@ -82,6 +85,39 @@ describe("resolveCollapseKey", () => {
 		expect(resolveCollapseKey({ collapseKey: "Ctrl+PageUp" })).toBe("ctrl+pageup");
 		expect(resolveCollapseKey({ collapseKey: "f5" })).toBe("f5");
 		expect(resolveCollapseKey({ collapseKey: "alt+escape" })).toBe("alt+escape");
+	});
+});
+
+describe("resolveNotesKey", () => {
+	it("defaults to n", () => {
+		expect(DEFAULT_NOTES_KEY).toBe("n");
+		expect(resolveNotesKey({})).toBe("n");
+		expect(resolveNotesKey({ notesKey: "  " })).toBe("n");
+	});
+
+	it("keeps a single character of any script as typed", () => {
+		expect(resolveNotesKey({ notesKey: "т" })).toBe("т");
+		expect(resolveNotesKey({ notesKey: " ñ " })).toBe("ñ");
+		expect(resolveNotesKey({ notesKey: "N" })).toBe("N");
+	});
+
+	it("normalizes a modifier spec", () => {
+		expect(resolveNotesKey({ notesKey: "Ctrl+N" })).toBe("ctrl+n");
+		expect(resolveNotesKey({ notesKey: "alt+o" })).toBe("alt+o");
+	});
+
+	it("falls back to n for malformed specs and the keys the questionnaire navigates with", () => {
+		for (const notesKey of ["ctr+n", "тт", "space", "Enter", "tab", "escape", "up", "left"]) {
+			expect(resolveNotesKey({ notesKey }), notesKey).toBe("n");
+		}
+	});
+});
+
+describe("formatNotesKeyForDisplay", () => {
+	it("shows a single character as configured and a spec display-cased", () => {
+		expect(formatNotesKeyForDisplay("n")).toBe("n");
+		expect(formatNotesKeyForDisplay("т")).toBe("т");
+		expect(formatNotesKeyForDisplay("ctrl+n")).toBe("Ctrl+N");
 	});
 });
 

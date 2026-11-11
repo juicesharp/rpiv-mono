@@ -1,5 +1,5 @@
 import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, type Editor, Spacer } from "@earendil-works/pi-tui";
+import { type Component, Container, CURSOR_MARKER, type Editor, Spacer } from "@earendil-works/pi-tui";
 import type { QuestionnaireState } from "../state/state.ts";
 import type { QuestionData } from "../tool/types.ts";
 import type { PreviewPaneProps } from "./components/preview/preview-pane.ts";
@@ -48,6 +48,11 @@ function renderChromeOnly(natural: string[], topFixed: number, bottomFixed: numb
 	return chromeOnly.length > termRows ? chromeOnly.slice(0, termRows) : chromeOnly;
 }
 
+/** Shift an end-exclusive row range by `delta` rows; undefined (no focus) passes through. */
+function offsetRange(range: [number, number] | undefined, delta: number): [number, number] | undefined {
+	return range && [range[0] + delta, range[1] + delta];
+}
+
 export type DialogState = QuestionnaireState;
 
 /** Per-tick projection of dialog state. Written by the adapter; read by the strategy thunk. */
@@ -82,6 +87,8 @@ export interface DialogConfig {
 	 * The footer hint interpolates it, and drops the collapse part when `"off"`.
 	 */
 	collapseKey: string;
+	/** Resolved notes key (`resolveNotesKey` output), named by both tabs' notes hints. */
+	notesKey: string;
 }
 
 /**
@@ -111,6 +118,7 @@ export class DialogView implements StatefulView<DialogProps> {
 			isMulti: config.isMulti,
 			getCurrentBodyHeight: config.getCurrentBodyHeight,
 			collapseKey: config.collapseKey,
+			notesKey: config.notesKey,
 		});
 		this.submitStrategy = config.isMulti
 			? new SubmitTabStrategy({
@@ -118,6 +126,7 @@ export class DialogView implements StatefulView<DialogProps> {
 					questions: config.questions,
 					submitPicker: config.submitPicker,
 					notesInput: config.notesInput,
+					notesKey: config.notesKey,
 				})
 			: undefined;
 		this.maxFooterRowCount = Math.max(this.questionStrategy.footerRowCount, this.submitStrategy?.footerRowCount ?? 0);
@@ -195,13 +204,14 @@ export class DialogView implements StatefulView<DialogProps> {
 		// below — that would draw the bottom border and hint twice (#260).
 		const windowRows = Math.min(availableMiddle, middleRows);
 		const rowsBeforeBody = pinHeading ? 0 : headingHeight;
-		const focusedRange = strategy.focusedItemRowRange(width, state);
-		const scrollStart = computeScrollStart(focusedRange, rowsBeforeBody, windowRows, middleRows);
+		// Scroll-to-focus target in middle-region rows. While the notes editor is open it is the
+		// keyboard's target, so the window follows it rather than the focused option (#317).
+		const focusedRange = state.notesVisible
+			? this.notesFocusRange(natural.slice(top, top + middleRows), strategy, width, windowRows)
+			: offsetRange(strategy.focusedItemRowRange(width, state), rowsBeforeBody);
+		const scrollStart = computeScrollStart(focusedRange, 0, windowRows, middleRows);
 		const scrollableMiddle = natural.slice(top + scrollStart, top + scrollStart + windowRows);
-		const focusedInWindow: [number, number] | undefined = focusedRange && [
-			rowsBeforeBody + focusedRange[0] - scrollStart,
-			rowsBeforeBody + focusedRange[1] - scrollStart,
-		];
+		const focusedInWindow = offsetRange(focusedRange, -scrollStart);
 		decorateOverflow(
 			scrollableMiddle,
 			scrollStart > 0,
@@ -219,6 +229,25 @@ export class DialogView implements StatefulView<DialogProps> {
 	/** Rows between the body and the bottom border: the body's trailing Spacer(1) plus any mid rows (e.g. the notes editor). */
 	private rowsAroundBody(strategy: TabContentStrategy, width: number): number {
 		return 1 + strategy.midRows(this.liveProps.state).reduce((rows, c) => rows + c.render(width).length, 0);
+	}
+
+	/**
+	 * Focus range, in middle-region rows, for the open notes editor. Mid rows end the middle
+	 * region, so the whole editor block (header included) is kept in view when it fits; a taller
+	 * one is followed by the row carrying the editor's cursor marker, so typed text and an IME
+	 * composition window stay on screen (#317).
+	 */
+	private notesFocusRange(
+		middle: readonly string[],
+		strategy: TabContentStrategy,
+		width: number,
+		windowRows: number,
+	): [number, number] {
+		const notesRows = this.rowsAroundBody(strategy, width) - 1;
+		const notesStart = middle.length - notesRows;
+		if (notesRows <= windowRows) return [notesStart, middle.length];
+		const cursorRow = middle.findIndex((line, i) => i >= notesStart && line.includes(CURSOR_MARKER));
+		return cursorRow === -1 ? [notesStart, middle.length] : [cursorRow, cursorRow + 1];
 	}
 
 	/**

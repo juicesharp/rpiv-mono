@@ -12,7 +12,7 @@
   "hint.newline": "Shift+Enter — новая строка",
   "hint.clear": "Ctrl+U — очистить",
   "hint.toggle": "Space — переключить",
-  "hint.notes": "n — добавить заметки",
+  "hint.notes": "{key} — добавить заметки",
   "hint.tab": "Tab — следующий вопрос",
   "hint.cancel": "Esc — отменить",
 
@@ -21,13 +21,18 @@
   "review.incomplete": "⚠ Ответьте на оставшиеся вопросы перед отправкой:",
 
   "preview.no_preview": "Предпросмотр недоступен",
-  "preview.notes_affordance": "Заметки: нажмите n, чтобы добавить заметки",
-  "preview.notes_edit_affordance": "Заметка сохранена: нажмите n, чтобы изменить",
+  "preview.notes_affordance": "Заметки: нажмите {key}, чтобы добавить заметки",
+  "preview.notes_edit_affordance": "Заметка сохранена: нажмите {key}, чтобы изменить",
   "notes.header": "Заметки:",
   "notes.saved_label": "Заметка к этому ответу:",
 
   "editor.failed": "Ошибка внешнего редактора",
 
   "rpc.multi_instructions": "Введите номера всех подходящих вариантов через запятую (например, \"1,3\"). Добавьте \"; свой ответ\", чтобы включить собственный текст, или введите только этот текст.",
-  "rpc.custom_answer_title": "Введите свой ответ:"
+  "rpc.custom_answer_title": "Введите свой ответ:",
+
+  "transcript.not_answered": "без ответа",
+  "transcript.no_answer": "ответа нет",
+
+  "status.blocked": "Ждёт вашего ответа"
 }

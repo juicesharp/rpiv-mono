@@ -208,7 +208,7 @@ describe("disk-corroborated basename fallback", () => {
 		expect(result.kind).toBe("fatal");
 	});
 
-	it("a full-path announcement still wins over the fallback (no disk check needed)", async () => {
+	it("a full-path announcement still wins over a bare-mention fallback", async () => {
 		put("plans", "stray.md");
 		const REAL = ".rpiv/artifacts/elaborations/2026-08-20_20-58-43_review-remediation__phase-5.md";
 		const result = await rpivArtifactCollector.collect(
@@ -223,6 +223,54 @@ describe("disk-corroborated basename fallback", () => {
 			collectCtxOf([asst("see `.rpiv/artifacts/elaborations/...__phase-4.md`")], tmpDir),
 		);
 		expect(result.kind).toBe("fatal");
+	});
+});
+
+// The last announced path is not always the artifact: an agent announces the
+// file it wrote, then cites a sibling's path it misremembered. A last match
+// that is not on disk yields to the newest announced path that is; with none
+// on disk the announcement stands, and the parser fatals on it.
+describe("announced path missing on disk", () => {
+	const OWN = ".rpiv/artifacts/designs/2026-08-24_01-15-00_slice-11_debug-result-json.md";
+	const MISSING_SIBLING = ".rpiv/artifacts/designs/2026-08-24_01-07-47_slice-10-metrics.md";
+	let tmpDir: string;
+
+	const put = (rel: string) => {
+		mkdirSync(join(tmpDir, rel, ".."), { recursive: true });
+		writeFileSync(join(tmpDir, rel), "---\nstatus: ready\n---\n# body\n");
+	};
+	const text = `**Path:** \`${OWN}\`\n\nSources: \`${MISSING_SIBLING}\``;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-missing-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("collects the agent's own file over a missing sibling cited after it", async () => {
+		put(OWN);
+		const result = await rpivArtifactCollector.collect(collectCtxOf([asst(text)], tmpDir));
+		expect(result.kind === "ok" && result.artifacts[0]?.handle).toEqual({ kind: "fs", path: OWN });
+	});
+
+	it("rpivBucketCollector does the same within its bucket", async () => {
+		put(OWN);
+		const result = await rpivBucketCollector("designs").collect(collectCtxOf([asst(text)], tmpDir));
+		expect(result.kind === "ok" && result.artifacts[0]?.handle).toEqual({ kind: "fs", path: OWN });
+	});
+
+	it("keeps the last announcement when no announced path is on disk", async () => {
+		const result = await rpivArtifactCollector.collect(collectCtxOf([asst(text)], tmpDir));
+		expect(result.kind === "ok" && result.artifacts[0]?.handle).toEqual({ kind: "fs", path: MISSING_SIBLING });
+	});
+
+	it("never swaps in a file named only by a bare mention", async () => {
+		put(".rpiv/artifacts/plans/stray.md");
+		const result = await rpivArtifactCollector.collect(
+			collectCtxOf([asst(`**Path:** \`${MISSING_SIBLING}\` (see also stray.md)`)], tmpDir),
+		);
+		expect(result.kind === "ok" && result.artifacts[0]?.handle).toEqual({ kind: "fs", path: MISSING_SIBLING });
 	});
 });
 

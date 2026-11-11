@@ -268,7 +268,8 @@ function notifyCleanup(ui: UI, result: CleanupResult): void {
 }
 
 function warnMissingSiblings(ui: UI, loaded: LoadedSiblingSources): void {
-	const missing = findMissingSiblings(loaded);
+	// Optional siblings are left out — rpiv-pi works without them (#167).
+	const missing = findMissingSiblings(loaded).filter((s) => !s.optional);
 	if (missing.length === 0) return;
 	// Leading newline so Pi's "Warning: " severity prefix sits on its own
 	// line; every box row then gets Pi's 1-space continuation indent

@@ -12,7 +12,7 @@
   "hint.newline": "Mayús+Enter para nueva línea",
   "hint.clear": "Ctrl+U para borrar",
   "hint.toggle": "Espacio para alternar",
-  "hint.notes": "n para añadir notas",
+  "hint.notes": "{key} para añadir notas",
   "hint.tab": "Tab para cambiar de pregunta",
   "hint.cancel": "Esc para cancelar",
 
@@ -21,13 +21,18 @@
   "review.incomplete": "⚠ Responde las preguntas restantes antes de enviar:",
 
   "preview.no_preview": "Vista previa no disponible",
-  "preview.notes_affordance": "Notas: pulsa n para añadir notas",
-  "preview.notes_edit_affordance": "Nota guardada: pulsa n para editarla",
+  "preview.notes_affordance": "Notas: pulsa {key} para añadir notas",
+  "preview.notes_edit_affordance": "Nota guardada: pulsa {key} para editarla",
   "notes.header": "Notas:",
   "notes.saved_label": "Nota para esta respuesta:",
 
   "editor.failed": "Error del editor externo",
 
   "rpc.multi_instructions": "Introduce los números de todas las opciones que correspondan, separados por comas (p. ej. \"1,3\"). Añade \"; respuesta propia\" para incluir texto propio, o escribe solo texto propio.",
-  "rpc.custom_answer_title": "Escribe tu respuesta:"
+  "rpc.custom_answer_title": "Escribe tu respuesta:",
+
+  "transcript.not_answered": "sin responder",
+  "transcript.no_answer": "sin respuesta",
+
+  "status.blocked": "Esperando tu respuesta"
 }

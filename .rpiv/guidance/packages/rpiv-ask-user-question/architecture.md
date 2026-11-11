@@ -23,7 +23,8 @@ state/                  — Canonical state, pure reducer, key router, runtime s
                           i18n-bridge. Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/state/architecture.md`
 state/selectors/        — Pure projections: focus discriminant, derivations, per-component prop selectors.
                           Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/state/selectors/architecture.md`
-view/                   — Chrome (DialogView), props adapter, binding registries, StatefulView<P> contract.
+view/                   — Chrome (DialogView), props adapter, binding registries, StatefulView<P> contract,
+                          `transcript.ts` (the tool's renderCall/renderResult receipt).
                           Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/view/architecture.md`
 view/components/        — Per-component StatefulView renderers + the WrappingSelect primitive.
                           Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/view/components/architecture.md`
@@ -68,7 +69,7 @@ There is no presentation setting (a `renderMode` key existed only in unreleased 
 
 ## Execution Modes & Load Resilience
 
-`execute()` forks at the root: `ctx.mode === "rpc"` + `hasDialogUI` (VS Code pendant, Zed) routes to `runRpcQuestionnaire` (`rpc-fallback.ts`) — a sequential native select/input dialog walker feeding the same `buildQuestionnaireResponse` envelope (no preview pane, no tabs; free-text preserved on both variants). Non-interactive runs never see the tool: `reconcile.ts` (`registerAskUserQuestionReconciler`, wired in `index.ts`) strips/restores it from the active set against `ctx.hasUI`; the in-handler `ERROR_NO_UI` guard (`ask-user-question.ts:318`) remains as a backstop telling the model to re-ask in chat. The heavy view graph loads lazily via `loadQuestionnaireSession`, which guards jiti's poisoned graph cache (a failed load is cached unrecoverably; both failure shapes return an envelope naming the restart remedy — #107); a `PREWARM_DELAY_MS` timer fires the load early (unref'd) so the common path is warm, and a terminal attention bell (`BEL`, isTTY-gated) rings on both TUI and RPC paths.
+`execute()` forks at the root: `ctx.mode === "rpc"` + `hasDialogUI` (VS Code pendant, Zed) routes to `runRpcQuestionnaire` (`rpc-fallback.ts`) — a sequential native select/input dialog walker feeding the same `buildQuestionnaireResponse` envelope (no preview pane, no tabs; free-text preserved on both variants). The tool registers with `exposure: "model-only"`: always declared as a top-level call, never callable from `ctx.executeTool()` (codemode scripts), so codemode `"only"` mode keeps it visible (#310). Non-interactive runs never see the tool: `reconcile.ts` (`registerAskUserQuestionReconciler`, wired in `index.ts`) strips/restores it from the active set against `ctx.hasUI`; the in-handler `ERROR_NO_UI` guard (`ask-user-question.ts:318`) remains as a backstop telling the model to re-ask in chat. The heavy view graph loads lazily via `loadQuestionnaireSession`, which guards jiti's poisoned graph cache (a failed load is cached unrecoverably; both failure shapes return an envelope naming the restart remedy — #107); a `PREWARM_DELAY_MS` timer fires the load early (unref'd) so the common path is warm, and a terminal attention bell (`BEL`, isTTY-gated) rings on both TUI and RPC paths.
 
 ## Inbound Answers (`rpiv:ask-user:answer`)
 

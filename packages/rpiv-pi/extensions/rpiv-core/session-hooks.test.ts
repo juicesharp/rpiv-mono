@@ -125,6 +125,35 @@ describe("session_start hook — notifications", () => {
 		expect(warnCall?.[0]).not.toContain("npm:");
 	});
 
+	it("leaves optional siblings out of the missing-siblings banner (#167)", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValueOnce(emptySync);
+		vi.mocked(findMissingSiblings).mockReturnValueOnce([
+			{ pkg: "npm:@juicesharp/rpiv-advisor", matches: /./, provides: "x", optional: true },
+			{ pkg: "npm:@juicesharp/rpiv-args", matches: /./, provides: "y" },
+		] as never);
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx as never);
+		const warnCall = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[1] === "warning");
+		expect(warnCall?.[0]).toContain("rpiv-pi: 1 sibling extension missing");
+		expect(warnCall?.[0]).toContain("@juicesharp/rpiv-args");
+		expect(warnCall?.[0]).not.toContain("rpiv-advisor");
+	});
+
+	it("shows no banner when only optional siblings are missing (#167)", async () => {
+		vi.mocked(syncBundledAgents).mockReturnValueOnce(emptySync);
+		vi.mocked(findMissingSiblings).mockReturnValueOnce([
+			{ pkg: "npm:@juicesharp/rpiv-advisor", matches: /./, provides: "x", optional: true },
+		] as never);
+		const { pi, captured } = createMockPi({ exec: stubGitExec({}) as never });
+		registerSessionHooks(pi);
+		const ctx = createMockCtx({ cwd: projectDir, hasUI: true });
+		await captured.events.get("session_start")?.[0]({ reason: "startup" } as never, ctx as never);
+		const warnCalls = (ctx.ui.notify as ReturnType<typeof vi.fn>).mock.calls.filter((c) => c[1] === "warning");
+		expect(warnCalls).toHaveLength(0);
+	});
+
 	it("skips notifications when !hasUI", async () => {
 		vi.mocked(syncBundledAgents).mockReturnValueOnce({ ...emptySync, added: ["a.md"] });
 		vi.mocked(findMissingSiblings).mockReturnValueOnce([

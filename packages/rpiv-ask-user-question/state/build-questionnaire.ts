@@ -47,6 +47,8 @@ export interface QuestionnaireBuildConfig {
 	 * of runtime context.
 	 */
 	collapseKey: string;
+	/** Resolved notes key (`resolveNotesKey` output), threaded to the hints that name it. */
+	notesKey: string;
 	/**
 	 * Maps `tui.terminal.rows` to the rows the dialog may render — identity for the
 	 * overlay, a capped share for the inline editor slot (`../presentation.ts`). Applied
@@ -123,6 +125,7 @@ class QuestionnaireBuilder {
 	private readonly initialState: QuestionnaireState;
 	private readonly getCurrentTab: () => number;
 	private readonly collapseKey: string;
+	private readonly notesKey: string;
 	private readonly rowBudget: (terminalRows: number) => number;
 
 	private readonly selectTheme: WrappingSelectTheme;
@@ -141,6 +144,7 @@ class QuestionnaireBuilder {
 		this.initialState = config.initialState;
 		this.getCurrentTab = config.getCurrentTab;
 		this.collapseKey = config.collapseKey;
+		this.notesKey = config.notesKey;
 		this.rowBudget = config.rowBudget;
 
 		this.selectTheme = this.makeSelectTheme();
@@ -191,6 +195,7 @@ class QuestionnaireBuilder {
 			question,
 			theme: this.theme,
 			markdownTheme: this.markdownTheme,
+			notesKey: this.notesKey,
 		});
 		const preview = new PreviewPane({
 			question,
@@ -277,6 +282,7 @@ class QuestionnaireBuilder {
 				getCurrentBodyHeight: heights.current,
 				getTerminalRows: this.getTerminalRows,
 				collapseKey: this.collapseKey,
+				notesKey: this.notesKey,
 			},
 			{ state: this.initialState, activePreviewPane: this.pickInitialActivePreview(tabs) },
 		);

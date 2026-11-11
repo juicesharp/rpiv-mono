@@ -7,6 +7,24 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Warp shows Blocked while Pi waits on any dialog, not only on listed tools.** A permission prompt ("allow this bash command?") or any other `ctx.ui` select, confirm, input or custom dialog left the tab reading in progress, and the heartbeat kept re-announcing the prompt every 15 s. rpiv-warp now also follows Pi's `ui_prompt_start`/`ui_prompt_end` events during a turn: the badge rises once and clears once, even when a questionnaire fires both its tool call and its prompt, in either order, and the heartbeat pauses while you're asked. A badge left up by a missed `agent_end` is cleared at the next turn. The new `promptBlocking` setting switches prompt-driven badges off; it defaults to off for anyone who set `blockingTools: []`, which keeps turning the badge off entirely. Thanks @jg33 ([#303](https://github.com/juicesharp/rpiv-mono/pull/303)).
+
+## [2.15.0] - 2026-10-24
+
+## [2.14.2] - 2026-10-23
+
+## [2.14.1] - 2026-10-23
+
+### Fixed
+
+- **Works with Pi 1.2 and later.** Pi 1.2 also fires `before_agent_start` for runs an extension starts with `pi.sendMessage(..., { triggerTurn: true })`, and those runs carry no prompt. rpiv-warp read the prompt anyway, so such a run blanked the Warp tab's query and announced a new turn with an empty prompt. A run started that way now keeps the last user query and sends no `session_start` or `prompt_submit`; the spinner, heartbeat and `stop` still fire. Older Pi versions behave as before. Thanks @jagaliano. ([#305](https://github.com/juicesharp/rpiv-mono/pull/305))
+
+## [2.14.0] - 2026-10-23
+
+## [2.13.10] - 2026-10-23
+
 ## [2.13.9] - 2026-10-17
 
 ### Changed

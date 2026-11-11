@@ -327,6 +327,41 @@ describe("TodoOverlay — collapse/expand render", () => {
 	});
 });
 
+describe("TodoOverlay — maxWidgetLines 0 turns the overlay off", () => {
+	it("renders nothing while off, and the full panel on the next repaint after the config changes", async () => {
+		writeConfigFile(JSON.stringify({ maxWidgetLines: 0 }));
+		const { widget } = await setup([
+			{ action: "create", subject: "a" },
+			{ action: "create", subject: "b" },
+		]);
+		expect(widget.render(200)).toEqual([]);
+		removeConfigFile();
+		const lines = widget.render(200);
+		expect(lines).toHaveLength(4); // heading + 2 tasks + trailing spacer
+		expect(lines[0]).toContain("Todos (0/2)");
+	});
+
+	it("stays off in Pi's tool-output expansion mode", async () => {
+		writeConfigFile(JSON.stringify({ maxWidgetLines: 0 }));
+		const { widget } = await setup([{ action: "create", subject: "a" }], { getToolsExpanded: () => true });
+		expect(widget.render(200)).toEqual([]);
+	});
+
+	it("does not queue completed tasks for hide while off — they were never shown", async () => {
+		writeConfigFile(JSON.stringify({ maxWidgetLines: 0 }));
+		const { widget, overlay } = await setup([
+			{ action: "create", subject: "done" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		widget.render(200);
+		overlay.hideCompletedTasksFromPreviousTurn();
+		removeConfigFile();
+		const shown = widget.render(200).join("\n");
+		expect(shown).toContain("done");
+		expect(shown).toContain("✓");
+	});
+});
+
 describe("TodoOverlay — collapse hint resolves the key from config", () => {
 	// resolveCollapseKey() runs at render time (per-render, like the row budget), so
 	// the config MUST be written before widget.render(). setup() itself doesn't read

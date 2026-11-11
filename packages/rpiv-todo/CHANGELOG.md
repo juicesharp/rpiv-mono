@@ -7,6 +7,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`maxWidgetLines: 0` turns the overlay off.** The panel above the editor is no longer drawn, while the `todo` tool and `/todos` keep working. Like any other `maxWidgetLines` value, it applies on the next repaint, without `/reload`.
+
+### Fixed
+
+- **Completed rows no longer vanish when a subagent starts.** A completed task stays visible until the foreground session starts its next agent run, but a child session's start, such as a subagent's, also cleared them. Only the foreground session's own run hides them now. When the hidden rows were the last ones, the panel now disappears instead of leaving an empty frame. Thanks @AxelMrak ([#326](https://github.com/juicesharp/rpiv-mono/pull/326)).
+
 ### Changed
 
 - **Fewer first-call schema rejections from models that omit `action`.** The
@@ -17,6 +25,33 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   task fields alone and fail validation before the extension ran. Guidance
   overrides that predate this change keep working; re-diff your
   `promptGuidelines` against the new defaults when convenient.
+
+## [2.15.0] - 2026-10-24
+
+### Fixed
+
+- **Resuming a session no longer crashes on a corrupted todo snapshot.** Replay checked only that a saved snapshot had a `tasks` array, not what was in it. A session whose saved task list another extension had truncated with a marker string (`[output-policy: array truncated, …]`) restored that string as a task, and the overlay crashed while drawing it. Replay now checks every saved task and skips a snapshot with a malformed one, keeping the last valid list. Thanks @pstanton237 ([#230](https://github.com/juicesharp/rpiv-mono/pull/230)).
+
+## [2.14.2] - 2026-10-23
+
+### Fixed
+
+- **A failed `todo` call no longer shows as a success.** A call missing `action` rendered as `todo undefined ✓`, and a call the reducer rejected (an unknown id, an invalid transition) echoed the requested status, e.g. `● completed`. The call card now shows just `todo` when there is no action, and the result card shows `✗` with the first line of the error. Only the transcript display changes; what the model receives is unchanged. Thanks @catch6. ([#175](https://github.com/juicesharp/rpiv-mono/issues/175))
+
+## [2.14.1] - 2026-10-23
+
+## [2.14.0] - 2026-10-23
+
+### Added
+
+- **Batch create.** `create` accepts `tasks[]` instead of `subject`, so a whole plan lands in one call: `{"action":"create","tasks":[{"subject":"Inspect"},{"subject":"Test"}]}`. The batch is all-or-nothing: every item is validated first, and one bad item fails the call with the list unchanged. Each item carries its own `description`, `activeForm`, `blockedBy`, `owner` and `metadata`; the same fields at the top level of a batch, or a `subject` next to `tasks[]`, are rejected rather than dropped. Items cannot `blockedBy` each other, since their ids do not exist until the call commits; create the prerequisite first, then the dependent with `blockedBy`. A `tasks[]` sent as a JSON string, as some vLLM/LiteLLM-served models do, is decoded before validation. Single create is unchanged. Thanks @0xbentang. ([#44](https://github.com/juicesharp/rpiv-mono/issues/44), [#193](https://github.com/juicesharp/rpiv-mono/pull/193))
+
+### Changed
+
+- The reducer's `create` result reports `taskIds: number[]` instead of `taskId: number`, so code calling the re-exported `applyTaskMutation` directly must read the new field. The tool's output and saved snapshots are unaffected.
+- A new ninth built-in prompt guideline teaches batch create. A `guidance.promptGuidelines` override replaces the built-ins as before, so it does not include the new line; the `tasks` field description still documents batch create.
+
+## [2.13.10] - 2026-10-23
 
 ## [2.13.9] - 2026-10-17
 

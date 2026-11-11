@@ -30,6 +30,13 @@ export interface SiblingPlugin {
 	readonly marker?: string;
 	/** What the sibling provides — shown in /rpiv-setup confirmation and reports. */
 	readonly provides: string;
+	/**
+	 * Nothing in rpiv-pi needs it to work — skills that use it fall back without it.
+	 * A missing optional sibling raises no session_start warning, and /rpiv-setup
+	 * names it with its install command instead of installing it, so a user who
+	 * leaves it out (or runs their own replacement) is never nagged or overridden (#167).
+	 */
+	readonly optional?: true;
 }
 
 export const SIBLINGS: readonly SiblingPlugin[] = [
@@ -54,6 +61,8 @@ export const SIBLINGS: readonly SiblingPlugin[] = [
 		pkg: "npm:@juicesharp/rpiv-advisor",
 		matches: /rpiv-advisor/i,
 		provides: "advisor tool + /advisor command",
+		// Opt-in reviewer: code-review probes for the tool and reconciles inline without it.
+		optional: true,
 	},
 	{
 		pkg: "npm:@juicesharp/rpiv-i18n",

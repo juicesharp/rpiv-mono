@@ -57,9 +57,11 @@ describe("/rpiv-setup — siblings loaded outside settings (#216)", () => {
 		expect(installed).toHaveLength(SIBLINGS.length - 2);
 	});
 
-	it("nothing loaded: offers every undeclared sibling, as before", async () => {
+	it("nothing loaded: offers every undeclared required sibling — optional ones are never installed (#167)", async () => {
 		writeSettings([]);
 		await runSetup([]);
-		expect(vi.mocked(spawnPiInstall).mock.calls.map(([pkg]) => pkg)).toEqual(SIBLINGS.map((s) => s.pkg));
+		expect(vi.mocked(spawnPiInstall).mock.calls.map(([pkg]) => pkg)).toEqual(
+			SIBLINGS.filter((s) => !s.optional).map((s) => s.pkg),
+		);
 	});
 });

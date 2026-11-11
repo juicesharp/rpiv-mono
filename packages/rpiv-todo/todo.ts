@@ -18,6 +18,7 @@ import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
 import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.ts";
 import { applyTaskMutation, changesState } from "./state/state-reducer.ts";
 import { commitState, getRenderState, getState, sid } from "./state/store.ts";
+import { prepareTodoArguments } from "./tool/normalize-params.ts";
 import { buildToolResult } from "./tool/response-envelope.ts";
 import {
 	COMMAND_NAME,
@@ -62,6 +63,7 @@ export const DEFAULT_PROMPT_GUIDELINES: string[] = [
 	"Task status is a 4-state machine: pending → in_progress → completed, plus deleted as a tombstone. Pass activeForm (present-continuous label, e.g. 'researching existing tool') when marking in_progress.",
 	'To change a task\'s status, call update with the task id and the target status, e.g. {"action":"update","id":3,"status":"completed"} or {"action":"update","id":3,"status":"in_progress","activeForm":"writing tests"}. status is the field that changes the task; an update without a mutable field (status or another) is rejected.',
 	"Use blockedBy to express dependencies (A is blocked by B). On create, pass blockedBy as the initial set. On update, use addBlockedBy / removeBlockedBy (additive merge — do not resend the full array). Cycles are rejected.",
+	"To create several independent tasks at once, pass create with tasks: [{subject}, ...]. Do not also pass subject. tasks[] cannot blockedBy each other (ids do not exist until the call commits); create the prerequisite first, then the dependent with blockedBy. Dependency chains stay single-create.",
 	"list hides tombstoned (deleted) tasks by default; pass includeDeleted:true to see them. Pass status to filter by a single status.",
 	"Subject must be short and imperative (e.g. 'Research existing tool'); description is for long-form detail. activeForm is a present-continuous label shown while in_progress.",
 ];
@@ -72,10 +74,12 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 		name: TOOL_NAME,
 		label: TOOL_LABEL,
 		description:
-			"Manage a task list for tracking multi-step progress. Actions: create (new task), update (change status/fields/dependencies), list (all tasks, optionally filtered by status), get (single task details), delete (tombstone), clear (reset all). Status: pending → in_progress → completed, plus deleted tombstone. Use this to plan and track multi-step work like research, design, and implementation.",
+			"Manage a task list for tracking multi-step progress. Actions: create (new task, or several independent tasks at once via tasks[]), update (change status/fields/dependencies), list (all tasks, optionally filtered by status), get (single task details), delete (tombstone), clear (reset all). Status: pending → in_progress → completed, plus deleted tombstone. Use this to plan and track multi-step work like research, design, and implementation.",
 		promptSnippet: guidance.promptSnippet ?? DEFAULT_PROMPT_SNIPPET,
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: TodoParamsSchema,
+		// Undo a double-encoded tasks[] before Pi validates it (#244 shape).
+		prepareArguments: prepareTodoArguments,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const result = applyTaskMutation(getState(sid(ctx)), params.action, params as TaskMutationParams);
@@ -101,8 +105,8 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 			return renderTodoCall(args as never, theme, getRenderState());
 		},
 
-		renderResult(result, _opts, theme, _context) {
-			return renderTodoResult(result, theme);
+		renderResult(result, _opts, theme, context) {
+			return renderTodoResult(result, theme, context?.isError);
 		},
 	});
 }

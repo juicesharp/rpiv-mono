@@ -44,10 +44,14 @@ function formatGetLines(task: Task, state: TaskState): string {
 export function formatContent(op: Op, state: TaskState): string {
 	switch (op.kind) {
 		case "create": {
-			const t = state.tasks.find((x) => x.id === op.taskId);
-			// Defensive — `op.taskId` always resolves on success path.
-			if (!t) return `Created #${op.taskId}`;
-			return `Created #${t.id}: ${sanitizeTerminalText(t.subject)} (pending)`;
+			// Defensive — each `op.taskIds` entry resolves on the success path.
+			return op.taskIds
+				.map((id) => {
+					const created = state.tasks.find((x) => x.id === id);
+					if (!created) return `Created #${id}`;
+					return `Created #${created.id}: ${sanitizeTerminalText(created.subject)} (pending)`;
+				})
+				.join("\n");
 		}
 		case "update": {
 			if (!op.changed) {

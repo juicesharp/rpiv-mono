@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, type Editor, visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, CURSOR_MARKER, type Editor, visibleWidth } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 import {
@@ -123,6 +123,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		getCurrentBodyHeight: over.getCurrentBodyHeight ?? (() => 1),
 		getTerminalRows: over.getTerminalRows ?? (() => 24),
 		collapseKey: over.collapseKey ?? "ctrl+]",
+		notesKey: "n",
 	};
 	const initialProps: DialogProps = over.initialProps ?? { state, activePreviewPane: previewPane };
 	return { config, initialProps };
@@ -739,5 +740,71 @@ describe("Dialog overflow — row accounting regressions (#260, #261)", () => {
 			.render(80)
 			.map(stripAnsi);
 		expect(lines.slice(4, 7)).toEqual(["<LINE 8>", "<LINE 9>", "<LINE 10>"]);
+	});
+});
+
+describe("Dialog overflow — the open notes editor stays in view (#317)", () => {
+	const multiQ: QuestionData = {
+		question: "Areas",
+		header: "Areas",
+		multiSelect: true,
+		options: [
+			{ label: "FE", description: "f" },
+			{ label: "BE", description: "b" },
+		],
+	};
+
+	/** A notes editor of `rows` rendered rows, with the cursor marker on row `cursorRow`. */
+	function stubEditor(rows: number, cursorRow?: number): Editor {
+		return stubComponent(
+			Array.from({ length: rows }, (_, i) => `<EDITOR ${i}>${i === cursorRow ? CURSOR_MARKER : ""}`),
+		) as unknown as Editor;
+	}
+
+	function renderNotesOpen(notesInput: Editor, focus: [number, number] = [0, 1]): string[] {
+		const ms = stubMultiSelect(
+			Array.from({ length: 20 }, (_, i) => `<OPTION ${i}>`),
+			() => focus,
+		);
+		return makeDialog(
+			makeConfig({
+				questions: [multiQ],
+				isMulti: false,
+				state: makeQuestionnaireState({ notesVisible: true }),
+				multiSelectByTab: [ms],
+				notesInput,
+				getTerminalRows: () => 14,
+				getBodyHeight: () => 20,
+				getCurrentBodyHeight: () => 20,
+			}),
+		).render(80);
+	}
+
+	it("scrolls the notes header and editor into view instead of the focused option", () => {
+		const lines = renderNotesOpen(stubEditor(3)).map(stripAnsi);
+		expect(lines.length).toBeLessThanOrEqual(14);
+		expect(lines).toContain("Notes:");
+		for (const row of ["<EDITOR 0>", "<EDITOR 1>", "<EDITOR 2>"]) expect(lines).toContain(row);
+	});
+
+	it("keeps the cursor row visible when the editor is taller than the window", () => {
+		for (const cursorRow of [0, 5, 11]) {
+			const lines = renderNotesOpen(stubEditor(12, cursorRow));
+			expect(lines.length).toBeLessThanOrEqual(14);
+			expect(lines.some((l) => l.includes(CURSOR_MARKER))).toBe(true);
+		}
+	});
+
+	it("scrolls the Submit tab's global-note editor into view", () => {
+		const state = makeQuestionnaireState({ currentTab: 2, notesVisible: true });
+		const picker = new SubmitPicker(theme);
+		picker.setProps(submitPickerPropsFromState(state, true));
+		const lines = makeDialog(
+			makeConfig({ state, submitPicker: picker, getTerminalRows: () => 12, getBodyHeight: () => 20 }),
+		)
+			.render(80)
+			.map(stripAnsi);
+		expect(lines.length).toBeLessThanOrEqual(12);
+		expect(lines).toContain("<NOTES_INPUT>");
 	});
 });
