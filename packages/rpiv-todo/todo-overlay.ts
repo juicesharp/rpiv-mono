@@ -95,7 +95,8 @@ export class TodoOverlay {
 			this.hiddenCompletedTaskIds.add(taskId);
 		}
 		this.completedTaskIdsPendingHide.clear();
-		this.tui?.requestRender();
+		// update(), not a bare repaint: hiding the last row must unregister the widget.
+		this.update();
 	}
 
 	toggleCollapse(): void {

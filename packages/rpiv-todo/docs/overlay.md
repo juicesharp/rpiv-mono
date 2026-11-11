@@ -76,7 +76,9 @@ budget's floor and reload semantics.
 
 A completed task stays on screen for the remainder of the turn in which it was
 completed. At the start of the next agent turn, every completed row that has
-already been displayed is hidden from later renders. Reloading or compacting the
+already been displayed is hidden from later renders. A child session starting
+its own run (a subagent, for example) does not hide them, and once the last
+row is hidden the panel is removed. Reloading or compacting the
 session resets that tracking, so a fresh session shows the full list again.
 
 ## Collapsing

@@ -11,6 +11,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **`maxWidgetLines: 0` turns the overlay off.** The panel above the editor is no longer drawn, while the `todo` tool and `/todos` keep working. Like any other `maxWidgetLines` value, it applies on the next repaint, without `/reload`.
 
+### Fixed
+
+- **Completed rows no longer vanish when a subagent starts.** A completed task stays visible until the foreground session starts its next agent run, but a child session's start, such as a subagent's, also cleared them. Only the foreground session's own run hides them now. When the hidden rows were the last ones, the panel now disappears instead of leaving an empty frame. Thanks @AxelMrak ([#326](https://github.com/juicesharp/rpiv-mono/pull/326)).
+
 ## [2.15.0] - 2026-10-24
 
 ### Fixed
