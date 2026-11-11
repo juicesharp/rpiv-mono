@@ -108,7 +108,7 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 			{ active: false, toolCallId: "tc" },
 		]);
 		expect(captured.eventsEmitted.get("herdr:blocked")).toEqual([
-			{ active: true, label: "question" },
+			{ active: true, label: "Waiting for your answer" },
 			{ active: false, label: undefined },
 		]);
 	});
@@ -129,7 +129,10 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 			expect(stdout.stdoutWrite).toHaveBeenCalledTimes(1);
 			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
 			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
-			expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: true, label: "question" });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", {
+				active: true,
+				label: "Waiting for your answer",
+			});
 			expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
 			expect(mockEmit).toHaveBeenNthCalledWith(5, "herdr:blocked", { active: false, label: undefined });
 			expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);

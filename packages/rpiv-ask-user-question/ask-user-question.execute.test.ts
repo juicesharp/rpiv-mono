@@ -100,7 +100,10 @@ describe("ask_user_question.execute — terminal attention", () => {
 			expect(stdout.stdoutWrite).toHaveBeenCalledTimes(1);
 			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
 			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
-			expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: true, label: "question" });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", {
+				active: true,
+				label: "Waiting for your answer",
+			});
 			expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
 			expect(mockEmit).toHaveBeenNthCalledWith(5, "herdr:blocked", { active: false, label: undefined });
 			expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
@@ -173,7 +176,10 @@ describe("ask_user_question.execute — terminal attention", () => {
 			expect(result?.details).toMatchObject({ cancelled: false });
 			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
 			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
-			expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: true, label: "question" });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", {
+				active: true,
+				label: "Waiting for your answer",
+			});
 			expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
 			expect(mockEmit).toHaveBeenNthCalledWith(5, "herdr:blocked", { active: false, label: undefined });
 		} finally {
@@ -405,7 +411,7 @@ describe("ask_user_question.execute — event emission", () => {
 		});
 
 		expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
-		expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: true, label: "question" });
+		expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: true, label: "Waiting for your answer" });
 		expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
 		expect(mockEmit).toHaveBeenNthCalledWith(5, "herdr:blocked", { active: false, label: undefined });
 
