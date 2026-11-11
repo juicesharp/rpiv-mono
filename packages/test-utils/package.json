@@ -21,6 +21,7 @@
     "stdout.ts",
     "fs.ts",
     "manifest.ts",
+    "vcs.ts",
     "CHANGELOG.md"
   ],
   "exports": {
@@ -34,7 +35,8 @@
     "./spawn": "./spawn.js",
     "./stdout": "./stdout.js",
     "./fs": "./fs.js",
-    "./manifest": "./manifest.js"
+    "./manifest": "./manifest.js",
+    "./vcs": "./vcs.js"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
