@@ -181,8 +181,8 @@ carries the bare message. Task state is unchanged.
 
 The tool ships a `promptSnippet` and nine `promptGuidelines` bullets telling the
 model when to open a list, to create independent tasks in one `tasks[]` call,
-to keep exactly one task `in_progress`, to mark work completed immediately
-rather than in batches, never to complete a task with failing tests, and the
-literal `update {id, status}` call shape for changing a task's status. Both are
-overridable — see
+that several tasks may be `in_progress` at once when work runs in parallel,
+to mark work completed immediately rather than in batches, never to complete
+a task with failing tests, and the literal `update {id, status}` call shape
+for changing a task's status. Both are overridable — see
 [configuration.md](./configuration.md#guidance).
