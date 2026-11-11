@@ -16,6 +16,10 @@ The widget is mounted above the Pi editor under the key `rpiv-todos`.
 | Bound | Only the foreground session's overlay is refreshed. A detached or child session has its own task state and never rebinds or repaints the foreground panel. |
 | Disposed | On the foreground session's shutdown. A child session shutting down leaves the overlay alone. |
 
+Set [`maxWidgetLines`](./configuration.md#maxwidgetlines) to `0` to turn the
+overlay off. It then draws nothing, while the `todo` tool and `/todos` keep
+working.
+
 Task state is partitioned by session id, so parallel sessions cannot read or
 overwrite each other's lists. Nothing is written to disk: on session start,
 compaction, and session-tree changes, the list is rebuilt by walking the branch

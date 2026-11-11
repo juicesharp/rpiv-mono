@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`maxWidgetLines: 0` turns the overlay off.** The panel above the editor is no longer drawn, while the `todo` tool and `/todos` keep working. Like any other `maxWidgetLines` value, it applies on the next repaint, without `/reload`.
+
 ### Fixed
 
 - Completed todo rows now hide at the foreground session's next turn rather than waiting for another agent run. Child-session starts no longer hide foreground completions, completed rows omitted by the row budget remain available until displayed, and hiding the last row unregisters the widget. Task storage and replay are unchanged.
