@@ -73,6 +73,7 @@ export {
 	type LoopCapInfo,
 	type LoopStartInfo,
 	registerLifecycle,
+	type SettledUnit,
 	type StageRef,
 	type UnitEvent,
 } from "./events.ts";

@@ -10,7 +10,7 @@
   "hint.newline": "Shift+Enter for newline",
   "hint.clear": "Ctrl+U to clear",
   "hint.toggle": "Space to toggle",
-  "hint.notes": "n to add notes",
+  "hint.notes": "{key} to add notes",
   "hint.tab": "Tab to switch questions",
   "hint.collapse": "{key} to collapse",
   "hint.expand_line": "{key} to expand · Esc to cancel",
@@ -19,12 +19,12 @@
   "review.heading": "Review your answers",
   "review.ready": "Ready to submit your answers?",
   "review.incomplete": "⚠ Answer remaining questions before submitting:",
-  "review.global_hint": "n to add a note",
+  "review.global_hint": "{key} to add a note",
   "review.note_label": "Note",
 
   "preview.no_preview": "No preview available",
-  "preview.notes_affordance": "Notes: press n to add notes",
-  "preview.notes_edit_affordance": "Note saved: press n to edit",
+  "preview.notes_affordance": "Notes: press {key} to add notes",
+  "preview.notes_edit_affordance": "Note saved: press {key} to edit",
   "notes.header": "Notes:",
   "notes.saved_label": "Note for this answer:",
   "notes.global_header": "Global note:",
@@ -32,5 +32,10 @@
   "editor.failed": "External editor failed",
 
   "rpc.multi_instructions": "Enter the numbers of all that apply, comma-separated (e.g. \"1,3\"). Add \"; custom answer\" to include your own text, or type only custom text.",
-  "rpc.custom_answer_title": "Type your answer:"
+  "rpc.custom_answer_title": "Type your answer:",
+
+  "transcript.not_answered": "not answered",
+  "transcript.no_answer": "no answer",
+
+  "status.blocked": "Waiting for your answer"
 }

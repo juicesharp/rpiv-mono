@@ -19,7 +19,7 @@
 
 import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.ts";
 import { resolveSkill } from "../chain-state.ts";
-import { announceLoopStart, pendingFanoutIndices, runFanoutResume, runLoop } from "../loop.ts";
+import { announceLoopStart, pendingFanoutIndices, runFanoutResume, runLoop, settledFanoutSlots } from "../loop.ts";
 import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.ts";
 import { buildLoopEntry, type LoopDeps, sequentialStrategyOf } from "../loop-kinds.ts";
 import { ensureUnitDeps } from "../loop-waves.ts";
@@ -75,7 +75,8 @@ export async function resumeLoopStage(
 		// otherwise reach the dispatcher. guardResumeEntry catches this throw → clean failure.
 		ensureUnitDeps(point.units!, point.parent);
 		const pending = pendingFanoutIndices(point.cursor, point.units!.length); // slots === undefined
-		if (pending.length > 0) await announceLoopStart(ctx, run, entry);
+		if (pending.length > 0)
+			await announceLoopStart(ctx, run, entry, settledFanoutSlots(point.cursor, point.units!.length));
 		await runFanoutResume(ctx, entry, point.cursor, run, deps, pending);
 		return;
 	}

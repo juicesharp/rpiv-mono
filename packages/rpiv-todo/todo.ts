@@ -104,8 +104,8 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 			return renderTodoCall(args as never, theme, getRenderState());
 		},
 
-		renderResult(result, _opts, theme, _context) {
-			return renderTodoResult(result, theme);
+		renderResult(result, _opts, theme, context) {
+			return renderTodoResult(result, theme, context?.isError);
 		},
 	});
 }

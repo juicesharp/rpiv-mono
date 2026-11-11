@@ -1,5 +1,16 @@
-import { StringEnum } from "@earendil-works/pi-ai";
-import { type Static, Type } from "typebox";
+import { type Static, type TUnsafe, Type } from "typebox";
+
+/**
+ * A `{ type: "string", enum }` schema, the form Google's API and other providers accept where
+ * anyOf/const unions fail. Local rather than pi-ai's `StringEnum`, whose return type changed in
+ * Pi 1.5 to one typebox's `Static` reads as `unknown`; the JSON sent is the same on any Pi.
+ */
+function StringEnum<const T extends readonly string[]>(
+	values: T,
+	options?: { description?: string },
+): TUnsafe<T[number]> {
+	return Type.Unsafe<T[number]>({ type: "string", enum: values, ...options });
+}
 
 // ---------------------------------------------------------------------------
 // Tool / command identity — verbatim string boundaries.
@@ -121,7 +132,10 @@ const CreateTaskInputSchema = Type.Object({
 });
 
 export const TodoParamsSchema = Type.Object({
-	action: StringEnum(["create", "update", "list", "get", "delete", "clear"] as const),
+	action: StringEnum(["create", "update", "list", "get", "delete", "clear"] as const, {
+		description:
+			"Required in every call — the operation to perform: create (one task by subject, or several with tasks[]), update (change an existing task by id), list, get (one task by id), delete (tombstone by id), clear (reset all).",
+	}),
 	subject: Type.Optional(
 		Type.String({
 			description: "Task subject line (required for create unless tasks[] is set)",

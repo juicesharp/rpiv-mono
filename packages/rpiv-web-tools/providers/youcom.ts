@@ -3,10 +3,12 @@ import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "
 const YOUCOM_SEARCH_URL = "https://ydc-index.io/v1/search";
 const YOUCOM_CONTENTS_URL = "https://ydc-index.io/v1/contents";
 export const YOUCOM_API_KEY_ENV_VAR = "YOUCOM_API_KEY";
+export const YDC_API_KEY_ENV_VAR = "YDC_API_KEY";
 export const YOUCOM_PROVIDER_META = {
 	name: "youcom",
 	label: "You.com",
 	envVar: YOUCOM_API_KEY_ENV_VAR,
+	fallbackEnvVar: YDC_API_KEY_ENV_VAR,
 	roles: ["search", "fetch"] as const,
 } as const;
 

@@ -12,8 +12,9 @@ adapts to the size of your terminal.
 | `Shift+Enter` | Insert a newline. | `Type something.` input, notes editor |
 | `Esc` | Cancel the whole questionnaire. | Everywhere except the notes editor, where it closes notes |
 | `Tab` / `Shift+Tab` | Next / previous tab, wrapping. `→` / `←` do the same. | Multi-question dialogs only |
+| `1`–`9` | Act on the row with that number: answer with it on a single-select question, toggle it on a multi-select one, or move to `Type something.` (no digit reaches `Next`). Inside `Type something.` and the notes editor, digits are text. | Option list |
 | `Space` | Toggle the focused authored option. In `Type something.`, Space inserts text. | Multi-select questions |
-| `n` | Open the notes editor for the focused question — or, on the Submit tab, the global note for the whole questionnaire. | Every question tab; the Submit tab in multi-question dialogs |
+| `n` | Open the notes editor for the focused question — or, on the Submit tab, the global note for the whole questionnaire. Configurable via `notesKey`. | Every question tab; the Submit tab in multi-question dialogs |
 | `Ctrl+G` | Open Pi's configured external editor with the current custom-answer draft. | `Type something.` input |
 | `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
 | `Ctrl+]` | Collapse or expand the dialog. Configurable via `collapseKey`. | Everywhere, including while collapsed |

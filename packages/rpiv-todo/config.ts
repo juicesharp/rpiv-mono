@@ -31,12 +31,13 @@ export function loadConfig(): TodoConfig {
 }
 
 /** Content-row budget for the overlay, read fresh on every call (per-render —
- *  no `/reload`). Mirrors warp's getHeartbeatMs minus its `=== 0` disabled
- *  sentinel: a non-number or a value below the floor of 3 falls back to the
- *  default; no ceiling. */
+ *  no `/reload`). Mirrors warp's getHeartbeatMs: `0` turns the overlay off; a
+ *  non-number or any other value below the floor of 3 falls back to the default;
+ *  no ceiling. */
 export function getMaxWidgetLines(): number {
 	const config = loadConfig();
 	const lines = config.maxWidgetLines;
+	if (lines === 0) return 0; // off
 	if (typeof lines !== "number" || lines < 3) return DEFAULT_MAX_WIDGET_LINES;
 	return lines;
 }

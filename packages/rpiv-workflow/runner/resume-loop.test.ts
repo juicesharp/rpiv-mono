@@ -304,6 +304,37 @@ describe("loop-resume — fanout", () => {
 		expect(rows.filter((r) => r.parent === "impl" && r.status === "completed")).toHaveLength(3);
 	});
 
+	it("partial-fanout resume: onLoopStart carries the already-settled slots (ok + collected-failed) so a lane surface doesn't paint them pending", async () => {
+		// Replayed units fire no onUnitStart/onUnitEnd, so the re-announce names the slots the
+		// fold already filled — the only way a per-unit listener learns their terminal status.
+		writeRun([
+			unitRow(1, 1, "completed"),
+			{ ...unitRow(2, 2, "failed"), collected: true, errMsg: "unit 2 boom" },
+			unitRow(3, 3, "failed"), // hard failure → unfilled → re-dispatched
+		]);
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("wrote .rpiv/artifacts/plans/p3.md")] }],
+		});
+		const loopStarts: Array<{ kind: string; settled?: unknown }> = [];
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: fanoutWf,
+			header,
+			ref: "@x",
+			lifecycle: { onLoopStart: (_stage, info) => void loopStarts.push(info) },
+		});
+
+		expect(result.success).toBe(true);
+		expect(chain.sentMessages).toHaveLength(1); // only unit 3 re-dispatches (+ the collected halt's memo)
+		expect(chain.sentMessages[0]).toMatch(/^\/skill:impl phase 3/);
+		expect(loopStarts).toHaveLength(1);
+		expect(loopStarts[0]!.settled).toEqual([
+			{ index: 0, failed: false },
+			{ index: 1, failed: true },
+		]);
+	});
+
 	it("collected soft-halt row: rebuilds the failedOutput sentinel by index (skipped by fanin), no re-dispatch", async () => {
 		// CONTRAST with the hard-failure case above: a `collected:true` row is a
 		// non-terminal collect-all unit halt. The resume fold rebuilds a failedOutput

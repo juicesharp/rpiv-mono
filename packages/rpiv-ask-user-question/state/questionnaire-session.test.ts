@@ -86,6 +86,7 @@ function makeSession(options: SessionTestOptions = {}) {
 		keybindings: options.keybindings ?? keybindings,
 		editInput: options.editInput ?? (async () => undefined),
 		collapseKey: "off",
+		notesKey: "n",
 		canReopenWhileHidden: false,
 		rowBudget: (rows) => rows,
 	});
@@ -98,6 +99,38 @@ function focusCustomAnswer(session: QuestionnaireSession): void {
 }
 
 describe("QuestionnaireSession — custom-answer drafts", () => {
+	it("answers with a row's digit like Enter on it", () => {
+		const { session, done } = makeSession();
+		session.dispatch("2");
+		expect(done).toHaveBeenCalledWith({
+			answers: [{ questionIndex: 0, question: "Which?", kind: "option", answer: "B" }],
+			cancelled: false,
+		});
+	});
+
+	it("the Type something. row's digit focuses it without typing itself", () => {
+		const { session, done } = makeSession();
+		session.dispatch("3");
+		session.dispatch("4");
+		session.dispatch("2");
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith({
+			answers: [{ questionIndex: 0, question: "Which?", kind: "custom", answer: "42" }],
+			cancelled: false,
+		});
+	});
+
+	it("types a digit as text inside Type something.", () => {
+		const { session, done } = makeSession();
+		focusCustomAnswer(session);
+		session.dispatch("1");
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith({
+			answers: [{ questionIndex: 0, question: "Which?", kind: "custom", answer: "1" }],
+			cancelled: false,
+		});
+	});
+
 	it("preserves a draft while browsing options and restores it on return", () => {
 		const { session, done } = makeSession();
 		focusCustomAnswer(session);

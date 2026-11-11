@@ -9,7 +9,7 @@ import {
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
-	seedPendingUnits,
+	seedUnits,
 	setCurrentSession,
 	setUnitStarted,
 } from "./run-lane-registry.ts";
@@ -112,7 +112,7 @@ describe("LaneTranscriptView", () => {
 
 	it("shows a fanned-out placeholder on the lane row during a live fan-out generation", () => {
 		recordRun("run-1", "build");
-		seedPendingUnits("run-1", [
+		seedUnits("run-1", [
 			{ index: 0, label: "phase 1/2" },
 			{ index: 1, label: "phase 2/2" },
 		]);
@@ -124,7 +124,7 @@ describe("LaneTranscriptView", () => {
 
 	it("keeps the disk fallback for a RETIRED lane's row (no fanned-out placeholder)", () => {
 		recordRun("run-1", "build");
-		seedPendingUnits("run-1", [{ index: 0, label: "phase 1/1" }]);
+		seedUnits("run-1", [{ index: 0, label: "phase 1/1" }]);
 		retireRun("run-1", "completed");
 		const view = new LaneTranscriptView("run-1", SINGLE_UNIT_KEY, makeTui(), identityTheme);
 		// No jsonl exists under this cwd, so the disk path degrades to the terminal
@@ -136,7 +136,7 @@ describe("LaneTranscriptView", () => {
 
 	it("shows a pending placeholder for a seeded-but-unstarted unit sub-row", () => {
 		recordRun("run-1", "build");
-		seedPendingUnits("run-1", [
+		seedUnits("run-1", [
 			{ index: 0, label: "phase 1/2" },
 			{ index: 1, label: "phase 2/2" },
 		]);

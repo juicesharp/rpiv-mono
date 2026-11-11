@@ -7,6 +7,35 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Resumed fanout runs no longer show finished units as pending.** Rerunning a run after a failed stage seeded every fanout unit `○ pending`, including the ones that had already finished, and they stayed that way while the remaining units ran. If the resumed run then failed, those finished units turned ✗. Already-finished units now show ✓ (or ✗ for a collected halt), and the `units x/y` counter starts from their count.
+- **Resuming a failed run no longer drops the tokens it already spent.** A stage that failed never banked its units' tokens into the stage total, and the resume then cleared those units, so the lane total, the heading total and the per-stage breakdown all under-reported. The failed attempt's tokens are now added to that stage's total on resume, and the resumed units add on top. Tokens are still kept in memory only, so restarting Pi before resuming loses them.
+
+## [2.15.0] - 2026-10-24
+
+## [2.14.2] - 2026-10-23
+
+### Fixed
+
+- **A mechanics risk about an extensionless file no longer loops the plan gate.** A `pass` ruling citing `scripts/Makefile:18` or `./Makefile:18` was demoted for missing `file:line` evidence, re-ruled `pass`, and demoted again until the run stopped. Such a citation now counts as evidence when it carries a `/`; a bare `Makefile:18` still does not. Only the evidence check changes; plan citation checks and skill text are unchanged. Thanks @daniel-sampliner ([#286](https://github.com/juicesharp/rpiv-mono/pull/286)).
+
+## [2.14.1] - 2026-10-23
+
+### Fixed
+
+- **Large plans no longer crash Pi with an out-of-memory error on the second grading pass.** Comparing a plan with its saved copy built a table with one cell per pair of lines, about 14 GiB for a 43,000-line plan, and the process was killed before the fallback to a full re-grade could run. The comparison now runs section by section with memory bounded by the largest section; the reported plan pair takes about 50 ms. For edits inside sections the result is unchanged. When headings themselves change, it can count more changed lines, which only makes a full re-grade more likely. Thanks @37 for the diagnosis and fix ([#226](https://github.com/juicesharp/rpiv-mono/issues/226), [#227](https://github.com/juicesharp/rpiv-mono/pull/227)).
+- **`validate` no longer fails on its own report when the plan's topic contains an em dash, parentheses or commas.** It used to build the report's filename from the plan's free-form `topic:`, and the workflow could not collect a path containing those characters. It now names the report after the plan file, whose name is already collectable. Thanks @mikenerone for the detailed report ([#314](https://github.com/juicesharp/rpiv-mono/issues/314)).
+- **A workflow stage no longer fails when the agent cites a missing file after announcing its own.** The stage took the last artifact path the agent mentioned, so a misremembered sibling path in a trailing "Sources:" line replaced the file it had actually written, and the stage failed with "file does not exist on disk" (in `/wf build`, as `subplan-check` halting on a slice with no design). A mentioned path that is not on disk now yields to the newest mentioned path that is; when none exists the stage still fails as before. Thanks @linuxtextadventurer for the report ([#187](https://github.com/juicesharp/rpiv-mono/issues/187)).
+
+## [2.14.0] - 2026-10-23
+
+### Fixed
+
+- **The `/wf build` plan gate no longer loops on a risk flag that no fix can clear.** Two cases demoted a passing risk ruling every round, so the gate stayed red although every panel member passed, and `plan-fix` had nothing to change:
+  - A `file:line` citation with an extension longer than 5 characters (`App.csproj:34`, `Index.cshtml:12`, `web.config:5`, `build.gradle:7`) did not count as evidence. Extensions of up to 10 characters now count, so .NET and Gradle projects are no longer stuck.
+  - A flag authored as both `claim_type: mechanics` and `disposition: verify-at-implement` also needed a `file:line` citation, which cannot exist for code a later phase writes. A deferred flag now needs only its `procedure` and `owner`, and the synthesize skill no longer pairs the two for such claims.
+
 ## [2.13.10] - 2026-10-23
 
 ### Changed

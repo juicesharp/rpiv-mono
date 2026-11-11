@@ -124,12 +124,24 @@ function withoutCustomDraft(state: QuestionnaireState, tab: number): ReadonlyMap
 	return drafts;
 }
 
+/**
+ * Row focused on entering a tab: the chosen option, or Next for a multi-select answer, so a
+ * stray Enter re-confirms the answer instead of replacing it with row 0. A custom answer
+ * starts at row 0, since focusing its row would enter input mode.
+ */
+function answeredRowIndex(answer: QuestionAnswer | undefined, items: readonly WrappingSelectItem[]): number {
+	let index = -1;
+	if (answer?.kind === "option") index = items.findIndex((i) => i.kind === "option" && i.label === answer.answer);
+	if (answer?.kind === "multi") index = items.findIndex((i) => i.kind === "next");
+	return Math.max(0, index);
+}
+
 function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyContext): ApplyResult {
 	const notesValue = notesValueFor(state, nextTab);
 	const transitioned: QuestionnaireState = {
 		...state,
 		currentTab: nextTab,
-		optionIndex: 0,
+		optionIndex: answeredRowIndex(state.answers.get(nextTab), ctx.itemsByTab[nextTab] ?? []),
 		inputMode: false,
 		notesVisible: false,
 		submitChoiceIndex: 0,

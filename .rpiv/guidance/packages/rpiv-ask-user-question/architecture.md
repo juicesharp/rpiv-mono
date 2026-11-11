@@ -23,7 +23,8 @@ state/                  — Canonical state, pure reducer, key router, runtime s
                           i18n-bridge. Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/state/architecture.md`
 state/selectors/        — Pure projections: focus discriminant, derivations, per-component prop selectors.
                           Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/state/selectors/architecture.md`
-view/                   — Chrome (DialogView), props adapter, binding registries, StatefulView<P> contract.
+view/                   — Chrome (DialogView), props adapter, binding registries, StatefulView<P> contract,
+                          `transcript.ts` (the tool's renderCall/renderResult receipt).
                           Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/view/architecture.md`
 view/components/        — Per-component StatefulView renderers + the WrappingSelect primitive.
                           Detailed: `.rpiv/guidance/packages/rpiv-ask-user-question/view/components/architecture.md`

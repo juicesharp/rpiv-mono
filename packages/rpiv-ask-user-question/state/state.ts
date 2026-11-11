@@ -62,4 +62,6 @@ export interface QuestionnaireRuntime {
 	 * the collapse shortcut is disabled.
 	 */
 	collapseKey: string;
+	/** Key that opens the notes editor (`resolveNotesKey` output: `"n"` by default). */
+	notesKey: string;
 }

@@ -21,7 +21,8 @@
  * disk-corroborated basename fallback — when both scans miss (agent mangled
  * the directory prefix in prose), a bare `<file>.md` token from the transcript
  * is accepted iff it resolves to exactly one existing file under
- * `.rpiv/artifacts/` — see that section below.
+ * `.rpiv/artifacts/` — see that section below. A scanned path that is not on
+ * disk yields to the newest announced full path that is (see `withDiskFallback`).
  *
  * One parser: `frontmatterParser` parses YAML frontmatter from the
  * primary fs artifact into `Record<string, unknown>` — what
@@ -92,8 +93,8 @@ const RPIV_ARTIFACT_PATTERN = new RegExp(String.raw`\.rpiv/artifacts/${TEMPERED_
 // fatal stands.
 const BASENAME_PATTERN = new RegExp(String.raw`${TEMPERED_SEGMENT}\.md`, "g");
 
-/** Bare `<file>.md` tokens from assistant text, last-mentioned first, deduped. */
-function basenameCandidates(branch: BranchEntry[], offsetStart?: number): string[] {
+/** Matches of `pattern` in assistant text, last-mentioned first, deduped. */
+function textMentions(branch: BranchEntry[], pattern: RegExp, offsetStart?: number): string[] {
 	const out: string[] = [];
 	const seen = new Set<string>();
 	const start = Math.max(offsetStart ?? 0, 0);
@@ -105,7 +106,7 @@ function basenameCandidates(branch: BranchEntry[], offsetStart?: number): string
 		for (let j = content.length - 1; j >= 0; j--) {
 			const part = content[j]!;
 			if (part.type !== "text" || typeof part.text !== "string") continue;
-			const matches = part.text.match(BASENAME_PATTERN) ?? [];
+			const matches = part.text.match(pattern) ?? [];
 			for (let k = matches.length - 1; k >= 0; k--) {
 				const m = matches[k]!;
 				if (!seen.has(m)) {
@@ -130,13 +131,29 @@ function resolveUnderArtifacts(cwd: string, basename: string, bucket?: string): 
 	return buckets.filter((b) => existsSync(join(root, b, basename))).map((b) => `.rpiv/artifacts/${b}/${basename}`);
 }
 
-/** Full-path scan first; on miss, the disk-corroborated basename fallback. */
-function withDiskFallback(primary: ArtifactCollector, bucket?: string): ArtifactCollector {
+/** A handle path resolved against `cwd` when repo-relative. */
+const absArtifactPath = (cwd: string, path: string): string => (isAbsolute(path) ? path : join(cwd, path));
+
+/**
+ * Full-path scan first. A scanned path that is not on disk — an agent that
+ * announced its own file and then cited a sibling's path it misremembered —
+ * yields to the newest announced full path that is on disk; with none, the
+ * scanned path stands and the parser fatals on it. On a scan miss, the
+ * disk-corroborated basename fallback.
+ */
+function withDiskFallback(primary: ArtifactCollector, pattern: RegExp, bucket?: string): ArtifactCollector {
 	return defineCollector({
 		collect: async (ctx) => {
 			const scanned = await primary.collect(ctx);
-			if (scanned.kind === "ok") return scanned;
-			for (const basename of basenameCandidates(ctx.branch, ctx.branchOffset)) {
+			if (scanned.kind === "ok") {
+				const handle = scanned.artifacts[0]?.handle;
+				if (handle?.kind !== "fs" || existsSync(absArtifactPath(ctx.cwd, handle.path))) return scanned;
+				const onDisk = textMentions(ctx.branch, pattern, ctx.branchOffset).find((p) =>
+					existsSync(absArtifactPath(ctx.cwd, p)),
+				);
+				return onDisk ? { kind: "ok", artifacts: [{ handle: fsHandle(onDisk), role: "primary" }] } : scanned;
+			}
+			for (const basename of textMentions(ctx.branch, BASENAME_PATTERN, ctx.branchOffset)) {
 				const hits = resolveUnderArtifacts(ctx.cwd, basename, bucket);
 				if (hits.length === 1) {
 					return { kind: "ok", artifacts: [{ handle: fsHandle(hits[0]!), role: "primary" }] };
@@ -170,6 +187,7 @@ const TOOL_ARG_FALLBACK = { match: isFileWrite, argKeys: ["path"] as const };
 /** Bucket-agnostic — accepts any `.rpiv/artifacts/<bucket>/...md`. */
 export const rpivArtifactCollector: ArtifactCollector = withDiskFallback(
 	transcriptPathCollector({ pattern: RPIV_ARTIFACT_PATTERN, ...TOOL_ARG_FALLBACK }),
+	RPIV_ARTIFACT_PATTERN,
 );
 
 /** Bucket-narrowed — accepts only `.rpiv/artifacts/<bucket>/...md`. The filename
@@ -178,7 +196,7 @@ export const rpivArtifactCollector: ArtifactCollector = withDiskFallback(
 export function rpivBucketCollector(bucket: string): ArtifactCollector {
 	const escaped = bucket.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const pattern = new RegExp(String.raw`\.rpiv/artifacts/${escaped}/${TEMPERED_SEGMENT}\.md`, "g");
-	return withDiskFallback(transcriptPathCollector({ pattern, ...TOOL_ARG_FALLBACK }), bucket);
+	return withDiskFallback(transcriptPathCollector({ pattern, ...TOOL_ARG_FALLBACK }), pattern, bucket);
 }
 
 // ---------------------------------------------------------------------------
@@ -209,7 +227,7 @@ export const frontmatterParser: ArtifactParser<undefined, "artifact-md", Record<
 				message: `${ctx.skill}: frontmatterParser requires an fs artifact (got ${primary?.handle.kind ?? "none"})`,
 			};
 		}
-		const abs = isAbsolute(primary.handle.path) ? primary.handle.path : join(ctx.cwd, primary.handle.path);
+		const abs = absArtifactPath(ctx.cwd, primary.handle.path);
 		if (!existsSync(abs)) {
 			return {
 				kind: "fatal",

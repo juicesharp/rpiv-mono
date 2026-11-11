@@ -1005,6 +1005,22 @@ describe("build grade panel re-grades only the pending dimensions (P2)", () => {
 		expect(decision.citedSections).toEqual(["phase 3"]);
 	});
 
+	it("diffs a ~43k-line plan without exhausting the heap — a one-line amend stays surgical", async () => {
+		// The diff's memory must stay bounded by section size, not plan size: an
+		// out-of-memory kill is not an exception, so the guard's fail-closed
+		// catch could never route around it.
+		const verdicts = [...passingOthers(), correctnessFailing("Phase 7 > packages/x/y.ts:42")];
+		const body = (n: number, edited = false) =>
+			Array.from({ length: 1_400 }, (_, i) => (edited && i === 500 ? "edited line" : `phase ${n} line ${i}`)).join(
+				"\n",
+			);
+		const phases = (editedPhase?: number) =>
+			Array.from({ length: 30 }, (_, i) => phase(i + 1, body(i + 1, i + 1 === editedPhase)));
+		await runUnitsWithPrior(verdicts, planFrom(phases()), planFrom(phases(7)), true);
+		const decision = JSON.parse(readFileSync(join(tmpDir, ".rpiv/artifacts/priors/p.md.decision.json"), "utf-8"));
+		expect(decision).toMatchObject({ surgical: true, changedLines: 2, touchedSections: ["phase 7"] });
+	});
+
 	it("confirm arm is unchanged by the guard — a prior present still re-grades ONLY pending", async () => {
 		// PLAN_CONFIRM_FANOUT carries no priorChannel ⇒ surgical=false, priorPresent
 		// computed from a DIFFERENT (absent) channel ⇒ carry-forward wins. Even with

@@ -40,9 +40,42 @@ describe("isTaskDetails — defensive type guard", () => {
 		expect(isTaskDetails({ tasks: [], nextId: "1" })).toBe(false);
 	});
 
+	it("rejects a snapshot whose tasks[] holds a malformed entry", () => {
+		const truncated = "[output-policy: array truncated, dropped 3 item(s)]";
+		expect(isTaskDetails({ tasks: [taskFixture(1, "kept"), truncated], nextId: 58 })).toBe(false);
+		expect(isTaskDetails({ tasks: [{ id: 1, status: "pending" }], nextId: 2 })).toBe(false);
+		expect(isTaskDetails({ tasks: [taskFixture(1, "x", { status: "done" as never })], nextId: 2 })).toBe(false);
+	});
+
+	it("rejects optional fields the renderer would choke on", () => {
+		for (const extra of [
+			{ activeForm: 7 },
+			{ blockedBy: "#2" },
+			{ blockedBy: ["2"] },
+			{ owner: {} },
+			{ metadata: "m" },
+		]) {
+			expect(isTaskDetails({ tasks: [taskFixture(1, "x", extra as never)], nextId: 2 }), JSON.stringify(extra)).toBe(
+				false,
+			);
+		}
+	});
+
 	it("accepts well-formed snapshot envelopes", () => {
 		expect(isTaskDetails({ tasks: [], nextId: 1 })).toBe(true);
 		expect(isTaskDetails({ action: "create", params: {}, tasks: [], nextId: 1 })).toBe(true);
+	});
+
+	it("accepts a task carrying every optional field the tool writes", () => {
+		const full = taskFixture(2, "full", {
+			status: "in_progress",
+			description: "d",
+			activeForm: "doing",
+			blockedBy: [1],
+			owner: "me",
+			metadata: { k: 1 },
+		});
+		expect(isTaskDetails({ tasks: [taskFixture(1, "a", { status: "deleted" }), full], nextId: 3 })).toBe(true);
 	});
 });
 
@@ -172,6 +205,18 @@ describe("replayFromBranch — state entries", () => {
 			],
 		});
 		expect(replayFromBranch(ctx).tasks[0]?.status).toBe("completed");
+	});
+
+	it("a malformed snapshot keeps the last valid state, on both replay sources", () => {
+		const truncated = { tasks: [taskFixture(1, "A"), "[output-policy: array truncated]"], nextId: 9 };
+		const fromEntries = createMockCtx({
+			branch: [stateEntry(snap([taskFixture(1, "A")], 2)), stateEntry(truncated)],
+		});
+		expect(replayFromBranch(fromEntries)).toEqual({ tasks: [taskFixture(1, "A")], nextId: 2 });
+		const fromResults = createMockCtx({
+			branch: [todoResult(snap([taskFixture(1, "A")], 2)), makeMessageEntry(makeTodoToolResult(truncated as never))],
+		});
+		expect(replayFromBranch(fromResults)).toEqual({ tasks: [taskFixture(1, "A")], nextId: 2 });
 	});
 
 	it("falls back to toolResult snapshots on a branch with no state entries (older sessions)", () => {

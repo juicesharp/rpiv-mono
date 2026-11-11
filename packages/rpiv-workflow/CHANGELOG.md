@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`LoopStartInfo.settled` on a resumed fanout.** When a resume re-announces a partially-finished fanout, `onLoopStart` now lists the slots already filled from the trail (`{ index, failed }`, where `failed` marks a collected soft-halt). Those units are replayed, not re-run, so they fire no `onUnitStart`/`onUnitEnd`; listeners read their state here. The field is absent on a live entry. New exported type `SettledUnit`.
+
+## [2.15.0] - 2026-10-24
+
+## [2.14.2] - 2026-10-23
+
+## [2.14.1] - 2026-10-23
+
+## [2.14.0] - 2026-10-23
+
 ## [2.13.10] - 2026-10-23
 
 ## [2.13.9] - 2026-10-17

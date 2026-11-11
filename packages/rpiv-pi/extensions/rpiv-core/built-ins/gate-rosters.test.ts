@@ -153,6 +153,42 @@ describe("evidenceCitesFileLine", () => {
 		expect(evidenceCitesFileLine({ id: "r1", pass: true }, mechanics)).toBe(false);
 	});
 
+	it("a citation with a 6+ char extension counts — a .csproj pass is never demoted", () => {
+		for (const evidence of [
+			"TruVisibility.TruHosting.WebApi/TruVisibility.TruHosting.WebApi.csproj:34 PackageReference",
+			"Views/Home/Index.cshtml:12",
+			"web.config:5",
+			"app/build.gradle:7",
+		]) {
+			expect(evidenceCitesFileLine({ id: "r1", pass: true, evidence }, mechanics)).toBe(true);
+		}
+	});
+
+	it("a slash-qualified extensionless file counts — a Makefile pass is never demoted", () => {
+		for (const evidence of ["scripts/Makefile:18 — the target is present", "./Makefile:18", "bin/run:3-9"]) {
+			expect(evidenceCitesFileLine({ id: "r1", pass: true, evidence }, mechanics)).toBe(true);
+		}
+	});
+
+	it("a bare extensionless name or a word:number token still demotes", () => {
+		for (const evidence of ["Makefile:18", "HTTP:80", "the 3:1 ratio at 17:13:27"]) {
+			expect(evidenceCitesFileLine({ id: "r1", pass: true, evidence }, mechanics)).toBe(false);
+		}
+	});
+
+	it("a verify-at-implement mechanics flag carries no evidence duty — its procedure + owner are the duty", () => {
+		const deferredMechanics: RiskRecord = {
+			id: "r1",
+			claim_type: "mechanics",
+			disposition: "verify-at-implement",
+		};
+		expect(evidenceCitesFileLine({ id: "r1", pass: true }, deferredMechanics)).toBe(true);
+		expect(
+			rulingEffectivePass({ id: "r1", pass: true, procedure: "npx vitest run", owner: 5 }, deferredMechanics),
+		).toBe(true);
+		expect(rulingEffectivePass({ id: "r1", pass: true }, deferredMechanics)).toBe(false);
+	});
+
 	it(".match() semantics — consecutive mechanics checks all match (a /g .test() would alternate on lastIndex)", () => {
 		const r = { id: "r1", pass: true, evidence: "packages/rpiv-pi/index.ts:12" };
 		expect(evidenceCitesFileLine(r, mechanics)).toBe(true);

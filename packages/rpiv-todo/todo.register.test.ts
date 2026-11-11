@@ -67,6 +67,12 @@ describe("registerTodoTool — registration shape", () => {
 			tasks: [{ subject: "a" }],
 		});
 	});
+
+	it("describes the required `action` discriminator", () => {
+		const { tool } = setup();
+		const schema = tool.parameters as { properties?: Record<string, { description?: string }> };
+		expect(schema.properties?.action?.description).toMatch(/^Required in every call/);
+	});
 });
 
 describe("registerTodoTool — execute mutates module state", () => {
@@ -192,6 +198,18 @@ describe("registerTodoTool — renderCall", () => {
 		const node = tool.renderCall?.({ action: "clear" } as never, theme, undefined as never) as unknown as Text;
 		expect((node as unknown as { text: string }).text).toContain("∅");
 	});
+
+	it("a call without an action renders the bare prefix, never 'undefined'", () => {
+		const { tool } = setup();
+		const node = tool.renderCall?.(
+			{ subject: "flat args", id: 1 } as never,
+			theme,
+			undefined as never,
+		) as unknown as Text;
+		const text = (node as unknown as { text: string }).text;
+		expect(text).toContain("todo");
+		expect(text).not.toContain("undefined");
+	});
 });
 
 describe("registerTodoTool — renderResult", () => {
@@ -256,5 +274,33 @@ describe("registerTodoTool — renderResult", () => {
 			undefined as never,
 		) as unknown as Text;
 		expect((node as unknown as { text: string }).text).toContain("✓");
+	});
+
+	it("a rejected mutation renders '✗' with the reason, not the requested status", async () => {
+		const { tool } = setup();
+		const r = await call(tool, { action: "update", id: 99, status: "completed" });
+		const node = tool.renderResult?.(r as never, {} as never, theme, { isError: false } as never) as unknown as Text;
+		const text = (node as unknown as { text: string }).text;
+		expect(text).toContain("✗");
+		expect(text).toContain("#99");
+		expect(text).not.toContain("completed");
+		expect(text).not.toContain("✓");
+	});
+
+	it("a call Pi rejected before execute renders '✗' with the first line of its message", () => {
+		const { tool } = setup();
+		const node = tool.renderResult?.(
+			{
+				content: [{ type: "text", text: 'Validation failed for tool "todo":\n  - action: must be present' }],
+			} as never,
+			{} as never,
+			theme,
+			{ isError: true } as never,
+		) as unknown as Text;
+		const text = (node as unknown as { text: string }).text;
+		expect(text).toContain("✗");
+		expect(text).toContain('Validation failed for tool "todo":');
+		expect(text).not.toContain("must be present");
+		expect(text).not.toContain("✓");
 	});
 });

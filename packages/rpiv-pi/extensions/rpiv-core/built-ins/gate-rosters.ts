@@ -225,6 +225,9 @@ export const planAuthoredRisks = (state: RunView, channel: string): Map<string, 
 	return out;
 };
 
+/** `scripts/Makefile:18` — the `/` keeps `HTTP:80` out. Evidence-only: the shared regex also feeds the citation floor. */
+const EXTENSIONLESS_FILE_LINE_RE = /(?<!\w)(?:\.?\/|\w[\w.-]*\/)+\w[\w.-]*:\d+/;
+
 /**
  * A mechanics-pass ruling's evidence duty: when the plan AUTHORED a
  * `claim_type: "mechanics"` risk for the ruling's id, a `pass` ruling MUST
@@ -236,11 +239,15 @@ export const planAuthoredRisks = (state: RunView, channel: string): Map<string, 
  * regex carries the `/g` flag, so `.test()` is stateful across calls
  * (`lastIndex` advances) and would
  * intermittently miss a present citation. An id with no authored mechanics
- * risk carries no evidence duty ⇒ returns `true`.
+ * risk, or one deferred with `verify-at-implement`, carries no evidence duty ⇒
+ * returns `true`.
  */
 export const evidenceCitesFileLine = (r: RiskRuling, authored?: RiskRecord): boolean => {
-	if (authored?.claim_type !== "mechanics") return true;
-	return typeof r.evidence === "string" && r.evidence.match(FILE_LINE_CITATION_RE) !== null;
+	// A deferred claim may concern code the plan has not written yet, so its
+	// procedure + owner are the duty instead.
+	if (authored?.claim_type !== "mechanics" || authored.disposition === "verify-at-implement") return true;
+	if (typeof r.evidence !== "string") return false;
+	return r.evidence.match(FILE_LINE_CITATION_RE) !== null || EXTENSIONLESS_FILE_LINE_RE.test(r.evidence);
 };
 
 /**
@@ -260,8 +267,8 @@ export const procedureSatisfiesDuty = (r: RiskRuling, authored?: RiskRecord): bo
 
 /**
  * The single gate-fold authority: a ruling is effective-pass iff it is a bare
- * `pass` AND (when the plan authored a mechanics risk for its id) its evidence
- * cites a `file:line` AND (when the plan authored a verify-at-implement risk
+ * `pass` AND (when the plan authored a mechanics risk for its id that it did not
+ * defer) its evidence cites a `file:line` AND (when the plan authored a verify-at-implement risk
  * for its id) its procedure+owner discharge the verify duty. `allRiskFlagsPass`,
  * `dimensionsToRegrade` clause 3, and `confirmDue`'s `riskFail` ALL consult this
  * — so the three risk folds agree on what "passing" means and a demoted

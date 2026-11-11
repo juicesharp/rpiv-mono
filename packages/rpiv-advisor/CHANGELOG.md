@@ -7,6 +7,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-10-24
+
+### Fixed
+
+- **A temporary provider error no longer fails the advisor call outright.** One "servers are overloaded" response, rate limit or dropped connection ended the consultation with `Advisor call failed`. The advisor now retries such errors under your Pi `retry` settings, the same policy Pi uses for its own turns and compaction (by default up to 3 retries with growing backoff; `"retry": { "enabled": false }` turns it off). Permanent errors such as an invalid key or exhausted quota still fail at once. Needs Pi 1.0 or later; older hosts call once, as before. Thanks @CovetingEpiphany2152 ([#191](https://github.com/juicesharp/rpiv-mono/issues/191)).
+
+## [2.14.2] - 2026-10-23
+
+## [2.14.1] - 2026-10-23
+
+### Fixed
+
+- Advisor calls now send a session id (`advisor-<pi session id>`). On OpenAI-family providers repeated consultations hit the prompt cache instead of re-reading the whole context, and OpenCode / OpenCode Go no longer reject every call with `MissingSessionID`. The id is separate from the executor's, so the advisor never shares the executor's cache key or Codex websocket, and its provider resources are released on session shutdown so headless `pi -p` runs exit promptly. Thanks @piousp for #263, and @Marsor707, @SlanyCukr and @draculalaa for the investigation in #236.
+
+## [2.14.0] - 2026-10-23
+
 ## [2.13.10] - 2026-10-23
 
 ## [2.13.9] - 2026-10-17

@@ -129,6 +129,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 			}),
 		getTerminalRows: over.getTerminalRows ?? (() => 24),
 		collapseKey: over.collapseKey ?? "ctrl+]",
+		notesKey: over.notesKey ?? "n",
 	};
 	const initialProps: DialogProps = over.initialProps ?? { state, activePreviewPane: previewPane };
 	return { config, initialProps };
@@ -276,6 +277,14 @@ describe("makeDialog — multi-question (question tab)", () => {
 			.join("\n");
 		expect(joined).toContain("Alt+O to collapse");
 		expect(joined).not.toContain("Ctrl+]");
+	});
+
+	it("footer hint names the configured notesKey", () => {
+		const joined = makeDialog(makeConfig({ notesKey: "т" }))
+			.render(160)
+			.join("\n");
+		expect(joined).toContain("т to add notes");
+		expect(joined).not.toContain(HINT_PART_NOTES);
 	});
 
 	it("footer hint drops the collapse part when collapseKey is 'off' (#176)", () => {
@@ -464,6 +473,14 @@ describe("makeDialog — Submit tab", () => {
 		expect(joined).toContain(INCOMPLETE_WARNING_PREFIX);
 		expect(joined).toContain("H2");
 		expect(joined).not.toContain(READY_PROMPT);
+	});
+
+	it("global-note hint names the configured notesKey", () => {
+		const state = submitState();
+		const dlg = makeDialog(
+			makeConfig({ state, submitPicker: makePicker(state), getBodyHeight: () => 6, notesKey: "т" }),
+		);
+		expect(dlg.render(160).join("\n")).toContain("т to add a note");
 	});
 
 	it("renders SubmitPicker rows (1. Submit answers / 2. Cancel)", () => {

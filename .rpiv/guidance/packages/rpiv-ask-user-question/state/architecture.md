@@ -17,9 +17,9 @@ Pure state machine for the questionnaire dialog. Owns the canonical shape, the k
 
 ## Module Structure
 ```
-state.ts                   — `QuestionnaireState` (canonical) + `QuestionnaireRuntime` (per-tick context incl. `collapseKey`, never view-bound)
+state.ts                   — `QuestionnaireState` (canonical) + `QuestionnaireRuntime` (per-tick context incl. `collapseKey` and `notesKey`, never view-bound)
 state-reducer.ts           — Pure (state, action, ctx) → { state, Effect[] }. Per-kind HANDLERS dispatch table.
-key-router.ts              — Pure: keystroke → `QuestionnaireAction` (closed union). kb.matches dispatch + top-of-`routeKey` `collapseKey` intercept via `matchesKey`.
+key-router.ts              — Pure: keystroke → `QuestionnaireAction` (closed union). kb.matches dispatch + top-of-`routeKey` `collapseKey` intercept via `matchesKey`; the notes gates match `notesKey` as a literal character or a `matchesKey` spec.
 row-intent.ts              — `ROW_INTENT_META: Record<RowKind, RowIntentMeta>` — single source of truth for per-kind behavior.
 build-questionnaire.ts     — Pure factory: components + props adapter. Receives `itemsByTab` via config (built in `../ask-user-question.ts`).
 questionnaire-session.ts   — Holds the live state cell + multiline `notesInput`/`inlineInput` Editors + `OverlayHandle`; entries: `dispatch(data)`, `toggleCollapsedExternal()`, `setOverlayHandle()`.

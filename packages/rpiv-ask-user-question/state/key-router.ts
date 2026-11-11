@@ -15,7 +15,17 @@ const KEYBIND_CLEAR = "tui.editor.deleteToLineStart";
 const KEYBIND_EXTERNAL_EDITOR = "app.editor.external";
 
 const NOTES_ACTIVATE_KEY = "n";
-const SPACE_KEY = " ";
+
+/**
+ * The notes shortcut. A single-character key matches the character as typed, so a
+ * non-Latin one works (pi-tui's key parser knows only ASCII); anything else matches as
+ * a pi-tui key spec. A non-string key — a stale outer module, as with `collapseKey`
+ * below — falls back to `n`.
+ */
+function matchesNotesKey(data: string, notesKey: unknown): boolean {
+	const key = typeof notesKey === "string" ? notesKey : NOTES_ACTIVATE_KEY;
+	return data === key || matchesKey(data, key as Parameters<typeof matchesKey>[1]);
+}
 
 export type QuestionnaireAction =
 	| { kind: "nav"; nextIndex: number; inputValue: string }
@@ -225,17 +235,35 @@ function routeSubmitTab(
 		// answers flow through `orderedAnswers()` in the host.
 		return state.submitChoiceIndex === 1 ? { kind: "cancel" } : { kind: "submit" };
 	}
-	// Global note (#182): `n` on the Submit tab opens the notes editor scoped to the whole
+	// Global note (#182): the notes key on the Submit tab opens the notes editor scoped to the whole
 	// questionnaire at the pseudo-index (`questions.length` in notesByTab). Reachable only
 	// with the editor closed — `routeKey` dispatches notesVisible traffic to
 	// `routeNotesMode` before the submit-tab block runs. The branch shadows nothing above
-	// it (cancel, tab switch, submit-nav, confirm): a literal `n` byte matches none of them
+	// it (cancel, tab switch, submit-nav, confirm): the default `n` matches none of them
 	// under default bindings, and a user who deliberately binds one of those actions to
 	// `n` keeps that mapping because the earlier branch still wins (Enter still submits).
-	if (data === NOTES_ACTIVATE_KEY) {
+	if (matchesNotesKey(data, runtime.notesKey)) {
 		return { kind: "notes_enter" };
 	}
 	return { kind: "ignore" };
+}
+
+const DIGIT_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
+
+/**
+ * The row a digit hotkey names: `1`-`9` follow the list's numbering, so the
+ * unnumbered Next row has no digit. One key per keystroke — a pasted `"12"`
+ * matches none. Checked after every keybinding, so a digit bound to an action
+ * keeps that action.
+ */
+function digitRow(
+	data: string,
+	runtime: QuestionnaireRuntime,
+): { index: number; activatesInputMode: boolean } | undefined {
+	const index = DIGIT_KEYS.findIndex((digit) => matchesKey(data, digit));
+	const item = runtime.items[index];
+	if (!item || !ROW_INTENT_META[item.kind].numbered) return undefined;
+	return { index, activatesInputMode: ROW_INTENT_META[item.kind].activatesInputMode };
 }
 
 function routeMultiSelectTab(
@@ -249,7 +277,7 @@ function routeMultiSelectTab(
 	// Space toggles the focused row's checkbox. Suppressed on rows whose META declares
 	// `blocksMultiToggle` (the Next sentinel) or `activatesInputMode` (the "Type
 	// something." row — it is an inline input, not a checkable option).
-	if (data === SPACE_KEY) {
+	if (matchesKey(data, Key.space)) {
 		if (focusedMeta?.blocksMultiToggle) return { kind: "ignore" };
 		if (focusedMeta?.activatesInputMode) return { kind: "ignore" };
 		return { kind: "toggle", index: state.optionIndex };
@@ -266,7 +294,11 @@ function routeMultiSelectTab(
 		return buildMultiConfirmAction(state, runtime);
 	}
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
-	return { kind: "ignore" };
+	// A digit toggles its row; the Type something. row's digit focuses it instead.
+	const row = digitRow(data, runtime);
+	if (!row) return { kind: "ignore" };
+	if (row.activatesInputMode) return { kind: "nav", nextIndex: row.index, inputValue: runtime.inputBuffer };
+	return { kind: "toggle", index: row.index };
 }
 
 function routeSingleSelectTab(
@@ -281,7 +313,16 @@ function routeSingleSelectTab(
 		return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
 	}
 	if (kb.matches(data, KEYBIND_CANCEL)) return { kind: "cancel" };
-	return { kind: "ignore" };
+	// A digit answers with its row, as Enter on it would; the Type something. row's digit focuses it instead.
+	const row = digitRow(data, runtime);
+	if (!row) return { kind: "ignore" };
+	if (row.activatesInputMode) return { kind: "nav", nextIndex: row.index, inputValue: runtime.inputBuffer };
+	const answer = buildSingleSelectAnswer(
+		{ ...state, optionIndex: row.index },
+		{ ...runtime, currentItem: runtime.items[row.index] },
+	);
+	if (!answer) return { kind: "ignore" };
+	return { kind: "confirm", answer, autoAdvanceTab: computeAutoAdvanceTab(state, runtime) };
 }
 
 export function routeKey(data: string, state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
@@ -342,7 +383,7 @@ export function routeKey(data: string, state: QuestionnaireState, runtime: Quest
 	// "Type something.") is irrelevant: the gate sits ABOVE the multi-select
 	// toggle block and the Next sentinel never activates inputMode, so `n` is
 	// neither swallowed earlier nor blocked by `blocksMultiToggle`.
-	if (data === NOTES_ACTIVATE_KEY) {
+	if (matchesNotesKey(data, runtime.notesKey)) {
 		return { kind: "notes_enter" };
 	}
 

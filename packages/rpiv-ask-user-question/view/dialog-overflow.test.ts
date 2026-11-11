@@ -123,6 +123,7 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 		getCurrentBodyHeight: over.getCurrentBodyHeight ?? (() => 1),
 		getTerminalRows: over.getTerminalRows ?? (() => 24),
 		collapseKey: over.collapseKey ?? "ctrl+]",
+		notesKey: "n",
 	};
 	const initialProps: DialogProps = over.initialProps ?? { state, activePreviewPane: previewPane };
 	return { config, initialProps };

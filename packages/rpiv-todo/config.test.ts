@@ -36,12 +36,14 @@ describe("getMaxWidgetLines", () => {
 		writeConfigFile(JSON.stringify({ maxWidgetLines: "twelve" }));
 		expect(getMaxWidgetLines()).toBe(DEFAULT_MAX_WIDGET_LINES);
 	});
-	it("returns the default for values below the floor (2, 1, 0, -5)", () => {
+	it("returns 0 when set to 0 — the overlay is off", () => {
+		writeConfigFile(JSON.stringify({ maxWidgetLines: 0 }));
+		expect(getMaxWidgetLines()).toBe(0);
+	});
+	it("returns the default for values below the floor other than 0 (2, 1, -5)", () => {
 		writeConfigFile(JSON.stringify({ maxWidgetLines: 2 }));
 		expect(getMaxWidgetLines()).toBe(DEFAULT_MAX_WIDGET_LINES);
 		writeConfigFile(JSON.stringify({ maxWidgetLines: 1 }));
-		expect(getMaxWidgetLines()).toBe(DEFAULT_MAX_WIDGET_LINES);
-		writeConfigFile(JSON.stringify({ maxWidgetLines: 0 }));
 		expect(getMaxWidgetLines()).toBe(DEFAULT_MAX_WIDGET_LINES);
 		writeConfigFile(JSON.stringify({ maxWidgetLines: -5 }));
 		expect(getMaxWidgetLines()).toBe(DEFAULT_MAX_WIDGET_LINES);

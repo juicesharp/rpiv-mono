@@ -61,7 +61,7 @@ function makePane(q: QuestionData, terminalWidth: number, selectedIndex = 0) {
 	items.push({ kind: "other", label: "Type something." });
 	const optionListView = new OptionListView({ items, theme: selectTheme });
 	optionListView.setProps({ selectedIndex, focused: true, inputBuffer: "" });
-	const previewBlock = new PreviewBlockRenderer({ question: q, theme, markdownTheme });
+	const previewBlock = new PreviewBlockRenderer({ question: q, theme, markdownTheme, notesKey: "n" });
 	const pane = new PreviewPane({
 		question: q,
 		theme,
@@ -76,7 +76,7 @@ function makePane(q: QuestionData, terminalWidth: number, selectedIndex = 0) {
 
 describe("PreviewBlockRenderer — fitting a row allowance", () => {
 	const q = question(1, 40);
-	const block = new PreviewBlockRenderer({ question: q, theme, markdownTheme });
+	const block = new PreviewBlockRenderer({ question: q, theme, markdownTheme, notesKey: "n" });
 
 	it("is unchanged when the allowance fits the full block", () => {
 		const full = block.renderBlock(60, 0, "side-by-side", "add");

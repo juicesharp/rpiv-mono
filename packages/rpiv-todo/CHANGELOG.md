@@ -9,6 +9,34 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`maxWidgetLines: 0` turns the overlay off.** The panel above the editor is no longer drawn, while the `todo` tool and `/todos` keep working. Like any other `maxWidgetLines` value, it applies on the next repaint, without `/reload`.
+
+### Fixed
+
+- **Completed rows no longer vanish when a subagent starts.** A completed task stays visible until the foreground session starts its next agent run, but a child session's start, such as a subagent's, also cleared them. Only the foreground session's own run hides them now. When the hidden rows were the last ones, the panel now disappears instead of leaving an empty frame. Thanks @AxelMrak ([#326](https://github.com/juicesharp/rpiv-mono/pull/326)).
+
+### Changed
+
+- **The `action` parameter now has a schema description.** It was the only `todo` parameter without one. The description says that every call needs it and what each action does, so a model is less likely to send the task fields alone on its first call and be rejected. Thanks @JohannesBertens ([#320](https://github.com/juicesharp/rpiv-mono/pull/320)).
+
+## [2.15.0] - 2026-10-24
+
+### Fixed
+
+- **Resuming a session no longer crashes on a corrupted todo snapshot.** Replay checked only that a saved snapshot had a `tasks` array, not what was in it. A session whose saved task list another extension had truncated with a marker string (`[output-policy: array truncated, …]`) restored that string as a task, and the overlay crashed while drawing it. Replay now checks every saved task and skips a snapshot with a malformed one, keeping the last valid list. Thanks @pstanton237 ([#230](https://github.com/juicesharp/rpiv-mono/pull/230)).
+
+## [2.14.2] - 2026-10-23
+
+### Fixed
+
+- **A failed `todo` call no longer shows as a success.** A call missing `action` rendered as `todo undefined ✓`, and a call the reducer rejected (an unknown id, an invalid transition) echoed the requested status, e.g. `● completed`. The call card now shows just `todo` when there is no action, and the result card shows `✗` with the first line of the error. Only the transcript display changes; what the model receives is unchanged. Thanks @catch6. ([#175](https://github.com/juicesharp/rpiv-mono/issues/175))
+
+## [2.14.1] - 2026-10-23
+
+## [2.14.0] - 2026-10-23
+
+### Added
+
 - **Batch create.** `create` accepts `tasks[]` instead of `subject`, so a whole plan lands in one call: `{"action":"create","tasks":[{"subject":"Inspect"},{"subject":"Test"}]}`. The batch is all-or-nothing: every item is validated first, and one bad item fails the call with the list unchanged. Each item carries its own `description`, `activeForm`, `blockedBy`, `owner` and `metadata`; the same fields at the top level of a batch, or a `subject` next to `tasks[]`, are rejected rather than dropped. Items cannot `blockedBy` each other, since their ids do not exist until the call commits; create the prerequisite first, then the dependent with `blockedBy`. A `tasks[]` sent as a JSON string, as some vLLM/LiteLLM-served models do, is decoded before validation. Single create is unchanged. Thanks @0xbentang. ([#44](https://github.com/juicesharp/rpiv-mono/issues/44), [#193](https://github.com/juicesharp/rpiv-mono/pull/193))
 - Clicking the overlay's heading row toggles the collapsed state, for terminals where the configured shortcut never arrives. Only an unmodified left click on that row counts — task rows, modified clicks, drags and wheel events are untouched — and it works with `collapseKey: "off"`. Needs Pi's fullscreen mouse dispatch; hosts without it keep the keyboard-only behavior.
 

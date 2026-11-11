@@ -87,6 +87,8 @@ export interface DialogConfig {
 	 * The footer hint interpolates it, and drops the collapse part when `"off"`.
 	 */
 	collapseKey: string;
+	/** Resolved notes key (`resolveNotesKey` output), named by both tabs' notes hints. */
+	notesKey: string;
 }
 
 /**
@@ -116,6 +118,7 @@ export class DialogView implements StatefulView<DialogProps> {
 			isMulti: config.isMulti,
 			getCurrentBodyHeight: config.getCurrentBodyHeight,
 			collapseKey: config.collapseKey,
+			notesKey: config.notesKey,
 		});
 		this.submitStrategy = config.isMulti
 			? new SubmitTabStrategy({
@@ -123,6 +126,7 @@ export class DialogView implements StatefulView<DialogProps> {
 					questions: config.questions,
 					submitPicker: config.submitPicker,
 					notesInput: config.notesInput,
+					notesKey: config.notesKey,
 				})
 			: undefined;
 		this.maxFooterRowCount = Math.max(this.questionStrategy.footerRowCount, this.submitStrategy?.footerRowCount ?? 0);

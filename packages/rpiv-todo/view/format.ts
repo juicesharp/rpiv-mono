@@ -24,7 +24,7 @@ export const STATUS_GLYPH: Record<TaskStatus, string> = {
 /**
  * Color palette for the renderResult status echo. `deleted` uses `muted` so a
  * successful delete is visually distinct from the error branch (which uses
- * `error` + `✗`)..
+ * `error` + `✗`).
  */
 export const STATUS_COLOR: Record<TaskStatus, "dim" | "warning" | "success" | "muted"> = {
 	pending: "dim",
@@ -35,7 +35,7 @@ export const STATUS_COLOR: Record<TaskStatus, "dim" | "warning" | "success" | "m
 
 /**
  * Per-action prefix glyph for renderCall. `+` create, `→` update, `×` delete,
- * `›` get, `☰` list, `∅` clear..
+ * `›` get, `☰` list, `∅` clear.
  */
 export const ACTION_GLYPH: Record<TaskAction, string> = {
 	create: "+",
@@ -50,7 +50,7 @@ export const ACTION_GLYPH: Record<TaskAction, string> = {
  * Glyph for the persistent overlay's per-task row. Differs from `STATUS_GLYPH`
  * for `completed` (`✓` vs `●`) and `deleted` (`✗` vs `⊘`) because the
  * overlay caller never renders a `deleted` row but uses `✗` in its
- * error-toned palette..
+ * error-toned palette.
  */
 export function overlayStatusGlyph(status: TaskStatus, theme: Theme): string {
 	switch (status) {
@@ -91,7 +91,7 @@ export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean): s
 
 /**
  * Format a single task line for the `/todos` slash command (no glyph color,
- * indented bullet prefix). Pre-refactor `todo.ts:670-674`.
+ * indented bullet prefix).
  */
 export function formatCommandTaskLine(t: Task, glyph: string): string {
 	const form = t.status === "in_progress" && t.activeForm ? ` (${sanitizeTerminalText(t.activeForm)})` : "";
@@ -104,17 +104,17 @@ export function formatCommandTaskLine(t: Task, glyph: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * `renderCall` body. Receives the parsed args, the theme, and the live
- * `TaskState` (resolved by the caller via `getState()`). Returns a `Text`
- * node identical to pre-refactor `todo.ts:507-525`.
+ * `renderCall` body. Receives the call's args, the theme, and the live
+ * `TaskState` (resolved by the caller via `getRenderState()`). The args may
+ * still be streaming or may fail validation, so `action` can be absent.
  */
 export function renderTodoCall(
-	args: TaskMutationParams & { action: TaskAction },
+	args: TaskMutationParams & { action?: TaskAction },
 	theme: Theme,
 	state: TaskState,
 ): Text {
-	const glyph = ACTION_GLYPH[args.action] ?? args.action;
-	let text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", glyph);
+	let text = theme.fg("toolTitle", theme.bold("todo "));
+	if (args.action) text += theme.fg("muted", ACTION_GLYPH[args.action] ?? args.action);
 
 	if (args.action === "create" && args.subject) {
 		text += ` ${theme.fg("dim", sanitizeTerminalText(args.subject))}`;
@@ -133,34 +133,48 @@ export function renderTodoCall(
 }
 
 /**
- * `renderResult` body. Inspects `details` to pick the per-action status echo
- * (only `create`/`update`/`delete` advertise a status; `list`/`get`/`clear`
- * fall back to plain `✓`). Identical visual output to pre-refactor
- * `todo.ts:533-565`.
+ * `renderResult` body. A failed call renders `✗` with its reason; a successful
+ * `create`/`update`/`delete` echoes the task's status; anything else is `✓`.
  */
-export function renderTodoResult(result: { details?: unknown }, theme: Theme): Text {
-	const details = result.details as TaskDetails | undefined;
-	let status: TaskStatus | undefined;
-	if (details) {
-		const params = details.params as TaskMutationParams;
-		switch (details.action) {
-			case "create":
-				status = details.tasks[details.tasks.length - 1]?.status;
-				break;
-			case "update":
-				status = params.status ?? details.tasks.find((t) => t.id === params.id)?.status;
-				break;
-			case "delete":
-				status = details.tasks.find((t) => t.id === params.id)?.status;
-				break;
-			case "list":
-			case "get":
-			case "clear":
-				break;
-		}
-	}
+export function renderTodoResult(result: ToolResultView, theme: Theme, isError = false): Text {
+	const failure = failureReason(result, isError);
+	if (failure !== undefined) return new Text(theme.fg("error", failure ? `✗ ${failure}` : "✗"), 0, 0);
+
+	const status = echoedStatus(result.details as TaskDetails | undefined);
 	if (status) {
 		return new Text(theme.fg(STATUS_COLOR[status], `${STATUS_GLYPH[status]} ${formatStatusLabel(status)}`), 0, 0);
 	}
 	return new Text(theme.fg("success", "✓"), 0, 0);
+}
+
+type ToolResultView = { content?: Array<{ type: string; text?: string }>; details?: unknown };
+
+/**
+ * First line of the failure message, or `undefined` when the call succeeded.
+ * The reducer reports through `details.error`; Pi rejects a call before execute
+ * with `isError` and the message as text content.
+ */
+function failureReason(result: ToolResultView, isError: boolean): string | undefined {
+	const reducerError = (result.details as TaskDetails | undefined)?.error;
+	if (!isError && !reducerError) return undefined;
+	const message = reducerError ?? result.content?.find((c) => c.type === "text")?.text ?? "";
+	return sanitizeTerminalText(message.split("\n")[0]);
+}
+
+/** Status the result card echoes: the task the call created, updated or deleted. */
+function echoedStatus(details: TaskDetails | undefined): TaskStatus | undefined {
+	if (!details) return undefined;
+	const params = details.params as TaskMutationParams;
+	switch (details.action) {
+		case "create":
+			return details.tasks.at(-1)?.status;
+		case "update":
+			return params.status ?? details.tasks.find((t) => t.id === params.id)?.status;
+		case "delete":
+			return details.tasks.find((t) => t.id === params.id)?.status;
+		case "list":
+		case "get":
+		case "clear":
+			return undefined;
+	}
 }

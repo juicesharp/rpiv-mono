@@ -95,9 +95,10 @@ export interface UnitLane {
 	 *  until `setUnitStarted` fires — the host may publish a live session first. */
 	label?: string;
 	/** Per-unit lifecycle status — drives the sub-row glyph and the orphan sweep.
-	 *  "pending" is seeded by `seedPendingUnits` (a fanout `onLoopStart`) and flipped to
+	 *  "pending" is seeded by `seedUnits` (a fanout `onLoopStart`) and flipped to
 	 *  "running" by `setUnitStarted` (`onUnitStart`); "running" until `markUnitDone`/
-	 *  `sweepRunningUnits`/`retireRun` flips it terminal. */
+	 *  `sweepRunningUnits`/`retireRun` flips it terminal. A resumed generation's replayed
+	 *  units are seeded terminal directly — they fire no unit events. */
 	status: "running" | "pending" | "done" | "failed";
 	/** This unit's currently-live child session (the viewer/preview source);
 	 *  undefined before the child spawns, between stages, or after teardown. */

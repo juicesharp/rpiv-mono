@@ -1,7 +1,9 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { MarkdownTheme } from "@earendil-works/pi-tui";
+import { DEFAULT_NOTES_KEY, formatNotesKeyForDisplay } from "../../../config.ts";
 import { t } from "../../../state/i18n-bridge.ts";
 import type { QuestionData } from "../../../tool/types.ts";
+import { KEY_PLACEHOLDER } from "../../dialog-copy.ts";
 import {
 	MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE,
 	MAX_PREVIEW_HEIGHT_STACKED,
@@ -21,9 +23,12 @@ import type { PreviewLayoutMode } from "./preview-layout-decider.ts";
  * Affordance text shown below the bordered preview when focused on a preview-bearing option.
  * Re-exported by `preview-pane.ts` for the existing test surface.
  */
-export const NOTES_AFFORDANCE_TEXT = "Notes: press n to add notes";
+export const NOTES_AFFORDANCE_TEMPLATE = `Notes: press ${KEY_PLACEHOLDER} to add notes`;
 /** Affordance text once the question carries a saved note (#197). */
-export const NOTES_EDIT_AFFORDANCE_TEXT = "Note saved: press n to edit";
+export const NOTES_EDIT_AFFORDANCE_TEMPLATE = `Note saved: press ${KEY_PLACEHOLDER} to edit`;
+/** Default-key (`n`) renderings of the two affordance templates. */
+export const NOTES_AFFORDANCE_TEXT = NOTES_AFFORDANCE_TEMPLATE.replace(KEY_PLACEHOLDER, DEFAULT_NOTES_KEY);
+export const NOTES_EDIT_AFFORDANCE_TEXT = NOTES_EDIT_AFFORDANCE_TEMPLATE.replace(KEY_PLACEHOLDER, DEFAULT_NOTES_KEY);
 
 /**
  * Which notes affordance the block shows under the preview: `add` / `edit` (no note yet /
@@ -32,10 +37,12 @@ export const NOTES_EDIT_AFFORDANCE_TEXT = "Note saved: press n to edit";
  */
 export type NotesAffordance = "add" | "edit" | "none";
 
-function affordanceText(affordance: Exclude<NotesAffordance, "none">): string {
-	return affordance === "edit"
-		? t("preview.notes_edit_affordance", NOTES_EDIT_AFFORDANCE_TEXT)
-		: t("preview.notes_affordance", NOTES_AFFORDANCE_TEXT);
+function affordanceText(affordance: Exclude<NotesAffordance, "none">, notesKey: string): string {
+	const text =
+		affordance === "edit"
+			? t("preview.notes_edit_affordance", NOTES_EDIT_AFFORDANCE_TEMPLATE)
+			: t("preview.notes_affordance", NOTES_AFFORDANCE_TEMPLATE);
+	return text.replace(KEY_PLACEHOLDER, formatNotesKeyForDisplay(notesKey));
 }
 
 /** Content row budget for a layout mode: preview cap minus border + affordance overhead. */
@@ -73,6 +80,8 @@ export interface PreviewBlockRendererConfig {
 	question: QuestionData;
 	theme: Theme;
 	markdownTheme: MarkdownTheme;
+	/** Resolved notes key (`resolveNotesKey` output), named by the affordance. */
+	notesKey: string;
 }
 
 /**
@@ -88,9 +97,11 @@ export interface PreviewBlockRendererConfig {
 export class PreviewBlockRenderer {
 	private readonly theme: Theme;
 	private readonly cache: MarkdownContentCache;
+	private readonly notesKey: string;
 
 	constructor(config: PreviewBlockRendererConfig) {
 		this.theme = config.theme;
+		this.notesKey = config.notesKey;
 		this.cache = new MarkdownContentCache(config.question, config.theme, config.markdownTheme);
 	}
 
@@ -143,7 +154,8 @@ export class PreviewBlockRenderer {
 		const boxedLines = renderBorderedBox(contentLines, boxWidth, colorFn, hidden);
 		if (!fit.affordance) return boxedLines;
 
-		const text = affordance !== "none" && this.cache.has(optionIndex) ? affordanceText(affordance) : "";
+		const text =
+			affordance !== "none" && this.cache.has(optionIndex) ? affordanceText(affordance, this.notesKey) : "";
 		return [...boxedLines, "", text ? this.theme.fg("muted", text) : ""];
 	}
 }

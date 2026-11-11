@@ -1,4 +1,9 @@
-import { DEFAULT_COLLAPSE_KEY, formatKeySpecForDisplay } from "../config.ts";
+import {
+	DEFAULT_COLLAPSE_KEY,
+	DEFAULT_NOTES_KEY,
+	formatKeySpecForDisplay,
+	formatNotesKeyForDisplay,
+} from "../config.ts";
 
 /** Leaf: imports nothing from `view/`, so `dialog-builder` and `tab-content-strategy` never form a runtime cycle (#208). */
 
@@ -7,7 +12,6 @@ export const HINT_PART_NAV = "↑/↓ to navigate";
 export const HINT_PART_NEW_LINE = "Shift+Enter for newline";
 export const HINT_PART_CLEAR = "Ctrl+U to clear";
 export const HINT_PART_TOGGLE = "Space to toggle";
-export const HINT_PART_NOTES = "n to add notes";
 export const HINT_PART_TAB = "Tab to switch questions";
 export const HINT_PART_CANCEL = "Esc to cancel";
 /**
@@ -20,6 +24,13 @@ export const HINT_PART_CANCEL = "Esc to cancel";
 export const KEY_PLACEHOLDER = "{key}";
 export const HINT_PART_COLLAPSE_TEMPLATE = `${KEY_PLACEHOLDER} to collapse`;
 export const HINT_PART_EXPAND_TEMPLATE = `${KEY_PLACEHOLDER} to expand`;
+/** Notes hint, templated the same way on the configurable `notesKey`. */
+export const HINT_PART_NOTES_TEMPLATE = `${KEY_PLACEHOLDER} to add notes`;
+/** Default-key (`n`) rendering of the notes template. */
+export const HINT_PART_NOTES = HINT_PART_NOTES_TEMPLATE.replace(
+	KEY_PLACEHOLDER,
+	formatNotesKeyForDisplay(DEFAULT_NOTES_KEY),
+);
 /** Default-key (`Ctrl+]`) rendering of the collapse template, for tests and default-config assertions. */
 export const HINT_PART_COLLAPSE = HINT_PART_COLLAPSE_TEMPLATE.replace(
 	KEY_PLACEHOLDER,

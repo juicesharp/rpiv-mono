@@ -6,6 +6,7 @@ import {
 	formatKeySpecForDisplay,
 	loadConfig,
 	resolveCollapseKey,
+	resolveNotesKey,
 	validateGuidanceFields,
 } from "./config.ts";
 import {
@@ -41,6 +42,7 @@ import {
 } from "./tool/types.ts";
 import { validateQuestionnaire } from "./tool/validate-questionnaire.ts";
 import type { WrappingSelectItem } from "./view/components/wrapping-select.ts";
+import { renderAskCall, renderAskResult } from "./view/transcript.ts";
 
 function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams, toolCallId: string): void {
 	const payload: AskUserPromptEventPayload = {
@@ -59,9 +61,21 @@ function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams, toolCa
 	pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
 }
 
+/**
+ * Herdr's Pi integration marks the pane blocked only from this bus event, counting each
+ * `active: true` until its `active: false`; it reads neither OSC 7501 nor the screen.
+ */
+const HERDR_BLOCKED_EVENT = "herdr:blocked";
+
+/** The one status line terminals and Herdr show while a questionnaire waits: never question text. */
+function blockedMessage(): string {
+	return t("status.blocked", "Waiting for your answer");
+}
+
 function emitAskUserBlockedEvent(pi: ExtensionAPI, active: boolean, toolCallId: string): void {
 	const payload: AskUserBlockedEventPayload = { active, toolCallId };
 	pi.events.emit(ASK_USER_BLOCKED_EVENT, payload);
+	pi.events.emit(HERDR_BLOCKED_EVENT, { active, label: active ? blockedMessage() : undefined });
 }
 
 /** Non-interactive host backstop (the reconciler normally strips the tool first). */
@@ -119,6 +133,13 @@ type SessionModule = typeof import("./state/questionnaire-session.ts");
 
 type SessionRef = { current: import("./state/questionnaire-session.ts").QuestionnaireSession | null };
 type OverlayHandleRef = { current: OverlayHandle | undefined };
+/**
+ * Pi's `custom()` options plus `blocked` (OSC 7501 program status): honoured inline on Pi 1.5.0+
+ * and for overlays on 1.5.1+, ignored by older Pi, whose typings lack it.
+ */
+type CustomOptions = NonNullable<Parameters<ExtensionContext["ui"]["custom"]>[1]> & {
+	blocked?: { kind: "question"; message: string };
+};
 
 type SessionLoad =
 	| { ok: true; module: SessionModule }
@@ -199,14 +220,25 @@ function makeSessionFactory(config: {
 	typed: QuestionParams;
 	itemsByTab: WrappingSelectItem[][];
 	collapseKey: string;
+	notesKey: string;
 	canReopenWhileHidden: boolean;
 	presentation: Presentation;
 	sessionRef: SessionRef;
 	open: OpenQuestionnaire;
 	Session: SessionModule["QuestionnaireSession"];
 }) {
-	const { ctx, typed, itemsByTab, collapseKey, canReopenWhileHidden, presentation, sessionRef, open, Session } =
-		config;
+	const {
+		ctx,
+		typed,
+		itemsByTab,
+		collapseKey,
+		notesKey,
+		canReopenWhileHidden,
+		presentation,
+		sessionRef,
+		open,
+		Session,
+	} = config;
 	return (
 		tui: TUI,
 		theme: Theme,
@@ -252,6 +284,7 @@ function makeSessionFactory(config: {
 				}
 			},
 			collapseKey,
+			notesKey,
 			canReopenWhileHidden,
 			rowBudget: rowBudgetForHost(tui.terminal, presentation.rowBudget),
 		});
@@ -279,6 +312,7 @@ async function mountQuestionnaire(config: {
 	typed: QuestionParams;
 	itemsByTab: WrappingSelectItem[][];
 	collapseKey: string;
+	notesKey: string;
 	presentation: Presentation;
 	open: OpenQuestionnaire;
 	Session: SessionModule["QuestionnaireSession"];
@@ -293,24 +327,28 @@ async function mountQuestionnaire(config: {
 	// may emit `setHidden` only when it was actually registered; otherwise collapse falls
 	// back to the visible one-line row.
 	const canReopenWhileHidden = removeOverlayInputListener !== undefined;
+	// Pi owns the OSC 7501 lifecycle. Resolved per mount so a /languages switch reaches the next questionnaire.
+	const blocked = { kind: "question" as const, message: blockedMessage() };
+	const options: CustomOptions = presentation.overlay
+		? {
+				overlay: true,
+				blocked,
+				overlayOptions: {
+					anchor: "bottom-center",
+					width: "100%",
+					maxHeight: "100%",
+					margin: { left: 0, right: 0, bottom: 0 },
+				},
+				onHandle: (handle) => {
+					overlayHandleRef.current = handle;
+					sessionRef.current?.setOverlayHandle(handle);
+				},
+			}
+		: { overlay: false, blocked };
 	try {
 		return await ctx.ui.custom<QuestionnaireResult>(
 			makeSessionFactory({ ...config, canReopenWhileHidden, sessionRef }),
-			presentation.overlay
-				? {
-						overlay: true,
-						overlayOptions: {
-							anchor: "bottom-center",
-							width: "100%",
-							maxHeight: "100%",
-							margin: { left: 0, right: 0, bottom: 0 },
-						},
-						onHandle: (handle) => {
-							overlayHandleRef.current = handle;
-							sessionRef.current?.setOverlayHandle(handle);
-						},
-					}
-				: { overlay: false },
+			options,
 		);
 	} finally {
 		removeOverlayInputListener?.();
@@ -357,7 +395,9 @@ async function runTuiPath(pi: ExtensionAPI, ctx: ExtensionContext, typed: Questi
 		// with non-US layouts (e.g. Latin American, where `]` is shifted) can override
 		// via the `collapseKey` config field. `resolveCollapseKey` also accepts the
 		// sentinel value `"off"` to disable the shortcut entirely.
-		const collapseKey = resolveCollapseKey(loadConfig());
+		const config = loadConfig();
+		const collapseKey = resolveCollapseKey(config);
+		const notesKey = resolveNotesKey(config);
 		const mount = (p: Presentation) =>
 			Promise.race([
 				mountQuestionnaire({
@@ -365,6 +405,7 @@ async function runTuiPath(pi: ExtensionAPI, ctx: ExtensionContext, typed: Questi
 					typed,
 					itemsByTab,
 					collapseKey,
+					notesKey,
 					presentation: p,
 					open,
 					Session: QuestionnaireSession,
@@ -467,6 +508,9 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 		parameters: QuestionParamsSchema,
 		// Undo double-encoded nested arguments before Pi validates them (#244).
 		prepareArguments: prepareQuestionArguments,
+		renderCall: (args, theme) => renderAskCall(args, theme),
+		renderResult: (result, { expanded }, theme, context) =>
+			renderAskResult(result, context?.args, theme, { expanded, isError: context?.isError ?? false }),
 
 		async execute(toolCallId, params, _signal, _onUpdate, ctx) {
 			// Line-terminator normalization runs once here, ahead of validation, so
