@@ -119,6 +119,8 @@ the terminal status record.
 
 Older Pi versions still render questionnaires but ignore unsupported `blocked` metadata.
 `rpiv:ask-user:blocked` remains available for status integrations on all presentation paths.
+Beside it, `herdr:blocked` (`{ active, label }`, the same translated message) brackets the same
+wait, because Herdr's Pi integration reads only that event, not OSC 7501.
 Progress reporting is not exposed by Pi's `blocked` option.
 
 ## Event contract

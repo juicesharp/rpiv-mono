@@ -90,7 +90,7 @@ function setup(custom: (factory: Factory, options?: CustomOptions) => Promise<un
 	const ctx = createMockCtx({ hasUI: true, ui: { custom: vi.fn(custom), onTerminalInput } as never });
 	const run = (params: object) =>
 		captured.tools.get("ask_user_question")!.execute!("tc", params as never, undefined, undefined, ctx as never);
-	return { run, ctx, onTerminalInput, removeListener };
+	return { run, ctx, captured, onTerminalInput, removeListener };
 }
 
 beforeEach(() => {
@@ -333,6 +333,18 @@ describe("terminal status message", () => {
 			expect(options[0]?.blocked?.message).not.toMatch(/Private/);
 		},
 	);
+
+	it("labels Herdr's blocked event with the same translated message Pi reports", async () => {
+		const uk = locale("uk.json");
+		registerStrings(I18N_NAMESPACE, { uk });
+		applyLocale("uk");
+		const { run, captured } = setup(async () => ({ answers: [], cancelled: true }));
+		await run(twoOptions);
+		expect(captured.eventsEmitted.get("herdr:blocked")).toEqual([
+			{ active: true, label: uk["status.blocked"] },
+			{ active: false, label: undefined },
+		]);
+	});
 
 	it("every locale translates the blocked status message", () => {
 		for (const file of readdirSync(localesDir).filter((f) => f.endsWith(".json"))) {

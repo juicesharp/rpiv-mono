@@ -61,9 +61,21 @@ function emitAskUserPromptEvent(pi: ExtensionAPI, params: QuestionParams, toolCa
 	pi.events.emit(ASK_USER_PROMPT_EVENT, payload);
 }
 
+/**
+ * Herdr's Pi integration marks the pane blocked only from this bus event, counting each
+ * `active: true` until its `active: false`; it reads neither OSC 7501 nor the screen.
+ */
+const HERDR_BLOCKED_EVENT = "herdr:blocked";
+
+/** The one status line terminals and Herdr show while a questionnaire waits: never question text. */
+function blockedMessage(): string {
+	return t("status.blocked", "Waiting for your answer");
+}
+
 function emitAskUserBlockedEvent(pi: ExtensionAPI, active: boolean, toolCallId: string): void {
 	const payload: AskUserBlockedEventPayload = { active, toolCallId };
 	pi.events.emit(ASK_USER_BLOCKED_EVENT, payload);
+	pi.events.emit(HERDR_BLOCKED_EVENT, { active, label: active ? blockedMessage() : undefined });
 }
 
 /** Non-interactive host backstop (the reconciler normally strips the tool first). */
@@ -316,7 +328,7 @@ async function mountQuestionnaire(config: {
 	// back to the visible one-line row.
 	const canReopenWhileHidden = removeOverlayInputListener !== undefined;
 	// Pi owns the OSC 7501 lifecycle. Resolved per mount so a /languages switch reaches the next questionnaire.
-	const blocked = { kind: "question" as const, message: t("status.blocked", "Waiting for your answer") };
+	const blocked = { kind: "question" as const, message: blockedMessage() };
 	const options: CustomOptions = presentation.overlay
 		? {
 				overlay: true,
