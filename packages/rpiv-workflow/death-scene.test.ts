@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuditContext } from "./audit-ctx.js";
+import type { AuditContext } from "./audit-ctx.ts";
 import {
 	DEATH_SCENE_MAX_TOOL_CALLS,
 	DEATH_SCENE_TOOL_ARG_MAX_CHARS,
@@ -11,10 +11,10 @@ import {
 	extractDeathScene,
 	formatDeathScene,
 	writeDeathSceneArtifact,
-} from "./death-scene.js";
-import { LifecycleDispatcher } from "./events.js";
-import type { BranchEntry } from "./transcript.js";
-import type { RunState, WorkflowHostContext } from "./types.js";
+} from "./death-scene.ts";
+import { LifecycleDispatcher } from "./events.ts";
+import type { BranchEntry } from "./transcript.ts";
+import type { RunState, WorkflowHostContext } from "./types.ts";
 
 /** A minimal assistant turn + two tool uses, the shape `readSessionBranch` returns. */
 const branchWithToolCalls = (): BranchEntry[] => [

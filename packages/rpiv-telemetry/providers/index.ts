@@ -1,12 +1,12 @@
-import type { ProvidersConfig } from "../config.js";
-import { registerTelemetryProvider } from "../dispatcher.js";
-import type { TelemetryProviderMeta } from "../types/provider.js";
-import { CONSOLE_PROVIDER_META, ConsoleProvider } from "./console.js";
+import type { ProvidersConfig } from "../config.ts";
+import { registerTelemetryProvider } from "../dispatcher.ts";
+import type { TelemetryProviderMeta } from "../types/provider.ts";
+import { CONSOLE_PROVIDER_META, ConsoleProvider } from "./console.ts";
 // Light META only (no @mlflow/core); the heavy class loads lazily below.
-import { MLFLOW_PROVIDER_META } from "./mlflow/meta.js";
+import { MLFLOW_PROVIDER_META } from "./mlflow/meta.ts";
 
-export { CONSOLE_PROVIDER_META, ConsoleProvider } from "./console.js";
-export { MLFLOW_PROVIDER_META } from "./mlflow/meta.js";
+export { CONSOLE_PROVIDER_META, ConsoleProvider } from "./console.ts";
+export { MLFLOW_PROVIDER_META } from "./mlflow/meta.ts";
 // MlflowProvider is NOT re-exported here — a value re-export would pull the
 // ~325ms SDK at eval. Embedders get it from the package barrel.
 
@@ -30,7 +30,7 @@ export function registerConfiguredProviders(config: { providers: ProvidersConfig
 	// dispatcher gates on the live provider set.
 	if (providers.mlflow !== undefined) {
 		const mlflowConfig = providers.mlflow;
-		void import("./mlflow/index.js")
+		void import("./mlflow/index.ts")
 			.then(({ MlflowProvider }) => registerTelemetryProvider(new MlflowProvider(mlflowConfig)))
 			.catch((err) => console.error("[rpiv-telemetry] failed to load MLflow provider:", err));
 	}

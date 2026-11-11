@@ -10,13 +10,13 @@
  */
 
 import type { Workflow } from "@juicesharp/rpiv-workflow/registration";
-import { metaWorkflow } from "./meta/presets.js";
-import { buildWorkflow } from "./workflows/build.js";
-import { polishWorkflow } from "./workflows/polish.js";
-import { shipWorkflow } from "./workflows/ship.js";
-import { vetWorkflow } from "./workflows/vet.js";
+import { metaWorkflow } from "./meta/presets.ts";
+import { buildWorkflow } from "./workflows/build.ts";
+import { polishWorkflow } from "./workflows/polish.ts";
+import { shipWorkflow } from "./workflows/ship.ts";
+import { vetWorkflow } from "./workflows/vet.ts";
 
-export { SHIP_DIMENSION_FANOUT, SHIP_DIMENSIONS, shipGatePasses, shipVerdictOutcome } from "./built-ins/index.js";
+export { SHIP_DIMENSION_FANOUT, SHIP_DIMENSIONS, shipGatePasses, shipVerdictOutcome } from "./built-ins/index.ts";
 
 // Position 0 is load-bearing: `build` is the default `/wf` workflow when no
 // project/user config sets one (resolve-default.ts resolves

@@ -25,7 +25,7 @@ export {
 	sliceGatePasses,
 	subplanGatePasses,
 	unitFailedDimensions,
-} from "./gate-passes.js";
+} from "./gate-passes.ts";
 export {
 	evidenceCitesFileLine,
 	gateRoster,
@@ -37,7 +37,7 @@ export {
 	rulingEffectivePass,
 	shipRoster,
 	verdictRiskRulings,
-} from "./gate-rosters.js";
+} from "./gate-rosters.ts";
 export {
 	anchorNitsOnly,
 	freshVerdicts,
@@ -50,4 +50,4 @@ export {
 	SLICE_DIMENSIONS,
 	type VerdictRecord,
 	verdictBlocks,
-} from "./verdict-core.js";
+} from "./verdict-core.ts";

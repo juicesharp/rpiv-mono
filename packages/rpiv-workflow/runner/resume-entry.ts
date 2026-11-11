@@ -5,20 +5,20 @@
  * `resume-loop.ts` (which owns the loop-trailer arm's dispatch).
  */
 
-import type { Workflow } from "../api.js";
+import type { Workflow } from "../api.ts";
 import {
 	ERR_RESUME_MALFORMED_ROW,
 	ERR_RESUME_NO_ROWS,
 	ERR_RESUME_STAGE_GONE,
 	ERR_RESUME_VERSION_MISMATCH,
-} from "../messages.js";
-import { STOP } from "../routing-dsl.js";
-import { STATE_SCHEMA_VERSION } from "../state/index.js";
-import type { RunContext, WorkflowHostContext } from "../types.js";
-import { recordEntryThrow } from "./failure.js";
-import type { ReconstructResult } from "./resume.js";
-import { recordLoopDriftFailure, resumeLoopStage } from "./resume-loop.js";
-import { advance, buildLoopDeps, dispatchStageOrRecordFailure, resumeStageWithSession } from "./run-stage.js";
+} from "../messages.ts";
+import { STOP } from "../routing-dsl.ts";
+import { STATE_SCHEMA_VERSION } from "../state/index.ts";
+import type { RunContext, WorkflowHostContext } from "../types.ts";
+import { recordEntryThrow } from "./failure.ts";
+import type { ReconstructResult } from "./resume.ts";
+import { recordLoopDriftFailure, resumeLoopStage } from "./resume-loop.ts";
+import { advance, buildLoopDeps, dispatchStageOrRecordFailure, resumeStageWithSession } from "./run-stage.ts";
 
 /**
  * Pick the chain re-entry thunk from the trail trailer. Dispatch keys on the

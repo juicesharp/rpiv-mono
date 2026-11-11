@@ -25,7 +25,7 @@
  *                      READS_DATA / ROUTE_NOTE markers
  */
 
-export * from "./loop-def.js";
-export type { Outcome } from "./output-spec.js";
-export * from "./routing-dsl.js";
-export * from "./stage-def.js";
+export * from "./loop-def.ts";
+export type { Outcome } from "./output-spec.ts";
+export * from "./routing-dsl.ts";
+export * from "./stage-def.ts";

@@ -5,14 +5,15 @@ The LLM tool contract surface: TypeBox parameter schemas, pure runtime parameter
 
 ## Dependencies
 - **`typebox`** (`peerDependencies: "*"`, host-provided): `Type` builder + `Static` type extraction. Pi supplies and aliases `typebox` at load time, so it is never a `dependencies` entry — an installed copy is the duplicate runtime module the loader maps away (v2.12.0, #282)
-- **`../state/row-intent.js`**: `LABELS_BY_KIND` / `ROW_INTENT_META` — the ONLY outbound state dep in this layer (the `i18n-bridge` dep left with the chat escape hatch; the tool layer is now fully i18n-free)
+- **`../state/row-intent.ts`**: `LABELS_BY_KIND` / `ROW_INTENT_META` — the ONLY outbound state dep in this layer
+- **`../events.ts`** (type only): `AskUserAnswerRejectCode` for `external-answer.ts` — the public contract owns the verdict codes (the `i18n-bridge` dep left with the chat escape hatch; the tool layer is now fully i18n-free)
 
 ## Inbound / Outbound
 - **Imported by** `ask-user-question.ts` (the tool registrar): `QuestionParamsSchema`, `validateQuestionnaire`, `buildQuestionnaireResponse`, `buildToolResult`
 - **Imported by** `rpc-fallback.ts` (RPC/ACP native-dialog walker): `QuestionAnswer`/`QuestionData`/`QuestionnaireResult`/`QuestionParams` types only — its results are funneled through the shared `buildQuestionnaireResponse` envelope (`ask-user-question.ts:67, 243` — `runRpcPath` / `resolveUndefinedResult`)
-- **`validate-questionnaire.ts`** imports purely from `./types.js` — no state/view reach
-- **`normalize-params.ts`** imports types only from `./types.js`; `ask-user-question.ts` calls `normalizeQuestionParams` on the raw params before `validateQuestionnaire`, so the reserved/duplicate guards, both render paths, the envelope echo, and the prompt event all see the same CR-free text
-- **`response-envelope.ts`** imports `formatAnswerScalar` from `./format-answer.js` + types from `./types.js`
+- **`validate-questionnaire.ts`** imports purely from `./types.ts` — no state/view reach
+- **`normalize-params.ts`** imports types only from `./types.ts`; `ask-user-question.ts` calls `normalizeQuestionParams` on the raw params before `validateQuestionnaire`, so the reserved/duplicate guards, both render paths, the envelope echo, and the prompt event all see the same CR-free text
+- **`response-envelope.ts`** imports `formatAnswerScalar` from `./format-answer.ts` + types from `./types.ts`
 
 ## Module Structure
 ```
@@ -23,6 +24,9 @@ types.ts                  — TypeBox schemas (OptionSchema, QuestionSchema, Que
 format-answer.ts          — Scalar formatter; multi/custom/option branches (variant param retained but inert)
 response-envelope.ts      — Envelope assembly (buildQuestionnaireResponse), per-answer segment (buildAnswerSegment), buildToolResult
 validate-questionnaire.ts — Pure post-schema runtime guard returning discriminated ValidationResult
+external-answer.ts        — Pure inbound-answer resolver: untrusted `rpiv:ask-user:answer` payload → the
+                            `QuestionnaireResult` the dialog would produce (preview on picked option, multi labels in
+                            authored order + custom text, notes trimmed) or a coded rejection. Strict by design (#207)
 normalize-params.ts       — Pure line-terminator normalizer (CRLF→LF, lone CR deleted) over every user-facing
                             string field; runs at tool entry BEFORE validateQuestionnaire (#192)
 types.test.ts             — Schema accept/reject, QuestionAnswer kind union, isQuestionnaireResult guard, reserved label order

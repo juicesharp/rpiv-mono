@@ -1,7 +1,7 @@
 import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { BEL, registerAskUserQuestionTool } from "./ask-user-question.js";
-import { hasDialogUI } from "./rpc-fallback.js";
+import { BEL, registerAskUserQuestionTool } from "./ask-user-question.ts";
+import { hasDialogUI } from "./rpc-fallback.ts";
 
 type SelectFn = (title: string, options: string[]) => Promise<string | undefined>;
 type InputFn = (title: string, placeholder?: string) => Promise<string | undefined>;
@@ -103,7 +103,10 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 		const { tool, captured } = registerWithCapture();
 		const select = vi.fn(async (_t: string, options: string[]) => options[0]);
 		await run(tool, SINGLE, ctxRpc({ select }));
-		expect(captured.eventsEmitted.get("rpiv:ask-user:blocked")).toEqual([{ active: true }, { active: false }]);
+		expect(captured.eventsEmitted.get("rpiv:ask-user:blocked")).toEqual([
+			{ active: true, toolCallId: "tc" },
+			{ active: false, toolCallId: "tc" },
+		]);
 		expect(captured.eventsEmitted.get("herdr:blocked")).toEqual([
 			{ active: true, label: "question" },
 			{ active: false, label: undefined },
@@ -125,9 +128,9 @@ describe("ask_user_question.execute — RPC dialog walker (ctx.mode === 'rpc')",
 
 			expect(stdout.stdoutWrite).toHaveBeenCalledTimes(1);
 			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
-			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true });
+			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
 			expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: true, label: "question" });
-			expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false });
+			expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
 			expect(mockEmit).toHaveBeenNthCalledWith(5, "herdr:blocked", { active: false, label: undefined });
 			expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
 			expect(mockEmit.mock.invocationCallOrder[2]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
@@ -295,6 +298,18 @@ describe("ask_user_question.execute — RPC single-select replies", () => {
 		const r = await run(tool, SINGLE, ctxRpc({ select, input }));
 		expect(select).toHaveBeenCalledTimes(2);
 		expect(input).toHaveBeenCalledOnce();
+		expect(answersOf(r)).toMatchObject({ cancelled: false, answers: [{ kind: "option", answer: "A" }] });
+	});
+
+	it("a blank 'Type something.' reply returns to the options instead of recording an empty answer (#301)", async () => {
+		const tool = register();
+		const replies = ["3. Type something.", "1. A — a"];
+		const select = vi.fn(async (_t: string, options: string[]) =>
+			replies.shift() === "1. A — a" ? options[0] : options.at(-1),
+		);
+		const input = vi.fn(async () => "   ");
+		const r = await run(tool, SINGLE, ctxRpc({ select, input }));
+		expect(select).toHaveBeenCalledTimes(2);
 		expect(answersOf(r)).toMatchObject({ cancelled: false, answers: [{ kind: "option", answer: "A" }] });
 	});
 

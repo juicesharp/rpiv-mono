@@ -1,7 +1,7 @@
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./agents.js", () => ({
+vi.mock("./agents.ts", () => ({
 	SYNC_OP: {
 		READ_SRC: "read-src",
 		READ_DEST: "read-dest",
@@ -14,13 +14,13 @@ vi.mock("./agents.js", () => ({
 	cleanupPerCwdAgents: vi.fn(),
 }));
 
-vi.mock("./models-config.js", () => ({
+vi.mock("./models-config.ts", () => ({
 	invalidateModelsConfigCache: vi.fn(),
 }));
 
-import { cleanupPerCwdAgents, SYNC_OP, syncBundledAgents } from "./agents.js";
-import { invalidateModelsConfigCache } from "./models-config.js";
-import { registerUpdateAgentsCommand } from "./update-agents-command.js";
+import { cleanupPerCwdAgents, SYNC_OP, syncBundledAgents } from "./agents.ts";
+import { invalidateModelsConfigCache } from "./models-config.ts";
+import { registerUpdateAgentsCommand } from "./update-agents-command.ts";
 
 const emptyCleanup = () => ({ cleanedUp: [], skipped: [], errors: [] });
 

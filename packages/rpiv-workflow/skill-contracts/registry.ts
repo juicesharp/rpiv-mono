@@ -12,8 +12,8 @@
  *   - extension-points.ts — CompositionComparator + OutcomeDeriver registries (consumer extension points).
  */
 
-import { deepEqual, globalSlot, lazyProviderRegistry } from "../internal-utils.js";
-import type { SkillContract, SkillContractMap } from "../skill-contract.js";
+import { deepEqual, globalSlot, lazyProviderRegistry } from "../internal-utils.ts";
+import type { SkillContract, SkillContractMap } from "../skill-contract.ts";
 
 const REGISTRY_KEY = Symbol.for("@juicesharp/rpiv-workflow:skill-contracts");
 const FAILURES_KEY = Symbol.for("@juicesharp/rpiv-workflow:skill-contract-failures");

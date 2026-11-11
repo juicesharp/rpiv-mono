@@ -10,11 +10,11 @@
  * linear.app) pass their own RegExp.
  */
 
-import { url } from "../../handle.js";
-import type { ArtifactCollector } from "../../output-spec.js";
-import { requireOpt } from "./require-opt.js";
-import { textScanCollector } from "./text-scan.js";
-import type { ToolCall } from "./tool-call.js";
+import { url } from "../../handle.ts";
+import type { ArtifactCollector } from "../../output-spec.ts";
+import { requireOpt } from "./require-opt.ts";
+import { textScanCollector } from "./text-scan.ts";
+import type { ToolCall } from "./tool-call.ts";
 
 /**
  * Conservative URL matcher — `https?://` plus non-whitespace, stopping

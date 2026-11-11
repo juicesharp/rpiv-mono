@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { BindingContext } from "../state/selectors/contract.js";
-import type { VoiceState } from "../state/state.js";
-import { initialVoiceState } from "../state/state.js";
-import { globalBinding } from "./component-binding.js";
-import type { StatefulView } from "./stateful-view.js";
+import type { BindingContext } from "../state/selectors/contract.ts";
+import type { VoiceState } from "../state/state.ts";
+import { initialVoiceState } from "../state/state.ts";
+import { globalBinding } from "./component-binding.ts";
+import type { StatefulView } from "./stateful-view.ts";
 
 const DRAFT = { hallucinationFilterEnabled: true, equalizerEnabled: false };
 const BASE = initialVoiceState(DRAFT);

@@ -1,4 +1,4 @@
-import type { ScreenKind } from "./state.js";
+import type { ScreenKind } from "./state.ts";
 
 export type FooterHintKey =
 	| "enter_paste"

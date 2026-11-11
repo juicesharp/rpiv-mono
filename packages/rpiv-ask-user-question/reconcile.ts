@@ -15,7 +15,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { ASK_USER_QUESTION_TOOL_NAME } from "./ask-user-question.js";
+import { ASK_USER_QUESTION_TOOL_NAME } from "./ask-user-question.ts";
 
 /**
  * Strip-or-restore `ask_user_question` to match `ctx.hasUI`. Reads the active

@@ -1,12 +1,12 @@
 import type { Component } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 
-import type { EqualizerViewProps } from "./components/equalizer-view.js";
-import type { SettingsFormViewProps } from "./components/settings-form-view.js";
-import type { StatusBarViewProps } from "./components/status-bar-view.js";
-import type { TranscriptViewProps } from "./components/transcript-view.js";
-import { DictationScreenStrategy, SettingsScreenStrategy } from "./screen-content-strategy.js";
-import type { StatefulView } from "./stateful-view.js";
+import type { EqualizerViewProps } from "./components/equalizer-view.ts";
+import type { SettingsFormViewProps } from "./components/settings-form-view.ts";
+import type { StatusBarViewProps } from "./components/status-bar-view.ts";
+import type { TranscriptViewProps } from "./components/transcript-view.ts";
+import { DictationScreenStrategy, SettingsScreenStrategy } from "./screen-content-strategy.ts";
+import type { StatefulView } from "./stateful-view.ts";
 
 function fakeComponent(): Component {
 	return {

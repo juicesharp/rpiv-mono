@@ -10,7 +10,7 @@
 
 import { readdirSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { BUNDLED_AGENTS_DIR } from "./paths.js";
+import { BUNDLED_AGENTS_DIR } from "./paths.ts";
 
 /** Bundled-agent names (filenames sans `.md`), sorted. `[]` if the dir is unreadable. */
 export function bundledAgentNames(): string[] {

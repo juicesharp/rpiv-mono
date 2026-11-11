@@ -22,8 +22,8 @@
  */
 
 import { jsonBodyParser, type Outcome } from "@juicesharp/rpiv-workflow/registration";
-import { VERDICT_DIR } from "./shared.js";
-import { verdictCollector } from "./verdict-collector.js";
+import { VERDICT_DIR } from "./shared.ts";
+import { verdictCollector } from "./verdict-collector.ts";
 
 /**
  * The verdict outcome factory: one instance per channel, over the channel

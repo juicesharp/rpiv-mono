@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isHallucination } from "./hallucination-filter.js";
+import { isHallucination } from "./hallucination-filter.ts";
 
 describe("isHallucination", () => {
 	it("flags empty / whitespace-only output", () => {

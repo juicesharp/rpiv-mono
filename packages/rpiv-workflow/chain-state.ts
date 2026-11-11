@@ -11,18 +11,18 @@
  * `internal-utils.ts`; anything in this file is workflow-chain domain logic.
  */
 
-import type { PromptFn, StageDef } from "./api.js";
-import { type Artifact, handleToString } from "./handle.js";
-import { isFailedOutput, type Output } from "./output.js";
-import { readName, readsAll } from "./stage-def.js";
-import { actsPublishName, resolvePublishName } from "./stage-identity.js";
-import type { RunState } from "./types.js";
+import type { PromptFn, StageDef } from "./api.ts";
+import { type Artifact, handleToString } from "./handle.ts";
+import { isFailedOutput, type Output } from "./output.ts";
+import { readName, readsAll } from "./stage-def.ts";
+import { actsPublishName, resolvePublishName } from "./stage-identity.ts";
+import type { RunState } from "./types.ts";
 
 // Stage-identity projections live in the dependency-free `stage-identity.ts`
 // leaf so the load-time validators can consume them without importing this
 // runtime-state module. Re-exported here so this module's own runtime callers
 // (runner/*, registration) keep a single chain-state import.
-export { isDispatchingStage, resolvePublishName, resolveSkill } from "./stage-identity.js";
+export { isDispatchingStage, resolvePublishName, resolveSkill } from "./stage-identity.ts";
 
 /**
  * Canonical accessor for "the primary artifact the chain is currently

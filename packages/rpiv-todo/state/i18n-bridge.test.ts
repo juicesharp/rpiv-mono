@@ -1,6 +1,6 @@
 import { applyLocale, registerStrings } from "@juicesharp/rpiv-i18n";
 import { beforeEach, describe, expect, it } from "vitest";
-import { formatStatusLabel, I18N_NAMESPACE, t } from "./i18n-bridge.js";
+import { formatStatusLabel, I18N_NAMESPACE, t } from "./i18n-bridge.ts";
 
 describe("i18n-bridge", () => {
 	beforeEach(() => {

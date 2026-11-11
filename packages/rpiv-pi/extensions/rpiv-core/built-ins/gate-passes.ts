@@ -16,7 +16,7 @@ import {
 	rulingEffectivePass,
 	shipRoster,
 	verdictRiskRulings,
-} from "./gate-rosters.js";
+} from "./gate-rosters.ts";
 import {
 	freshVerdicts,
 	latestArtifactPath,
@@ -25,7 +25,7 @@ import {
 	SLICE_DIMENSIONS,
 	type VerdictRecord,
 	verdictBlocks,
-} from "./verdict-core.js";
+} from "./verdict-core.ts";
 
 /**
  * The subset of `dimensions` a re-grade must actually re-run, given the latest

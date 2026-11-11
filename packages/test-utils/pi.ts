@@ -12,7 +12,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
 import { vi } from "vitest";
-import type { MockTheme } from "./theme.js";
+import type { MockTheme } from "./theme.ts";
 
 /**
  * The mock command ctx satisfies BOTH Pi's `ExtensionCommandContext` (so tests

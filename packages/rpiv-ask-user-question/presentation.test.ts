@@ -1,3 +1,4 @@
+import { type Terminal, Text, TuiAltScreen } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import {
 	fullRowBudget,
@@ -7,7 +8,7 @@ import {
 	mustYieldInlineSlot,
 	resolvePresentation,
 	rowBudgetForHost,
-} from "./presentation.js";
+} from "./presentation.ts";
 
 describe("row budgets", () => {
 	it("passes terminal rows through unchanged for the overlay", () => {
@@ -67,5 +68,38 @@ describe("mustYieldInlineSlot", () => {
 		expect(mustYieldInlineSlot({ terminal: { rows: 19, [HOST_ALLOCATED_ROWS]: true }, hasOverlay: () => true })).toBe(
 			false,
 		);
+	});
+
+	it("counts only a capturing overlay when the host can tell them apart (#313)", () => {
+		const hud = { terminal, hasOverlay: () => true, getTopmostVisibleOverlay: () => undefined };
+		const btw = { terminal, hasOverlay: () => true, getTopmostVisibleOverlay: () => ({}) };
+		expect(mustYieldInlineSlot(hud)).toBe(false);
+		expect(mustYieldInlineSlot(btw)).toBe(true);
+	});
+
+	describe("against a real pi-tui screen", () => {
+		function headlessTerminal(): Terminal {
+			return new Proxy({} as Terminal, {
+				get: (_t, key) => {
+					if (key === "columns") return 80;
+					if (key === "rows") return 24;
+					if (key === "kittyProtocolActive") return false;
+					if (key === "drainInput") return async () => {};
+					return () => {};
+				},
+			});
+		}
+
+		it("keeps the slot under a non-capturing HUD overlay, yields to a capturing one (#313)", () => {
+			const screen = new TuiAltScreen(headlessTerminal(), false);
+			screen.showOverlay(new Text("[HUD]"), { anchor: "top-right", width: 8, nonCapturing: true });
+			expect(screen.hasOverlay()).toBe(true);
+			expect(mustYieldInlineSlot(screen)).toBe(false);
+
+			const btw = screen.showOverlay(new Text("/btw"), { anchor: "center" });
+			expect(mustYieldInlineSlot(screen)).toBe(true);
+			btw.setHidden(true);
+			expect(mustYieldInlineSlot(screen)).toBe(false);
+		});
 	});
 });

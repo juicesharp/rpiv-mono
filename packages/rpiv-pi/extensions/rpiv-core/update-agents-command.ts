@@ -5,9 +5,9 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { cleanupPerCwdAgents, type SyncResult, summarizeCleanupSkips, syncBundledAgents } from "./agents.js";
-import { readLoadedSiblingSources } from "./loaded-siblings.js";
-import { invalidateModelsConfigCache } from "./models-config.js";
+import { cleanupPerCwdAgents, type SyncResult, summarizeCleanupSkips, syncBundledAgents } from "./agents.ts";
+import { readLoadedSiblingSources } from "./loaded-siblings.ts";
+import { invalidateModelsConfigCache } from "./models-config.ts";
 
 const MSG_UP_TO_DATE = "All agents already up-to-date.";
 const MSG_NO_CHANGES = "No changes needed.";

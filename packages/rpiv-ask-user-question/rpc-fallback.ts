@@ -18,8 +18,8 @@
  * option numbers, custom text, or both separated by a semicolon.
  */
 
-import { displayLabel, t } from "./state/i18n-bridge.js";
-import type { QuestionAnswer, QuestionData, QuestionnaireResult, QuestionParams } from "./tool/types.js";
+import { displayLabel, t } from "./state/i18n-bridge.ts";
+import type { QuestionAnswer, QuestionData, QuestionnaireResult, QuestionParams } from "./tool/types.ts";
 
 /**
  * Canonical-English fallbacks; resolved through `t()` at dialog time so the
@@ -136,12 +136,13 @@ async function askSingleSelect(
 				preview: o.preview && o.preview.length > 0 ? o.preview : undefined,
 			};
 		}
-		// "Type something." sentinel → free-text follow-up; cancelling it goes back to the options.
+		// "Type something." sentinel → free-text follow-up; cancelling it, or a blank reply (#301),
+		// goes back to the options.
 		const typed = await ui.input(
 			`${header}${q.question}\n\n${q.options.map(formatOptionLine).join("\n")}\n\n${t("rpc.custom_answer_title", CUSTOM_ANSWER_TITLE)}`,
 			"",
 		);
-		if (typed == null) continue;
+		if (typed == null || typed.trim().length === 0) continue;
 		return { questionIndex, question: q.question, kind: "custom", answer: typed };
 	}
 }

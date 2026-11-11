@@ -74,8 +74,12 @@ const VERDICT_FAIL_SCORE = 0;
  * (`(?<![\w.])`), and a dotless start only at a word boundary (`(?<!\w)`), so a
  * prose ellipsis (`...packages/x.ts:5`) still yields `packages/x.ts`, never
  * `...packages/x.ts`.
+ *
+ * The extension is 1–10 chars, so `.csproj`, `.cshtml`, `.config` and
+ * `.gradle` count; the adjacent `:NN` keeps dotted identifiers out without a
+ * tighter length cap.
  */
-const FILE_LINE_CITATION_RE = /((?:(?<![\w.])\.)?(?<!\w)[\w][\w./-]*\.[a-zA-Z][a-zA-Z0-9]{0,4}):(\d+)(?:-(\d+))?/g;
+const FILE_LINE_CITATION_RE = /((?:(?<![\w.])\.)?(?<!\w)[\w][\w./-]*\.[a-zA-Z][a-zA-Z0-9]{0,9}):(\d+)(?:-(\d+))?/g;
 
 /** A structure-dimension finding — the shared shape the deterministic verdict
  * checks emit (`detail` is the actionable message, `where` locates the defect).

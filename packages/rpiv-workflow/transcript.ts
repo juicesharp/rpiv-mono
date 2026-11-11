@@ -12,7 +12,7 @@
  * "find the last regex match in assistant text" helper they reuse.
  */
 
-import type { SessionRef } from "./state/index.js";
+import type { SessionRef } from "./state/index.ts";
 
 /** Mirror of pi-ai's StopReason union — values pi attaches to AssistantMessage. */
 export type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";

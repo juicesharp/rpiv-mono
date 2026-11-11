@@ -40,7 +40,7 @@ import {
 	produces,
 	setRouteNote,
 } from "@juicesharp/rpiv-workflow/registration";
-import { rpivBucketOutcome } from "../artifact-collector.js";
+import { rpivBucketOutcome } from "../artifact-collector.ts";
 import {
 	CODE_CONFIRM_FANOUT,
 	CODE_DIMENSION_FANOUT,
@@ -85,7 +85,7 @@ import {
 	unitFailedDimensions,
 	VALIDATE_GOAL_PROMPT,
 	verdictOutcome,
-} from "../built-ins/index.js";
+} from "../built-ins/index.ts";
 import {
 	RECONCILE_FIX_OUTCOME,
 	RECONCILE_FIX_PROMPT,
@@ -94,7 +94,7 @@ import {
 	unitFailedNote,
 	validateFixGate,
 	validateGate,
-} from "./shared.js";
+} from "./shared.ts";
 
 /**
  * `goal` displaces `research` as build's start stage, and ONLY the start stage

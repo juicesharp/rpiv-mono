@@ -10,7 +10,7 @@
  * scoped returns vs build's sliced, panel-gated stage graph — not the prompts.
  */
 
-import { IMPLEMENT_DAG_FANOUT } from "../built-ins/index.js";
+import { IMPLEMENT_DAG_FANOUT } from "../built-ins/index.ts";
 import {
 	acceptanceCommands,
 	acceptanceDisposed,
@@ -19,8 +19,8 @@ import {
 	minCitations,
 	planCitations,
 	treeChanged,
-} from "./checks.js";
-import { defineUnitGraph, type UnitSpec } from "./unit-graph.js";
+} from "./checks.ts";
+import { defineUnitGraph, type UnitSpec } from "./unit-graph.ts";
 
 const research: UnitSpec = {
 	skill: "research",

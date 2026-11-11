@@ -12,7 +12,7 @@
   "hint.newline": "Umschalt+Enter für neue Zeile",
   "hint.clear": "Ctrl+U zum Leeren",
   "hint.toggle": "Leertaste zum Umschalten",
-  "hint.notes": "n für Notizen",
+  "hint.notes": "{key} für Notizen",
   "hint.tab": "Tab wechselt die Frage",
   "hint.cancel": "Esc zum Abbrechen",
 
@@ -21,13 +21,18 @@
   "review.incomplete": "⚠ Beantworte die verbleibenden Fragen vor dem Senden:",
 
   "preview.no_preview": "Keine Vorschau verfügbar",
-  "preview.notes_affordance": "Notizen: drücke n, um Notizen hinzuzufügen",
-  "preview.notes_edit_affordance": "Notiz gespeichert: drücke n zum Bearbeiten",
+  "preview.notes_affordance": "Notizen: drücke {key}, um Notizen hinzuzufügen",
+  "preview.notes_edit_affordance": "Notiz gespeichert: drücke {key} zum Bearbeiten",
   "notes.header": "Notizen:",
   "notes.saved_label": "Notiz zu dieser Antwort:",
 
   "editor.failed": "Externer Editor fehlgeschlagen",
 
   "rpc.multi_instructions": "Gib die Nummern aller zutreffenden Optionen durch Kommas getrennt ein (z. B. \"1,3\"). Füge \"; eigene Antwort\" hinzu, um eigenen Text einzuschließen, oder gib nur eigenen Text ein.",
-  "rpc.custom_answer_title": "Gib deine Antwort ein:"
+  "rpc.custom_answer_title": "Gib deine Antwort ein:",
+
+  "transcript.not_answered": "nicht beantwortet",
+  "transcript.no_answer": "keine Antwort",
+
+  "status.blocked": "Wartet auf deine Antwort"
 }

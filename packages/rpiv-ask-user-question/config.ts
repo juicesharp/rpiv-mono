@@ -6,6 +6,7 @@ export type CollapseKeySpec = string;
 
 export const DEFAULT_COLLAPSE_KEY: CollapseKeySpec = "ctrl+]";
 export const COLLAPSE_KEY_OFF: CollapseKeySpec = "off";
+export const DEFAULT_NOTES_KEY = "n";
 
 export interface AskUserQuestionConfig {
 	guidance?: GuidanceFields;
@@ -17,6 +18,12 @@ export interface AskUserQuestionConfig {
 	 * Pass `"off"` to disable the collapse shortcut entirely.
 	 */
 	collapseKey?: CollapseKeySpec;
+	/**
+	 * Key that opens the notes editor. Defaults to `"n"`. A single character of any
+	 * script (e.g. `"т"` on a Cyrillic layout) matches as typed; anything else is a
+	 * key spec in the `collapseKey` format, e.g. `"ctrl+n"`.
+	 */
+	notesKey?: string;
 }
 
 // Named keys accepted by pi-tui's `matchesKey` (keys.js switch on the parsed base key).
@@ -66,6 +73,22 @@ export function resolveCollapseKey(config: Pick<AskUserQuestionConfig, "collapse
 	if (raw === undefined || raw === "") return DEFAULT_COLLAPSE_KEY;
 	if (raw === COLLAPSE_KEY_OFF) return COLLAPSE_KEY_OFF;
 	return isValidCollapseKeySpec(raw) ? raw : DEFAULT_COLLAPSE_KEY;
+}
+
+// Keys the questionnaire already navigates with — a notes key on one of them would shadow it.
+const NOTES_KEY_RESERVED = new Set(["space", "enter", "return", "tab", "escape", "esc", "up", "down", "left", "right"]);
+
+export function resolveNotesKey(config: Pick<AskUserQuestionConfig, "notesKey">): string {
+	const raw = config.notesKey?.trim();
+	if (!raw) return DEFAULT_NOTES_KEY;
+	if ([...raw].length === 1) return raw;
+	const spec = raw.toLowerCase();
+	return isValidCollapseKeySpec(spec) && !NOTES_KEY_RESERVED.has(spec) ? spec : DEFAULT_NOTES_KEY;
+}
+
+/** A single-character notes key shows as configured (`n`, not `N`); a spec is display-cased. */
+export function formatNotesKeyForDisplay(notesKey: string): string {
+	return [...notesKey].length === 1 ? notesKey : formatKeySpecForDisplay(notesKey);
 }
 
 // The only compound-word names in SPECIAL_KEYS — first-letter capitalization

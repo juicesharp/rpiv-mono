@@ -1,7 +1,7 @@
 import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { t } from "../../state/i18n-bridge.js";
-import type { StatefulView } from "../stateful-view.js";
+import { t } from "../../state/i18n-bridge.ts";
+import type { StatefulView } from "../stateful-view.ts";
 
 export const SPLASH_FRAMES = ["⠴", "⠦", "⠖", "⠲"] as const;
 export const SPLASH_FRAME_INTERVAL_MS = 160;

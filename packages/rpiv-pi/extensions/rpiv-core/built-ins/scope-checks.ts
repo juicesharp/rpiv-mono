@@ -9,8 +9,8 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { handleToString, type Output, type RunView, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
-import { gitDirtyEntries, goalBaselinePath, readGoalBaseline, scopeExcess } from "./goal-baseline.js";
-import { phaseFiles, planPhaseRecords, withTestTwins } from "./plan-phases.js";
+import { gitDirtyEntries, goalBaselinePath, readGoalBaseline, scopeExcess } from "./goal-baseline.ts";
+import { phaseFiles, planPhaseRecords, withTestTwins } from "./plan-phases.ts";
 import {
 	containedPath,
 	type FsArtifact,
@@ -20,7 +20,7 @@ import {
 	VERDICT_DIR,
 	VERDICT_FAIL_SCORE,
 	VERDICT_PASS_SCORE,
-} from "./shared.js";
+} from "./shared.ts";
 
 /**
  * Union the per-phase `files:` write-set declared across the FULL `plans`

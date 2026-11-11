@@ -73,6 +73,28 @@ function findCycles(graph: Map<string, string[]>): string[][] {
 }
 
 describe("static import graph", () => {
+	it("uses existing filenames for relative value imports on the startup path", () => {
+		const { graph } = staticImportGraph(productionModules(PACKAGE_ROOT));
+		const visited = new Set<string>();
+		const missing: string[] = [];
+		const visit = (file: string): void => {
+			if (visited.has(file)) return;
+			visited.add(file);
+			for (const [, clause, specifier] of readFileSync(file, "utf8").matchAll(STATIC_IMPORT)) {
+				if (importsValues(clause) && !existsSync(resolve(dirname(file), specifier))) {
+					missing.push(`${relative(PACKAGE_ROOT, file)}: ${specifier}`);
+				}
+			}
+			for (const dependency of graph.get(file) ?? []) visit(dependency);
+		};
+		// Pi loads the published .ts sources directly. A nonexistent .js target
+		// makes Jiti probe fallback paths on every startup, even with a warm cache.
+		// The lazily loaded questionnaire UI is intentionally outside this guard.
+		visit(join(PACKAGE_ROOT, "index.ts"));
+		expect(visited.has(join(PACKAGE_ROOT, "tool/validate-questionnaire.ts"))).toBe(true);
+		expect(missing).toEqual([]);
+	});
+
 	it("has no cycles among the package's production modules", () => {
 		const { graph, unresolved } = staticImportGraph(productionModules(PACKAGE_ROOT));
 		expect(graph.has(join(PACKAGE_ROOT, "view/dialog-builder.ts"))).toBe(true);

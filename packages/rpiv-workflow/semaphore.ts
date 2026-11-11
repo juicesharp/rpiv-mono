@@ -10,7 +10,7 @@
  * representation is then identical to the sequential path.
  */
 
-import { WorkflowAbortError, WorkflowConfigError } from "./internal-utils.js";
+import { WorkflowAbortError, WorkflowConfigError } from "./internal-utils.ts";
 
 export class Semaphore {
 	private active = 0;

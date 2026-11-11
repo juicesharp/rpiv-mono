@@ -41,7 +41,7 @@ import {
 	toolCallCollector,
 	transcriptPathCollector,
 } from "@juicesharp/rpiv-workflow/registration";
-import { latestFsArtifact } from "./shared.js";
+import { latestFsArtifact } from "./shared.ts";
 
 /** The verdict dir listing at unit start — filename → mtimeMs. `undefined`
  *  when the dir was absent/unreadable (fail-soft: everything present then

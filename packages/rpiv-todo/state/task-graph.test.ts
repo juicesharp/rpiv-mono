@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Task } from "../tool/types.js";
-import { deriveBlocks, detectCycle } from "./task-graph.js";
+import type { Task } from "../tool/types.ts";
+import { deriveBlocks, detectCycle } from "./task-graph.ts";
 
 const task = (overrides: Partial<Task> & { id: number; subject: string }): Task => ({
 	status: "pending",

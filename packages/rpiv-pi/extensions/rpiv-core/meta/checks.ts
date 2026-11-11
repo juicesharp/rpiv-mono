@@ -7,8 +7,8 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { FILE_LINE_CITATION_RE, planCitationCheck } from "../built-ins/index.js";
-import type { Check, CheckContext, Failure } from "./unit-graph.js";
+import { FILE_LINE_CITATION_RE, planCitationCheck } from "../built-ins/index.ts";
+import type { Check, CheckContext, Failure } from "./unit-graph.ts";
 
 const abs = (ctx: CheckContext, p: string) => (isAbsolute(p) ? p : join(ctx.cwd, p));
 

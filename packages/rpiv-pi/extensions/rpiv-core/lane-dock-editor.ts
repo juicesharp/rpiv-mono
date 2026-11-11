@@ -36,7 +36,7 @@ import {
 	listLanes,
 	listLanesForDisplay,
 	SINGLE_UNIT_KEY,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 /** The navigation keys the dock cares about; everything else is "other".
  *  Only "down" is acted on (the entry gesture); the rest are classified for the

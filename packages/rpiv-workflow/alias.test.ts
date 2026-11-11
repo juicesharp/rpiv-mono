@@ -7,10 +7,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { StageDef, Workflow } from "./api.js";
-import { aliasSkills, applySkillAliases } from "./load/alias.js";
-import type { LayerOutcome, LoadAccumulator } from "./load/merge.js";
-import { fanout, iterate } from "./loop-constructors.js";
+import type { StageDef, Workflow } from "./api.ts";
+import { aliasSkills, applySkillAliases } from "./load/alias.ts";
+import type { LayerOutcome, LoadAccumulator } from "./load/merge.ts";
+import { fanout, iterate } from "./loop-constructors.ts";
 
 // Minimal stage builders — `aliasSkills` only reads `run`, `prompt`, `skill`.
 const skillStage = (skill?: string): StageDef => ({

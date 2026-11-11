@@ -18,8 +18,8 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findInstalledSiblings, findMissingSiblings, type LoadedSiblingSources } from "./package-checks.js";
-import { getPiAgentSettingsPath } from "./utils.js";
+import { findInstalledSiblings, findMissingSiblings, type LoadedSiblingSources } from "./package-checks.ts";
+import { getPiAgentSettingsPath } from "./utils.ts";
 
 const PACKAGES = fileURLToPath(new URL("../../../", import.meta.url));
 const sibling = (dir: string) => join(PACKAGES, dir);

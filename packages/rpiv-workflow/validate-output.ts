@@ -5,8 +5,8 @@
  * `typebox-adapter.ts:typeboxSchema`).
  */
 
-import type { StageSchema } from "./api.js";
-import { extractJsonSchema, isJsonSchemaObject, type JsonSchemaObject } from "./json-schema.js";
+import type { StageSchema } from "./api.ts";
+import { extractJsonSchema, isJsonSchemaObject, type JsonSchemaObject } from "./json-schema.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,7 +52,7 @@ export {
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	MIN_VALIDATION_RETRIES,
 	MIN_VALIDATION_RETRY_TIMEOUT_MS,
-} from "./validation-bounds.js";
+} from "./validation-bounds.ts";
 
 /**
  * Thrown by `withTimeout` (internal-utils.ts) when the caller passes a

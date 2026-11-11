@@ -1,4 +1,4 @@
-import type { TaskStatus } from "../tool/types.js";
+import type { TaskStatus } from "../tool/types.ts";
 
 /**
  * Allowed forward transitions per source status. `completed` is one-way to

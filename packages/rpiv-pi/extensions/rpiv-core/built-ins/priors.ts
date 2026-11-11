@@ -21,8 +21,8 @@ import {
 	type RiskRecord,
 	rulingEffectivePass,
 	verdictRiskRulings,
-} from "./gates.js";
-import { haltPreflight, latestFsArtifact, readArtifactFile } from "./shared.js";
+} from "./gates.ts";
+import { haltPreflight, latestFsArtifact, readArtifactFile } from "./shared.ts";
 
 /**
  * Copy the latest graded plan off `plans` into `.rpiv/artifacts/priors/`
@@ -73,8 +73,8 @@ const codeSnapshot = snapshotLatestPlan("code-snapshot");
  * A duty demotion stamped onto a verdict's on-disk JSON — the legible record
  * that a risk ruling the panel marked `pass: true` was demoted to effective-
  * fail by the evidence or verify-at-implement duty. One entry per FAILING
- * duty (a ruling authored as BOTH mechanics AND verify-at-implement can carry
- * two). `reason` is decision-code-free prose (no run/phase ids, no absolute
+ * duty (a verify-at-implement flag carries only the procedure-owner duty, even
+ * when also authored as mechanics). `reason` is decision-code-free prose (no run/phase ids, no absolute
  * line numbers) naming the duty that failed, so disk readers (amend, confirm
  * `--prior`) can tell a grader-side demotion from a genuine `pass: false`.
  */
@@ -225,53 +225,73 @@ const sectionIndexOf = (lines: readonly string[]): string[] => {
 	return idx;
 };
 
+/** Group a document's lines by their `sectionIndexOf` key, preserving order within each section. */
+const linesBySection = (lines: readonly string[]): Map<string, string[]> => {
+	const keys = sectionIndexOf(lines);
+	const out = new Map<string, string[]>();
+	for (let i = 0; i < lines.length; i++) {
+		const run = out.get(keys[i]);
+		if (run) run.push(lines[i]);
+		else out.set(keys[i], [lines[i]]);
+	}
+	return out;
+};
+
+/**
+ * LCS length of two line sequences. The common prefix and suffix are counted
+ * directly and trimmed, so the O(n·m) time is spent only on the edited span,
+ * and two `Uint32Array` rows stand in for the full table: memory is O(m).
+ */
+const lcsLength = (a: readonly string[], b: readonly string[]): number => {
+	let lo = 0;
+	while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
+	let ha = a.length;
+	let hb = b.length;
+	while (ha > lo && hb > lo && a[ha - 1] === b[hb - 1]) {
+		ha--;
+		hb--;
+	}
+	const shared = lo + (a.length - ha);
+	const n = ha - lo;
+	const m = hb - lo;
+	if (n === 0 || m === 0) return shared;
+	let prev = new Uint32Array(m + 1);
+	let cur = new Uint32Array(m + 1);
+	for (let i = 1; i <= n; i++) {
+		const ai = a[lo + i - 1];
+		for (let j = 1; j <= m; j++) {
+			cur[j] = ai === b[lo + j - 1] ? prev[j - 1] + 1 : Math.max(prev[j], cur[j - 1]);
+		}
+		[prev, cur] = [cur, prev];
+	}
+	return shared + prev[m];
+};
+
 /**
  * Line-level diff of `prior` vs `current` plan bodies, mapped to plan sections.
- * Each changed line (a deletion from `prior` OR an insertion in `current` under
- * an LCS match) is attributed to its nearest preceding `## ` heading in its own
- * document. Returns the union of touched section keys and a coarse changed-line
- * count (deletions + insertions). Insertion-tolerant: a 1-line insert does not
- * mark every trailing line changed (the LCS keeps shared context matched).
+ * Lines are grouped by their `## ` section key (`sectionIndexOf`, in their own
+ * document) and each section is diffed only against its counterpart, so memory
+ * scales with the largest section, not the whole plan — an out-of-memory kill
+ * is not an exception, and `decideSurgicalFix`'s catch could not fail closed on
+ * it. A section is touched when its prior and current lines differ; the
+ * changed-line count is deletions + insertions summed over sections
+ * (`|prior| + |current| − 2·LCS`). Insertion-tolerant: a 1-line insert does not
+ * mark every trailing line changed. A line moved between sections counts as a
+ * deletion in one and an insertion in the other, the fail-closed direction.
  */
 const sectionDiff = (prior: string, current: string): { touchedSections: Set<string>; changedLines: number } => {
-	const a = prior.split("\n");
-	const b = current.split("\n");
-	const sa = sectionIndexOf(a);
-	const sb = sectionIndexOf(b);
-	// LCS length table (bottom-up). Plans are a few hundred lines ⇒ O(n·m) trivial.
-	const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
-	for (let i = a.length - 1; i >= 0; i--) {
-		for (let j = b.length - 1; j >= 0; j--) {
-			dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-		}
-	}
+	const pa = linesBySection(prior.split("\n"));
+	const pb = linesBySection(current.split("\n"));
 	const touched = new Set<string>();
 	let changed = 0;
-	let i = 0;
-	let j = 0;
-	while (i < a.length && j < b.length) {
-		if (a[i] === b[j]) {
-			i++;
-			j++;
-		} else if (dp[i + 1][j] >= dp[i][j + 1]) {
-			touched.add(sa[i]); // a[i] deleted (present in prior, absent in current)
-			changed++;
-			i++;
-		} else {
-			touched.add(sb[j]); // b[j] inserted (present in current, absent in prior)
-			changed++;
-			j++;
+	for (const key of new Set([...pa.keys(), ...pb.keys()])) {
+		const a = pa.get(key) ?? [];
+		const b = pb.get(key) ?? [];
+		const delta = a.length + b.length - 2 * lcsLength(a, b);
+		if (delta > 0) {
+			touched.add(key);
+			changed += delta;
 		}
-	}
-	while (i < a.length) {
-		touched.add(sa[i]);
-		changed++;
-		i++;
-	}
-	while (j < b.length) {
-		touched.add(sb[j]);
-		changed++;
-		j++;
 	}
 	return { touchedSections: touched, changedLines: changed };
 };

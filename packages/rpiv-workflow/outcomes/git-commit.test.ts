@@ -15,14 +15,14 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { CollectContext, ParseContext, SnapshotContext } from "../output-spec.js";
+import type { CollectContext, ParseContext, SnapshotContext } from "../output-spec.ts";
 import {
 	type GitHeadSnapshot,
 	gitCommitCollector,
 	gitCommitOutcome,
 	gitCommitParser,
 	gitHeadSnapshot,
-} from "./git-commit.js";
+} from "./git-commit.ts";
 
 const hasGit = (() => {
 	try {

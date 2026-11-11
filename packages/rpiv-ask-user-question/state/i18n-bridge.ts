@@ -20,7 +20,7 @@
  * the canonical `ROW_INTENT_META[kind].label`, never `displayLabel(kind)`.
  */
 
-import { ROW_INTENT_META, type SentinelKind } from "./row-intent.js";
+import { ROW_INTENT_META, type SentinelKind } from "./row-intent.ts";
 
 export const I18N_NAMESPACE = "@juicesharp/rpiv-ask-user-question";
 

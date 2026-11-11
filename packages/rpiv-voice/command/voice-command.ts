@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { appendErrorLog } from "../audio/error-log.js";
-import { createMic, type DecibriLike } from "../audio/mic-source.js";
+import { appendErrorLog } from "../audio/error-log.ts";
+import { createMic, type DecibriLike } from "../audio/mic-source.ts";
 import {
 	assertModelIntact,
 	ensureModelDownloaded,
@@ -8,21 +8,21 @@ import {
 	isModelDownloaded,
 	ModelInstallError,
 	removeModelInstall,
-} from "../audio/model-download.js";
-import { createSttEngine, type SttEngine } from "../audio/stt-engine.js";
+} from "../audio/model-download.ts";
+import { createSttEngine, type SttEngine } from "../audio/stt-engine.ts";
 import {
 	isHallucinationFilterEnabled,
 	loadVoiceConfig,
 	resolveNumThreads,
 	type VoiceConfig,
-} from "../config/voice-config.js";
-import { getActiveLocale, t } from "../state/i18n-bridge.js";
-import type { VoiceResult } from "../state/state-reducer.js";
-import { VoiceSession } from "../state/voice-session.js";
-import type { SplashPhase } from "../view/components/splash-view.js";
-import { STATUS_BAR_PULSE_FRAME_INTERVAL_MS } from "../view/components/status-bar-view.js";
-import { type PipelineHandle, startDictationPipeline } from "./pipeline-runner.js";
-import { runWithSplash } from "./splash-runner.js";
+} from "../config/voice-config.ts";
+import { getActiveLocale, t } from "../state/i18n-bridge.ts";
+import type { VoiceResult } from "../state/state-reducer.ts";
+import { VoiceSession } from "../state/voice-session.ts";
+import type { SplashPhase } from "../view/components/splash-view.ts";
+import { STATUS_BAR_PULSE_FRAME_INTERVAL_MS } from "../view/components/status-bar-view.ts";
+import { type PipelineHandle, startDictationPipeline } from "./pipeline-runner.ts";
+import { runWithSplash } from "./splash-runner.ts";
 
 export const VOICE_COMMAND_NAME = "voice";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fs } from "../../handle.js";
-import type { BranchEntry } from "../../transcript.js";
-import { toolCallCollector } from "./tool-call.js";
+import { fs } from "../../handle.ts";
+import type { BranchEntry } from "../../transcript.ts";
+import { toolCallCollector } from "./tool-call.ts";
 
 const asstWithTools = (parts: Array<{ name: string; input: Record<string, unknown> }>): BranchEntry => ({
 	type: "message",

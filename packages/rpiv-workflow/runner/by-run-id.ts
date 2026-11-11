@@ -32,12 +32,12 @@
  * no-JSONL refusals once while leaving in-run failures to the stage machinery).
  */
 
-import type { WorkflowHostContext } from "../host.js";
-import { findWorkflow, loadWorkflows } from "../load/index.js";
-import { MSG_LOAD_ABORTED, MSG_RESUME_WORKFLOW_GONE, MSG_RUN_NOT_FOUND } from "../messages.js";
-import { resolveRun } from "../state/index.js";
-import type { RunWorkflowResult } from "../types.js";
-import { type ResumeWorkflowOptions, resumeWorkflow } from "./runner.js";
+import type { WorkflowHostContext } from "../host.ts";
+import { findWorkflow, loadWorkflows } from "../load/index.ts";
+import { MSG_LOAD_ABORTED, MSG_RESUME_WORKFLOW_GONE, MSG_RUN_NOT_FOUND } from "../messages.ts";
+import { resolveRun } from "../state/index.ts";
+import type { RunWorkflowResult } from "../types.ts";
+import { type ResumeWorkflowOptions, resumeWorkflow } from "./runner.ts";
 
 /**
  * Options for `resumeWorkflowByRunId` — the full `ResumeWorkflowOptions` surface

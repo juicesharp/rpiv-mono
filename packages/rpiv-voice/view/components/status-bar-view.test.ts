@@ -2,7 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { STATUS_BAR_PULSE_FRAME_INTERVAL_MS, StatusBarView } from "./status-bar-view.js";
+import { STATUS_BAR_PULSE_FRAME_INTERVAL_MS, StatusBarView } from "./status-bar-view.ts";
 
 const theme = makeTheme() as unknown as Theme;
 const WIDTH = 80;

@@ -33,7 +33,7 @@
  */
 
 import type { Config } from "sherpa-onnx-node";
-import { DEFAULT_NUM_THREADS } from "../config/voice-config.js";
+import { DEFAULT_NUM_THREADS } from "../config/voice-config.ts";
 
 // ── Whisper fixed input contract ─────────────────────────────────────────────
 // 16 kHz mono PCM. featureDim 80 matches the model's mel-spectrogram output.

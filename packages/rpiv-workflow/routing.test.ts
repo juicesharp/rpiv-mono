@@ -6,12 +6,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { type EdgeContext, gate, marksReadsData, match, STOP, type Workflow } from "./api.js";
-import type { Output } from "./output.js";
-import { eq, gt } from "./predicates.js";
-import { edgeIsDecision, nextStage } from "./routing.js";
-import { takeRouteNote } from "./routing-dsl.js";
-import type { RunState } from "./types.js";
+import { type EdgeContext, gate, marksReadsData, match, STOP, type Workflow } from "./api.ts";
+import type { Output } from "./output.ts";
+import { eq, gt } from "./predicates.ts";
+import { edgeIsDecision, nextStage } from "./routing.ts";
+import { takeRouteNote } from "./routing-dsl.ts";
+import type { RunState } from "./types.ts";
 
 const makeState = (outputData?: Record<string, unknown>): RunState => ({
 	originalInput: "",

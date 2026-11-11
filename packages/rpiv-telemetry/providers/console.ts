@@ -1,5 +1,5 @@
-import type { TelemetryEvent } from "../types/events.js";
-import type { TelemetryProvider, TelemetryProviderMeta } from "../types/provider.js";
+import type { TelemetryEvent } from "../types/events.ts";
+import type { TelemetryProvider, TelemetryProviderMeta } from "../types/provider.ts";
 
 export const CONSOLE_PROVIDER_META: TelemetryProviderMeta = {
 	name: "console",

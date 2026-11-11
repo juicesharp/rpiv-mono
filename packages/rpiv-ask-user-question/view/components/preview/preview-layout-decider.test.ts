@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { QuestionData } from "../../../tool/types.js";
-import type { WrappingSelectItem } from "../wrapping-select.js";
+import type { QuestionData } from "../../../tool/types.ts";
+import type { WrappingSelectItem } from "../wrapping-select.ts";
 import {
 	adaptiveLeftWidth,
 	crossTabLeftWidthWithDonation,
@@ -11,7 +11,7 @@ import {
 	MIN_PREVIEW_WIDTH,
 	PREVIEW_COLUMN_GAP,
 	previewSourceWidth,
-} from "./preview-layout-decider.js";
+} from "./preview-layout-decider.ts";
 
 const opt = (label: string): WrappingSelectItem => ({ kind: "option", label });
 

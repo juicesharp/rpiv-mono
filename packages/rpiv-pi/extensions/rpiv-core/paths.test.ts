@@ -15,7 +15,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadBundledSkillNames } from "./paths.js";
+import { loadBundledSkillNames } from "./paths.ts";
 
 describe("loadBundledSkillNames", () => {
 	let warnSpy: ReturnType<typeof vi.spyOn>;

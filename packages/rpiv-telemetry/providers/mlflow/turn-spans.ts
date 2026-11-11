@@ -1,8 +1,8 @@
 import { SpanType, startSpan } from "@mlflow/core";
-import type { AgentEndEvent, AgentStartEvent } from "../../types/events.js";
-import { msToNs } from "./keys.js";
-import type { MlflowSpanRegistry } from "./span-registry.js";
-import { setTraceSession } from "./trace-session-shim.js";
+import type { AgentEndEvent, AgentStartEvent } from "../../types/events.ts";
+import { msToNs } from "./keys.ts";
+import type { MlflowSpanRegistry } from "./span-registry.ts";
+import { setTraceSession } from "./trace-session-shim.ts";
 
 export function onAgentStart(registry: MlflowSpanRegistry, event: AgentStartEvent): void {
 	const name = event.selfAgentType ? `subagent-turn[${event.selfAgentType}]` : "agent-turn";

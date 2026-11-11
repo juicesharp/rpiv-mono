@@ -6,9 +6,9 @@
  */
 
 import { basename } from "node:path";
-import { isValidName, readNamesIndex, rebuildIndex } from "./names.js";
-import { readHeader } from "./reads.js";
-import type { WorkflowHeader } from "./state.js";
+import { isValidName, readNamesIndex, rebuildIndex } from "./names.ts";
+import { readHeader } from "./reads.ts";
+import type { WorkflowHeader } from "./state.ts";
 
 /**
  * Resolve a run *reference* to its header — the ref-resolution seam.

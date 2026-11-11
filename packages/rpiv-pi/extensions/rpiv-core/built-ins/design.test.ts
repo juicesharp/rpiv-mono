@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fs as fsHandle, type ParseContext } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { designOutcome, designParser, designStructure } from "./design.js";
-import { designSliceOf } from "./slices.js";
+import { designOutcome, designParser, designStructure } from "./design.ts";
+import { designSliceOf } from "./slices.ts";
 
 const DESIGN = (sliceN: string) =>
 	[

@@ -19,9 +19,9 @@
  * consumers read the envelope shape there.
  */
 
-import type { Artifact } from "./handle.js";
-import type { RunView } from "./output.js";
-import type { BranchEntry } from "./transcript.js";
+import type { Artifact } from "./handle.ts";
+import type { RunView } from "./output.ts";
+import type { BranchEntry } from "./transcript.ts";
 
 // ---------------------------------------------------------------------------
 // Snapshot — pre-stage reference capture (shared by collector + parser)

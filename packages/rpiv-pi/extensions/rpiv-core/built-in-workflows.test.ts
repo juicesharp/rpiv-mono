@@ -28,8 +28,8 @@ import {
 } from "@juicesharp/rpiv-workflow";
 import { fanin, fs as fsHandle, loopSpecOf, type ProgressValue } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { rpivArtifactMdOutcome } from "./artifact-collector.js";
-import { builtInWorkflows } from "./built-in-workflows.js";
+import { rpivArtifactMdOutcome } from "./artifact-collector.ts";
+import { builtInWorkflows } from "./built-in-workflows.ts";
 import {
 	freshVerdicts,
 	gateRoster,
@@ -41,14 +41,14 @@ import {
 	SLICE_DIMENSIONS,
 	type VerdictRecord,
 	verdictBlocks,
-} from "./built-ins/gates.js";
+} from "./built-ins/gates.ts";
 import {
 	CODE_PANEL_PROGRESS,
 	PLAN_PANEL_PROGRESS,
 	SHIP_PANEL_PROGRESS,
 	SLICE_PANEL_PROGRESS,
-} from "./built-ins/grade-panel.js";
-import { DECLARED_CONTRACTS, deriveAndValidate, findWorkflow, withDerivedOutcomes } from "./workflow-test-harness.js";
+} from "./built-ins/grade-panel.ts";
+import { DECLARED_CONTRACTS, deriveAndValidate, findWorkflow, withDerivedOutcomes } from "./workflow-test-harness.ts";
 
 // validate must route to code-review (not commit) in build/arch workflows.
 // ---------------------------------------------------------------------------

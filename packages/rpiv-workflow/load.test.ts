@@ -12,19 +12,19 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, defineWorkflow, produces as producesRaw, type StageDef, type Workflow } from "./api.js";
-import { __resetBuiltIns, registerBuiltIns, registerBuiltInsProvider } from "./built-ins.js";
-import { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
-import { noopCollector } from "./outcomes/index.js";
-import type { SkillContract } from "./skill-contract.js";
+import { acts, defineWorkflow, produces as producesRaw, type StageDef, type Workflow } from "./api.ts";
+import { __resetBuiltIns, registerBuiltIns, registerBuiltInsProvider } from "./built-ins.ts";
+import { loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.ts";
+import { noopCollector } from "./outcomes/index.ts";
+import type { SkillContract } from "./skill-contract.ts";
 import {
 	__resetSkillContracts,
 	getSkillContracts,
 	registerOutcomeDeriver,
 	registerSkillContracts,
 	registerSkillContractsProvider,
-} from "./skill-contracts/index.js";
-import { typeboxSchema } from "./typebox-adapter.js";
+} from "./skill-contracts/index.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
 
 /** Strip symbol keys from an object tree for deep-equal comparison. */
 function stripSymbols(value: unknown): unknown {

@@ -6,7 +6,7 @@ Extracted leaf-cluster layer behind the four built-in `/wf` workflows (build / v
 ## Dependencies
 - **`@juicesharp/rpiv-workflow`** — statically value-importing `/registration` (`fanout`, `handleToString`, `defineCollector`, `toolCallCollector`, `transcriptPathCollector`, `jsonBodyParser`, `acts`/`eq`/`gt`/`match`/`gate`, types `RunView`/`Output`/`ScriptContext`) and `/runner` (`StagePreflightError`). This is the sanctioned OFF-ENTRY-GRAPH peer import — these modules are reached only through `register-built-in-workflows.ts`'s guarded dynamic `/startup` import (lazy, built on first `/wf`; missing sibling ⇒ no-op). The entry graph itself has NO static peer edge (`sibling-import-graph.test.ts` enforces it)
 - **`@earendil-works/pi-coding-agent`**: `parseFrontmatter` (plan-cite / slices / slice-checks)
-- Internal: helpers import each other via relative `./x.js`; nothing here reaches back into lane/session modules
+- Internal: helpers import each other via relative `./x.ts`; nothing here reaches back into lane/session modules
 
 ## Consumers
 - `built-in-workflows.ts` + its test (the composition surface); `register-built-in-workflows.ts` (indirectly, via the lazy provider)
@@ -26,7 +26,7 @@ gate-passes.ts      — Gate layer 3: dimensionsToRegrade, allDimensionsPass, pe
                       unitFailedDimensions, seed-lift classification (SeedOnlyVerdict/seedOnly*), and the
                       panelProgress/progressFromRoundCounts whole-lap progress hooks
 gates.ts            — Conservation facade: pure named re-exports of the exact 36-symbol surface over the three
-                      layers (zero logic, no `export *`); consumers keep importing `./gates.js`
+                      layers (zero logic, no `export *`); consumers keep importing `./gates.ts`
 verdict-collector.ts — Disk-first collector, three arms: (1) newest `<basename>__<dimension>__*.json` under
                       VERDICT_DIR written since snapshot; (2) transcript text; (3) toolCallCollector write-args
                       arm pinned by isWriteTool (write/edit only) so a prior round's read-back collects nothing.

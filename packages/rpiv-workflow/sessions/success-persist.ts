@@ -9,13 +9,13 @@
  *   - halt-routing.ts — the halt pipeline; consumes `unitEventOf`.
  */
 
-import { currentStageRef, failAuditWrite } from "../audit.js";
-import { persistStageSuccess, rollLastSession } from "../audit-rows.js";
-import { lifecycleCtxFromSession, skillStageRef, type UnitEvent } from "../events.js";
-import type { Output } from "../output.js";
-import type { SessionRef } from "../state/index.js";
-import type { StageSessionContext, WorkflowHostContext } from "../types.js";
-import { bashTimeoutStrikeHistory } from "./bash-strikes.js";
+import { currentStageRef, failAuditWrite } from "../audit.ts";
+import { persistStageSuccess, rollLastSession } from "../audit-rows.ts";
+import { lifecycleCtxFromSession, skillStageRef, type UnitEvent } from "../events.ts";
+import type { Output } from "../output.ts";
+import type { SessionRef } from "../state/index.ts";
+import type { StageSessionContext, WorkflowHostContext } from "../types.ts";
+import { bashTimeoutStrikeHistory } from "./bash-strikes.ts";
 
 /**
  * Returns true on successful write — caller gates `onSuccess` on this so the

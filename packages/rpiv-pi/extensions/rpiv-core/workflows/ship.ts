@@ -41,7 +41,7 @@ import {
 	type VerdictRecord,
 	verdictBlocks,
 	verdictRiskRulings,
-} from "../built-ins/index.js";
+} from "../built-ins/index.ts";
 import {
 	RECONCILE_FIX_OUTCOME,
 	RECONCILE_FIX_PROMPT,
@@ -49,7 +49,7 @@ import {
 	unitFailedNote,
 	validateFixGate,
 	validateGate,
-} from "./shared.js";
+} from "./shared.ts";
 
 /**
  * ship's research front-load — a LEANER grounding than build's `/skill:research`

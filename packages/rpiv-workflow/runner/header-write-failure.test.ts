@@ -13,12 +13,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Workflow } from "../api.js";
-import { readNamesIndex } from "../state/index.js";
-import { runWorkflow } from "./runner.js";
+import type { Workflow } from "../api.ts";
+import { readNamesIndex } from "../state/index.ts";
+import { runWorkflow } from "./runner.ts";
 
-vi.mock("../state/writes.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../state/writes.js")>();
+vi.mock("../state/writes.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../state/writes.ts")>();
 	return { ...actual, appendHeader: vi.fn(() => false) };
 });
 

@@ -25,12 +25,12 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { validateGuidanceFields } from "@juicesharp/rpiv-config";
 import { Type } from "typebox";
-import { getConfigPath, readConfig, type WebToolsConfig, writeConfig } from "./providers/config.js";
-import { createSearchProvider } from "./providers/factory.js";
-import { fetchViaGenericHtml } from "./providers/fetch-helpers.js";
-import { PROVIDERS } from "./providers/index.js";
-import { GITHUB_TOKEN_ENV_VAR, getActiveGitHubInterceptor, getInterceptors } from "./providers/interceptors/index.js";
-import type { FetchResponse, FullProvider, ProviderMeta, SearchProvider, SearchResult } from "./providers/types.js";
+import { getConfigPath, readConfig, type WebToolsConfig, writeConfig } from "./providers/config.ts";
+import { createSearchProvider } from "./providers/factory.ts";
+import { fetchViaGenericHtml } from "./providers/fetch-helpers.ts";
+import { PROVIDERS } from "./providers/index.ts";
+import { GITHUB_TOKEN_ENV_VAR, getActiveGitHubInterceptor, getInterceptors } from "./providers/interceptors/index.ts";
+import type { FetchResponse, FullProvider, ProviderMeta, SearchProvider, SearchResult } from "./providers/types.ts";
 
 // ---------------------------------------------------------------------------
 // Tunables and external surface
@@ -97,11 +97,20 @@ export const DEFAULT_WEB_FETCH_GUIDELINES: string[] = [
 // API key resolution + masking
 // ---------------------------------------------------------------------------
 
+/** The provider's key from the environment: `envVar`, else `fallbackEnvVar`. */
+function envApiKey(meta: ProviderMeta): string | undefined {
+	for (const name of [meta.envVar, meta.fallbackEnvVar]) {
+		const value = name ? process.env[name]?.trim() : undefined;
+		if (value) return value;
+	}
+	return undefined;
+}
+
 function resolveProviderApiKey(providerName: string, config: WebToolsConfig): string | undefined {
 	const meta = PROVIDERS.find((p) => p.name === providerName);
 	if (!meta) return undefined;
 
-	const envKey = meta.envVar ? process.env[meta.envVar]?.trim() : undefined;
+	const envKey = envApiKey(meta);
 	if (envKey) return envKey;
 
 	const configKey = config.apiKeys?.[providerName]?.trim();
@@ -564,7 +573,7 @@ function formatShowConfigMessage(current: WebToolsConfig): string {
 	lines.push(`  active provider: ${providerName} (source: ${providerSource})`);
 
 	for (const meta of PROVIDERS) {
-		const envKey = meta.envVar ? process.env[meta.envVar]?.trim() : undefined;
+		const envKey = envApiKey(meta);
 		const configKey = current.apiKeys?.[meta.name]?.trim();
 		const legacyKey = meta.name === LEGACY_TOP_LEVEL_KEY_PROVIDER ? current.apiKey?.trim() : undefined;
 		const resolved = envKey ?? configKey ?? legacyKey;

@@ -1,9 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findInstalledSiblings, findMissingSiblings, type LoadedSiblingSources } from "./package-checks.js";
-import { SIBLINGS } from "./siblings.js";
-import { getPiAgentSettingsPath } from "./utils.js";
+import { findInstalledSiblings, findMissingSiblings, type LoadedSiblingSources } from "./package-checks.ts";
+import { SIBLINGS } from "./siblings.ts";
+import { getPiAgentSettingsPath } from "./utils.ts";
 
 function writeSettings(contents: unknown) {
 	const settingsPath = getPiAgentSettingsPath();

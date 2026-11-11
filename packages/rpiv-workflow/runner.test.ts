@@ -13,31 +13,31 @@ import type {
 	StageKind,
 	StageSchema,
 	Workflow,
-} from "./api.js";
-import { defineRoute, defineWorkflow, gate, match, produces, setRouteNote, terminal } from "./api.js";
-import { registerBuiltIns } from "./built-ins.js";
-import { LifecycleDispatcher } from "./events.js";
-import { fs as fsHandle } from "./handle.js";
-import { fanout } from "./loop-constructors.js";
-import type { Outcome } from "./output-spec.js";
-import { eq, gt } from "./predicates.js";
-import { evaluateBackwardJumpGuard } from "./runner/chain-advance.js";
-import { runWorkflow, runWorkflowByName } from "./runner/index.js";
-import type { CompositionComparator } from "./skill-contract.js";
-import { registerCompositionComparator, registerSkillContracts } from "./skill-contracts/index.js";
+} from "./api.ts";
+import { defineRoute, defineWorkflow, gate, match, produces, setRouteNote, terminal } from "./api.ts";
+import { registerBuiltIns } from "./built-ins.ts";
+import { LifecycleDispatcher } from "./events.ts";
+import { fs as fsHandle } from "./handle.ts";
+import { fanout } from "./loop-constructors.ts";
+import type { Outcome } from "./output-spec.ts";
+import { eq, gt } from "./predicates.ts";
+import { evaluateBackwardJumpGuard } from "./runner/chain-advance.ts";
+import { runWorkflow, runWorkflowByName } from "./runner/index.ts";
+import type { CompositionComparator } from "./skill-contract.ts";
+import { registerCompositionComparator, registerSkillContracts } from "./skill-contracts/index.ts";
 import {
 	appendHeader,
 	appendRoutingDecision,
 	readHeader,
 	readNamesIndex,
 	readRoutingDecisions,
-} from "./state/index.js";
+} from "./state/index.ts";
 // Deep import: addNameToIndex is deliberately NOT on the state barrels
 // (production code goes through claimName); tests seed collisions directly.
-import { addNameToIndex } from "./state/names.js";
-import { hasAssistantMessage, lastAssistantStopReason } from "./transcript.js";
-import { typeboxSchema } from "./typebox-adapter.js";
-import type { RunContext, RunState } from "./types.js";
+import { addNameToIndex } from "./state/names.ts";
+import { hasAssistantMessage, lastAssistantStopReason } from "./transcript.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
+import type { RunContext, RunState } from "./types.ts";
 
 // Note: transcript-path scanning moved to rpiv-pi (`rpivArtifactCollector`)
 // since the `.rpiv/artifacts/<bucket>/<file>.md` layout is an rpiv
@@ -3517,7 +3517,7 @@ describe("runWorkflow", () => {
 			};
 
 			it("two registered bundles both receive every event in registration order", async () => {
-				const { registerLifecycle } = await import("./events.js");
+				const { registerLifecycle } = await import("./events.ts");
 				const order: string[] = [];
 				const bundleA = { onStageEnd: () => void order.push("A") };
 				const bundleB = { onStageEnd: () => void order.push("B") };
@@ -3534,7 +3534,7 @@ describe("runWorkflow", () => {
 			});
 
 			it("registerLifecycle returns a disposer that removes the bundle", async () => {
-				const { registerLifecycle } = await import("./events.js");
+				const { registerLifecycle } = await import("./events.ts");
 				const seen: string[] = [];
 				const dispose = registerLifecycle({ onStageEnd: () => void seen.push("registered") });
 				dispose();
@@ -3544,7 +3544,7 @@ describe("runWorkflow", () => {
 			});
 
 			it("per-call options.lifecycle fires AFTER globally-registered bundles", async () => {
-				const { registerLifecycle } = await import("./events.js");
+				const { registerLifecycle } = await import("./events.ts");
 				const order: string[] = [];
 				const disposeGlobal = registerLifecycle({ onStageEnd: () => void order.push("global") });
 				try {
@@ -3561,7 +3561,7 @@ describe("runWorkflow", () => {
 			});
 
 			it("a throw in one bundle doesn't stop other bundles or the run", async () => {
-				const { registerLifecycle } = await import("./events.js");
+				const { registerLifecycle } = await import("./events.ts");
 				const seen: string[] = [];
 				const dispose = registerLifecycle({
 					onStageEnd: () => {
@@ -3586,7 +3586,7 @@ describe("runWorkflow", () => {
 			});
 
 			it("registration made mid-run does NOT receive the in-flight event but DOES receive the next", async () => {
-				const { registerLifecycle } = await import("./events.js");
+				const { registerLifecycle } = await import("./events.ts");
 				const seen: string[] = [];
 				let lateDispose: (() => void) | undefined;
 				const dispose = registerLifecycle({

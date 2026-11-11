@@ -12,6 +12,7 @@ vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	return {
 		...actual,
 		getSupportedThinkingLevels: vi.fn(() => ["off", "minimal", "low", "medium", "high"]),
+		cleanupSessionResources: vi.fn(),
 	};
 });
 
@@ -33,9 +34,10 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	};
 });
 
+import { cleanupSessionResources } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { buildSessionContext, convertToLlm } from "@earendil-works/pi-coding-agent";
-import { registerAdvisorTool, setAdvisorModel } from "./advisor/index.js";
+import { registerAdvisorTool, setAdvisorModel } from "./advisor/index.ts";
 
 function resp(input: { text?: string; stopReason?: "done" | "aborted" | "error" | "toolUse"; errorMessage?: string }) {
 	return {
@@ -49,6 +51,7 @@ function resp(input: { text?: string; stopReason?: "done" | "aborted" | "error" 
 
 beforeEach(() => {
 	vi.mocked(completeSimple).mockReset();
+	vi.mocked(cleanupSessionResources).mockClear();
 	vi.mocked(buildSessionContext).mockImplementation(
 		(entries) =>
 			({
@@ -115,6 +118,46 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		expect(completeSimple).toHaveBeenCalledTimes(1);
 		const options = vi.mocked(completeSimple).mock.calls[0]?.[2] as Record<string, unknown> | undefined;
 		expect(options).toMatchObject({ apiKey: "test-key", headers: {} });
+	});
+
+	it("sends an advisor-scoped session id on the runtime path", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx({ sessionId: "session-123" });
+		const runtime = { completeSimple: vi.fn(async (..._args: unknown[]) => resp({ text: "runtime advice" })) };
+		Object.defineProperty(ctx.modelRegistry, "runtime", { value: runtime });
+
+		await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		const options = runtime.completeSimple.mock.calls[0]?.[2] as Record<string, unknown> | undefined;
+		expect(options).toHaveProperty("sessionId", "advisor-session-123");
+	});
+
+	it("sends the same advisor-scoped session id on the legacy path and on the empty-response retry", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		vi.mocked(completeSimple)
+			.mockResolvedValueOnce(resp({}) as never)
+			.mockResolvedValueOnce(resp({ text: "legacy advice" }) as never);
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx({ sessionId: "session-456" });
+
+		await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
+		const calls = vi.mocked(completeSimple).mock.calls;
+		expect(calls).toHaveLength(2);
+		for (const call of calls) {
+			expect(call[2]).toMatchObject({ apiKey: "test-key", headers: {}, sessionId: "advisor-session-456" });
+		}
+	});
+
+	it("releases the advisor session's provider resources on session_shutdown", async () => {
+		const { pi, captured } = createMockPi();
+		registerAdvisorTool(pi);
+		const ctx = createMockCtx({ sessionId: "session-789" });
+
+		for (const handler of captured.events.get("session_shutdown") ?? []) await handler({}, ctx);
+		expect(cleanupSessionResources).toHaveBeenCalledTimes(1);
+		expect(cleanupSessionResources).toHaveBeenCalledWith("advisor-session-789");
 	});
 
 	it("uses compacted session context instead of raw branch messages", async () => {
@@ -264,6 +307,55 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		const r = await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, ctx);
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("boom") });
 		expect(r?.details).toMatchObject({ errorMessage: "boom" });
+	});
+});
+
+describe("executeAdvisor — retry on transient provider errors", () => {
+	const OVERLOADED = "Codex error: Our servers are currently overloaded. Please try again later.";
+	const run = async (settings?: unknown) => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		const { pi, captured } = createMockPi();
+		if (settings !== undefined) Object.assign(pi, { getSettings: () => settings });
+		registerAdvisorTool(pi);
+		return captured.tools
+			.get("advisor")
+			?.execute?.("tc", {}, undefined as never, undefined as never, createMockCtx());
+	};
+
+	it("retries a transient error under Pi's retry settings and returns the advice", async () => {
+		vi.mocked(completeSimple)
+			.mockResolvedValueOnce(resp({ stopReason: "error", errorMessage: OVERLOADED }) as never)
+			.mockResolvedValueOnce(resp({ text: "advice" }) as never);
+		const r = await run({ retry: { baseDelayMs: 1 } });
+		expect(r?.content[0]).toMatchObject({ text: "advice" });
+		expect(completeSimple).toHaveBeenCalledTimes(2);
+	});
+
+	it("surfaces the last error once the retry budget is spent", async () => {
+		vi.mocked(completeSimple).mockResolvedValue(resp({ stopReason: "error", errorMessage: OVERLOADED }) as never);
+		const r = await run({ retry: { maxRetries: 2, baseDelayMs: 1 } });
+		expect(r?.details).toMatchObject({ stopReason: "error", errorMessage: OVERLOADED });
+		expect(completeSimple).toHaveBeenCalledTimes(3);
+	});
+
+	it("does not retry a permanent error", async () => {
+		vi.mocked(completeSimple).mockResolvedValueOnce(
+			resp({ stopReason: "error", errorMessage: "401 Unauthorized: invalid api key" }) as never,
+		);
+		await run({ retry: { baseDelayMs: 1 } });
+		expect(completeSimple).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not retry when Pi's retry setting is disabled", async () => {
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ stopReason: "error", errorMessage: OVERLOADED }) as never);
+		await run({ retry: { enabled: false, baseDelayMs: 1 } });
+		expect(completeSimple).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not retry on a host without settings access", async () => {
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ stopReason: "error", errorMessage: OVERLOADED }) as never);
+		await run();
+		expect(completeSimple).toHaveBeenCalledTimes(1);
 	});
 });
 

@@ -24,15 +24,15 @@
  * re-entry hands it straight back to `runLoop`.
  */
 
-import type { LoopDef, StageDef, Unit, Workflow } from "../api.js";
-import { applyStageSuccess, rollLastSession } from "../audit-rows.js";
-import { stageEntryArgs } from "../chain-state.js";
-import { pushFailureMemo } from "../failure-memos.js";
-import type { Artifact } from "../handle.js";
-import { formatError } from "../internal-utils.js";
-import { panelMembers } from "../judge.js";
-import { projectResult, publishPanelVerdict } from "../loop.js";
-import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.js";
+import type { LoopDef, StageDef, Unit, Workflow } from "../api.ts";
+import { applyStageSuccess, rollLastSession } from "../audit-rows.ts";
+import { stageEntryArgs } from "../chain-state.ts";
+import { pushFailureMemo } from "../failure-memos.ts";
+import type { Artifact } from "../handle.ts";
+import { formatError } from "../internal-utils.ts";
+import { panelMembers } from "../judge.ts";
+import { projectResult, publishPanelVerdict } from "../loop.ts";
+import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.ts";
 import {
 	advanceCursor,
 	foldFanoutCompletion,
@@ -41,18 +41,18 @@ import {
 	type LoopCursor,
 	sequentialStrategyOf,
 	unitTagOf,
-} from "../loop-kinds.js";
-import { ERR_RESUME_LOOP_MISMATCH } from "../messages.js";
-import { failedOutput, type Output, outputMeta } from "../output.js";
+} from "../loop-kinds.ts";
+import { ERR_RESUME_LOOP_MISMATCH } from "../messages.ts";
+import { failedOutput, type Output, outputMeta } from "../output.ts";
 import {
 	type RoutingDecision,
 	readAllStagesForResume,
 	STATE_SCHEMA_VERSION,
 	type WorkflowHeader,
 	type WorkflowStage,
-} from "../state/index.js";
-import type { RunState } from "../types.js";
-import { freshRunState } from "./run-context.js";
+} from "../state/index.ts";
+import type { RunState } from "../types.ts";
+import { freshRunState } from "./run-context.ts";
 
 /** Trailing open generation — everything `resume-loop.ts` needs to re-enter `runLoop`. */
 export interface LoopResumePoint {

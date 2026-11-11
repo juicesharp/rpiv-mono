@@ -9,7 +9,7 @@
  * `./parsers`.
  */
 
-export * from "./collectors/index.js";
+export * from "./collectors/index.ts";
 export {
 	type GitCommitData,
 	type GitCommitOutput,
@@ -18,6 +18,6 @@ export {
 	gitCommitOutcome,
 	gitCommitParser,
 	gitHeadSnapshot,
-} from "./git-commit.js";
-export * from "./parsers/index.js";
-export { noopCollector, sideEffectOutcome } from "./side-effect.js";
+} from "./git-commit.ts";
+export * from "./parsers/index.ts";
+export { noopCollector, sideEffectOutcome } from "./side-effect.ts";

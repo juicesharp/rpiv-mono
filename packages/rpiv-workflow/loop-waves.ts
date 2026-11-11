@@ -19,9 +19,9 @@
  * the static load gate can't see them — `stage-rules.ts` never inspects the unit list).
  */
 
-import type { Unit } from "./loop-def.js";
-import { unitTagOf } from "./loop-kinds.js";
-import { invariantPreflight } from "./stage-errors.js";
+import type { Unit } from "./loop-def.ts";
+import { unitTagOf } from "./loop-kinds.ts";
+import { invariantPreflight } from "./stage-errors.ts";
 
 /** Built once; shared by level computation and the dispatcher's dep-artifact
  *  resolution so both resolve a dep id to the SAME index the cursor slots are

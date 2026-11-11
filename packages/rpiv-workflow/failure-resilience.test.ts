@@ -17,14 +17,14 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { defineWorkflow, type FanoutFn, produces } from "./api.js";
-import { registerWorkflowExecutionHost } from "./execution-host.js";
-import { fs as fsHandle } from "./handle.js";
-import { fanout } from "./loop-constructors.js";
-import { ERR_VALIDATE_RETRY_UNCHANGED } from "./messages.js";
-import { runWorkflow } from "./runner/index.js";
-import type { BranchEntry } from "./transcript.js";
-import { typeboxSchema } from "./typebox-adapter.js";
+import { defineWorkflow, type FanoutFn, produces } from "./api.ts";
+import { registerWorkflowExecutionHost } from "./execution-host.ts";
+import { fs as fsHandle } from "./handle.ts";
+import { fanout } from "./loop-constructors.ts";
+import { ERR_VALIDATE_RETRY_UNCHANGED } from "./messages.ts";
+import { runWorkflow } from "./runner/index.ts";
+import type { BranchEntry } from "./transcript.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
 
 // The steering prose the strike recovery re-prompts with (module-owned in
 // bash-strikes.ts). Asserted to count strikes without coupling to the

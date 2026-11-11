@@ -118,7 +118,7 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
 	};
 });
 
-import { __resetLaneToolDefs, getCachedToolDef } from "./lane-tool-defs.js";
+import { __resetLaneToolDefs, getCachedToolDef } from "./lane-tool-defs.ts";
 import {
 	__resetRunLaneRegistry,
 	getLane,
@@ -128,7 +128,7 @@ import {
 	retireRun,
 	SINGLE_UNIT_KEY,
 	setLaneProgress,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 import {
 	AMBIENT_OBSERVER_MANIFEST_FLAG,
 	CHILD_AMBIENT_EXTENSION_DENYLIST,
@@ -140,8 +140,8 @@ import {
 	type SdkWorkflowHostDeps,
 	UnresolvedModelError,
 	withoutAmbientExtensions,
-} from "./sdk-workflow-host.js";
-import { getSubagentUsageForRun } from "./subagent-usage.js";
+} from "./sdk-workflow-host.ts";
+import { getSubagentUsageForRun } from "./subagent-usage.ts";
 
 // ---------------------------------------------------------------------------
 // Compile-time executor-port tripwire. If the port drifts, this won't

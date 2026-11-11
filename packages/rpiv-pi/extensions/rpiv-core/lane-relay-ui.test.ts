@@ -9,7 +9,7 @@
 
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createLaneRelayUiContext, isLaneRelayUiContext } from "./lane-relay-ui.js";
+import { createLaneRelayUiContext, isLaneRelayUiContext } from "./lane-relay-ui.ts";
 import {
 	__resetRunLaneRegistry,
 	dequeueInput,
@@ -17,7 +17,7 @@ import {
 	getUnit,
 	recordRun,
 	setFocusedRun,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 /** The fan-out unit this relay is bound to — its deferred questions queue onto this
  *  unit's own sub-row and the switcher drains only this queue. */

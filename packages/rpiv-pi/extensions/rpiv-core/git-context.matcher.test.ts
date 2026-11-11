@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isGitMutatingCommand } from "./git-context.js";
+import { isGitMutatingCommand } from "./git-context.ts";
 
 describe("isGitMutatingCommand — positives", () => {
 	const mutating = [

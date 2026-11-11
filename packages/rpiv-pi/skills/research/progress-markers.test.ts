@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BUNDLED_SKILLS_DIR } from "../../extensions/rpiv-core/paths.js";
+import { BUNDLED_SKILLS_DIR } from "../../extensions/rpiv-core/paths.ts";
 
 describe("research skill progress markers (prose guard)", () => {
 	const body = readFileSync(join(BUNDLED_SKILLS_DIR, "research", "SKILL.md"), "utf-8");

@@ -53,30 +53,30 @@
  *   ./cache.ts            — mtime-keyed jiti import cache + __resetLoadCache
  */
 
-import type { Workflow } from "../api.js";
-import { drainBuiltInProviderErrors, flushBuiltInProviders, getBuiltIns } from "../built-ins.js";
-import { formatError } from "../internal-utils.js";
-import type { ConfigLayer } from "../layers.js";
-import type { SkillContractMap } from "../skill-contract.js";
-import { validateWorkflow } from "../validate-workflow.js";
-import { applySkillAliases } from "./alias.js";
-import type { Issue } from "./issues.js";
-import { pushLegacyNotices } from "./legacy.js";
-import { type LoadAccumulator, loadLayer } from "./merge.js";
-import { projectOverlayPaths, userOverlayPaths } from "./paths.js";
-import { resolveDefault } from "./resolve-default.js";
-import { applySkillContractPhase } from "./skill-contract-phase.js";
+import type { Workflow } from "../api.ts";
+import { drainBuiltInProviderErrors, flushBuiltInProviders, getBuiltIns } from "../built-ins.ts";
+import { formatError } from "../internal-utils.ts";
+import type { ConfigLayer } from "../layers.ts";
+import type { SkillContractMap } from "../skill-contract.ts";
+import { validateWorkflow } from "../validate-workflow.ts";
+import { applySkillAliases } from "./alias.ts";
+import type { Issue } from "./issues.ts";
+import { pushLegacyNotices } from "./legacy.ts";
+import { type LoadAccumulator, loadLayer } from "./merge.ts";
+import { projectOverlayPaths, userOverlayPaths } from "./paths.ts";
+import { resolveDefault } from "./resolve-default.ts";
+import { applySkillContractPhase } from "./skill-contract-phase.ts";
 
 // ===========================================================================
 // Public types
 // ===========================================================================
 
-export type { ConfigLayer } from "../layers.js";
-export { aliasSkills } from "./alias.js";
-export { __resetLoadCache } from "./cache.js";
-export type { Issue, LoadIssue, LoadIssueOrigin } from "./issues.js";
-export type { OverlayPaths } from "./paths.js";
-export { projectOverlayPaths, userOverlayPaths } from "./paths.js";
+export type { ConfigLayer } from "../layers.ts";
+export { aliasSkills } from "./alias.ts";
+export { __resetLoadCache } from "./cache.ts";
+export type { Issue, LoadIssue, LoadIssueOrigin } from "./issues.ts";
+export type { OverlayPaths } from "./paths.ts";
+export { projectOverlayPaths, userOverlayPaths } from "./paths.ts";
 
 export interface LoadedWorkflows {
 	workflows: readonly Workflow[];

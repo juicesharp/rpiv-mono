@@ -5,9 +5,9 @@
  * runner-free — safe on `registration`.
  */
 
-export type { UnitSelector } from "./api.js";
-export * from "./loops/constructors.js";
-export * from "./loops/derivations.js";
-export * from "./loops/introspection.js";
-export * from "./loops/panel.js";
-export * from "./loops/verify.js";
+export type { UnitSelector } from "./api.ts";
+export * from "./loops/constructors.ts";
+export * from "./loops/derivations.ts";
+export * from "./loops/introspection.ts";
+export * from "./loops/panel.ts";
+export * from "./loops/verify.ts";

@@ -20,8 +20,8 @@
  * those copies. `globalThis[KEY]` is process-wide and survives the dup load.
  */
 
-import type { Workflow } from "./api.js";
-import { globalSlot, lazyProviderRegistry } from "./internal-utils.js";
+import type { Workflow } from "./api.ts";
+import { globalSlot, lazyProviderRegistry } from "./internal-utils.ts";
 
 const REGISTRY_KEY = Symbol.for("@juicesharp/rpiv-workflow:built-ins");
 const FAILURES_KEY = Symbol.for("@juicesharp/rpiv-workflow:built-in-provider-failures");

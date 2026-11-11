@@ -17,15 +17,15 @@
  * probe pull is the documented harmless deterministic double-pull.
  */
 
-import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.js";
-import { resolveSkill } from "../chain-state.js";
-import { announceLoopStart, pendingFanoutIndices, runFanoutResume, runLoop } from "../loop.js";
-import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.js";
-import { buildLoopEntry, type LoopDeps, sequentialStrategyOf } from "../loop-kinds.js";
-import { ensureUnitDeps } from "../loop-waves.js";
-import { FAIL_MISSING_ARTIFACT, type FailureText, MSG_RESUME_LOOP_MISMATCH } from "../messages.js";
-import type { RunContext, WorkflowHostContext } from "../types.js";
-import type { LoopResumePoint } from "./resume.js";
+import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.ts";
+import { resolveSkill } from "../chain-state.ts";
+import { announceLoopStart, pendingFanoutIndices, runFanoutResume, runLoop, settledFanoutSlots } from "../loop.ts";
+import { effectiveLoopOf, freezesEntryArgsOf } from "../loop-constructors.ts";
+import { buildLoopEntry, type LoopDeps, sequentialStrategyOf } from "../loop-kinds.ts";
+import { ensureUnitDeps } from "../loop-waves.ts";
+import { FAIL_MISSING_ARTIFACT, type FailureText, MSG_RESUME_LOOP_MISMATCH } from "../messages.ts";
+import type { RunContext, WorkflowHostContext } from "../types.ts";
+import type { LoopResumePoint } from "./resume.ts";
 
 export async function resumeLoopStage(
 	ctx: WorkflowHostContext,
@@ -75,7 +75,8 @@ export async function resumeLoopStage(
 		// otherwise reach the dispatcher. guardResumeEntry catches this throw → clean failure.
 		ensureUnitDeps(point.units!, point.parent);
 		const pending = pendingFanoutIndices(point.cursor, point.units!.length); // slots === undefined
-		if (pending.length > 0) await announceLoopStart(ctx, run, entry);
+		if (pending.length > 0)
+			await announceLoopStart(ctx, run, entry, settledFanoutSlots(point.cursor, point.units!.length));
 		await runFanoutResume(ctx, entry, point.cursor, run, deps, pending);
 		return;
 	}

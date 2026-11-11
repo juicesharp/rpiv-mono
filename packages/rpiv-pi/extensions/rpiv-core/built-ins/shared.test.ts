@@ -8,8 +8,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { writeScopeVerdict } from "./scope-checks.js";
-import { writeStructureVerdict } from "./shared.js";
+import { writeScopeVerdict } from "./scope-checks.ts";
+import { writeStructureVerdict } from "./shared.ts";
 
 describe("verdict envelope scores (writeStructureVerdict / writeScopeVerdict)", () => {
 	let tmpDir: string;

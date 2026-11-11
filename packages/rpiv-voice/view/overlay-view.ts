@@ -1,8 +1,8 @@
 import { Container } from "@earendil-works/pi-tui";
-import { clipToTerminalHeight } from "../state/selectors/derivations.js";
-import type { VoiceState } from "../state/state.js";
-import type { ScreenContentStrategy } from "./screen-content-strategy.js";
-import type { StatefulView } from "./stateful-view.js";
+import { clipToTerminalHeight } from "../state/selectors/derivations.ts";
+import type { VoiceState } from "../state/state.ts";
+import type { ScreenContentStrategy } from "./screen-content-strategy.ts";
+import type { StatefulView } from "./stateful-view.ts";
 
 const FALLBACK_TERMINAL_ROWS = 24;
 

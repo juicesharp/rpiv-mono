@@ -4,12 +4,12 @@
  * `./command.ts`, so it evaluates lazily on first `/wf`, not at startup.
  */
 
-import { flushBuiltInProviders } from "./built-ins.js";
-import { parseArgs } from "./command.js";
-import type { WorkflowHost, WorkflowHostContext } from "./host.js";
-import { formatError } from "./internal-utils.js";
-import { renderConfigLayer } from "./layers.js";
-import { findWorkflow, type Issue, loadWorkflows } from "./load/index.js";
+import { flushBuiltInProviders } from "./built-ins.ts";
+import { parseArgs } from "./command.ts";
+import type { WorkflowHost, WorkflowHostContext } from "./host.ts";
+import { formatError } from "./internal-utils.ts";
+import { renderConfigLayer } from "./layers.ts";
+import { findWorkflow, type Issue, loadWorkflows } from "./load/index.ts";
 import {
 	MSG_FLAG_REPEATED,
 	MSG_INTERACTIVE_ONLY,
@@ -22,16 +22,16 @@ import {
 	MSG_RESUME_USAGE,
 	MSG_WORKFLOW_NOT_FOUND,
 	MSG_WORKFLOW_THREW,
-} from "./messages.js";
-import { formatWorkflowDetails, formatWorkflowList } from "./preview.js";
-import { resumeWorkflowByRunId, runWorkflow } from "./runner/index.js";
+} from "./messages.ts";
+import { formatWorkflowDetails, formatWorkflowList } from "./preview.ts";
+import { resumeWorkflowByRunId, runWorkflow } from "./runner/index.ts";
 // The warning thresholds come from the constants module DIRECTLY, not the
 // runner barrel: the handler suites mock the barrel wholesale (the float
 // boundary), and a barrel import would let those suites pin a stale 3/8 pair
 // while the real defaults drifted.
-import { MAX_BACKWARD_JUMPS, MAX_LAPS } from "./runner/run-context.js";
-import { flushSkillContractProviders } from "./skill-contracts/index.js";
-import { isValidName } from "./state/index.js";
+import { MAX_BACKWARD_JUMPS, MAX_LAPS } from "./runner/run-context.ts";
+import { flushSkillContractProviders } from "./skill-contracts/index.ts";
+import { isValidName } from "./state/index.ts";
 
 // ---------------------------------------------------------------------------
 // Pre-warm

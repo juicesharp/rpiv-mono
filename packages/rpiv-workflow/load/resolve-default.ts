@@ -16,8 +16,8 @@
  * preferred default set it via the config-file envelope at their own load time.
  */
 
-import type { ConfigLayer } from "../layers.js";
-import { type LoadAccumulator, loadError } from "./merge.js";
+import type { ConfigLayer } from "../layers.ts";
+import { type LoadAccumulator, loadError } from "./merge.ts";
 
 export function resolveDefault(
 	projectDefault: string | undefined,

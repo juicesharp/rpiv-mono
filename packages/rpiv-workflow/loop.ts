@@ -36,12 +36,12 @@
  * no-op (pinned behavior).
  */
 
-import type { AssessLoop, LoopDef } from "./api.js";
-import { applyCompletedStage } from "./chain-state.js";
-import { lifecycleCtxFor, skillStageRef } from "./events.js";
-import { nowIso } from "./internal-utils.js";
-import { type AnyJudge, isPanel, type PanelJudge } from "./judge.js";
-import { panelVerdictChannel, panelVerdictDef } from "./loop-constructors.js";
+import type { AssessLoop, LoopDef } from "./api.ts";
+import { applyCompletedStage } from "./chain-state.ts";
+import { lifecycleCtxFor, type SettledUnit, skillStageRef } from "./events.ts";
+import { nowIso } from "./internal-utils.ts";
+import { type AnyJudge, isPanel, type PanelJudge } from "./judge.ts";
+import { panelVerdictChannel, panelVerdictDef } from "./loop-constructors.ts";
 import {
 	advanceCursor,
 	allFanoutSlotsFailed,
@@ -55,11 +55,12 @@ import {
 	type NextStep,
 	presentedKindOf,
 	sequentialStrategyOf,
-} from "./loop-kinds.js";
-import { runFanoutGeneration } from "./loop-parallel.js";
-import { MSG_LOOP_CAP_ADVANCE, MSG_LOOP_ZERO_UNITS } from "./messages.js";
-import { appendLoopCap } from "./state/index.js";
-import type { RunContext, WorkflowHostContext } from "./types.js";
+} from "./loop-kinds.ts";
+import { runFanoutGeneration } from "./loop-parallel.ts";
+import { MSG_LOOP_CAP_ADVANCE, MSG_LOOP_ZERO_UNITS } from "./messages.ts";
+import { isFailedOutput } from "./output.ts";
+import { appendLoopCap } from "./state/index.ts";
+import type { RunContext, WorkflowHostContext } from "./types.ts";
 
 /**
  * The loop-entry announcement — `onStageStart` then `onLoopStart` with the
@@ -72,6 +73,7 @@ export async function announceLoopStart(
 	hostCtx: WorkflowHostContext,
 	run: RunContext,
 	e: Pick<LoopEntry, "stageIdx" | "name" | "skill" | "def" | "loop" | "units">,
+	settled?: readonly SettledUnit[],
 ): Promise<void> {
 	const ref = skillStageRef(e.name, e.stageIdx + 1, e.skill);
 	await run.lifecycle.fire(hostCtx, "onStageStart", ref, lifecycleCtxFor(run));
@@ -79,7 +81,11 @@ export async function announceLoopStart(
 		hostCtx,
 		"onLoopStart",
 		ref,
-		{ kind: presentedKindOf(e.def, e.loop), ...(e.units ? { units: e.units } : {}) },
+		{
+			kind: presentedKindOf(e.def, e.loop),
+			...(e.units ? { units: e.units } : {}),
+			...(settled?.length ? { settled } : {}),
+		},
 		lifecycleCtxFor(run),
 	);
 }
@@ -154,6 +160,18 @@ function runFanoutParallel(
 export function pendingFanoutIndices(cursor: LoopCursor, total: number): number[] {
 	const out: number[] = [];
 	for (let i = 0; i < total; i++) if (cursor.slots?.[i] === undefined) out.push(i);
+	return out;
+}
+
+/** The complement of `pendingFanoutIndices` — slots the fold already filled, with
+ *  whether each holds a collected soft-halt sentinel. Carried on the resume
+ *  re-announce so listeners can show replayed units terminal (they fire no unit events). */
+export function settledFanoutSlots(cursor: LoopCursor, total: number): SettledUnit[] {
+	const out: SettledUnit[] = [];
+	for (let i = 0; i < total; i++) {
+		const slot = cursor.slots?.[i];
+		if (slot !== undefined) out.push({ index: i, failed: isFailedOutput(slot) });
+	}
 	return out;
 }
 

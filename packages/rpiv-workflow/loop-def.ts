@@ -8,9 +8,9 @@
  * Leaf-ish: imports only types from judge/output/handle.
  */
 
-import type { Artifact } from "./handle.js";
-import type { AnyJudge } from "./judge.js";
-import type { Output, RunView } from "./output.js";
+import type { Artifact } from "./handle.ts";
+import type { AnyJudge } from "./judge.ts";
+import type { Output, RunView } from "./output.ts";
 
 /**
  * One unit of loop work — the single unit type for all three loop kinds.

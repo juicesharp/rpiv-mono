@@ -11,22 +11,22 @@
  * spelled as a module cycle.
  */
 
-import { type EdgeTarget, PROGRESS_VALUES, type ProgressValue, type StageDef, takeRouteNote } from "../api.js";
-import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.js";
-import { resolveSkill } from "../chain-state.js";
-import { lifecycleCtxFor, skillStageRef } from "../events.js";
-import { nowIso } from "../internal-utils.js";
+import { type EdgeTarget, PROGRESS_VALUES, type ProgressValue, type StageDef, takeRouteNote } from "../api.ts";
+import { auditCtxFor, failedArgs, recordFatalFailure } from "../audit.ts";
+import { resolveSkill } from "../chain-state.ts";
+import { lifecycleCtxFor, skillStageRef } from "../events.ts";
+import { nowIso } from "../internal-utils.ts";
 import {
 	FAIL_BACKWARD_JUMP_EXHAUSTED,
 	FAIL_GATE_STOP,
 	type FailureText,
 	MSG_CHAIN_ADVANCE_FAILED,
 	MSG_ROUTING_AUDIT_DROPPED,
-} from "../messages.js";
-import { edgeIsDecision, nextStage } from "../routing.js";
-import { appendRoutingDecision } from "../state/index.js";
-import type { RunContext, RunState, WorkflowHostContext } from "../types.js";
-import { type ChainOutcome, finalizeWorkflow, haltChain } from "./failure.js";
+} from "../messages.ts";
+import { edgeIsDecision, nextStage } from "../routing.ts";
+import { appendRoutingDecision } from "../state/index.ts";
+import type { RunContext, RunState, WorkflowHostContext } from "../types.ts";
+import { type ChainOutcome, finalizeWorkflow, haltChain } from "./failure.ts";
 
 /**
  * The walk continuation injected by the composition site

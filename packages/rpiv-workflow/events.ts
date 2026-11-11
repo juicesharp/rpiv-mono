@@ -26,12 +26,12 @@
  * caller through the existing path.
  */
 
-import type { CapPolicy, Unit, UnitRole } from "./api.js";
-import { formatError, globalSlot } from "./internal-utils.js";
-import { MSG_LIFECYCLE_THREW } from "./messages.js";
-import type { Output, RunView } from "./output.js";
-import type { RunTrigger } from "./triggers.js";
-import type { RunWorkflowResult } from "./types.js";
+import type { CapPolicy, Unit, UnitRole } from "./api.ts";
+import { formatError, globalSlot } from "./internal-utils.ts";
+import { MSG_LIFECYCLE_THREW } from "./messages.ts";
+import type { Output, RunView } from "./output.ts";
+import type { RunTrigger } from "./triggers.ts";
+import type { RunWorkflowResult } from "./types.ts";
 
 /**
  * Run-scoped context shared by every lifecycle callback. Mirrors the
@@ -70,10 +70,25 @@ export type StageRef =
  * `kind: "verify"` is a verify-bearing stage (a desugared attempt→verify
  * loop) — verified stages follow loop semantics: observe units, not
  * `onStageEnd`.
+ *
+ * `settled` is present only on a RESUMED fanout re-announce: the slots the
+ * fold already filled from the trail (`failed` = a collected soft-halt
+ * sentinel). Those units are replayed, never re-dispatched, so they fire no
+ * `onUnitStart`/`onUnitEnd` — a listener tracking per-unit state reads their
+ * terminal status here instead. Absent on a live entry (nothing is settled).
  */
 export interface LoopStartInfo {
 	kind: "fanout" | "iterate" | "assess" | "verify";
 	units?: readonly Unit[];
+	settled?: readonly SettledUnit[];
+}
+
+/** One already-filled fanout slot on a resume re-announce (see `LoopStartInfo.settled`). */
+export interface SettledUnit {
+	/** Declared unit index — the same key `onUnitStart`'s `unit.index` uses. */
+	index: number;
+	/** The slot holds a collected soft-halt sentinel, not a real output. */
+	failed: boolean;
 }
 
 /**

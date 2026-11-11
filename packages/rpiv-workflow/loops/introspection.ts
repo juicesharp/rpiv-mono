@@ -17,7 +17,7 @@ import {
 	STOP,
 	type UnitSelector,
 	type Workflow,
-} from "../api.js";
+} from "../api.ts";
 import {
 	type AnyJudge,
 	type CanonicalFoldName,
@@ -25,8 +25,8 @@ import {
 	isPanel,
 	type Judge,
 	type PanelJudge,
-} from "../judge.js";
-import { readName, readsAll } from "../stage-def.js";
+} from "../judge.ts";
+import { readName, readsAll } from "../stage-def.ts";
 
 // ===========================================================================
 // Introspection — per-stage control-flow + edge shape

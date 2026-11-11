@@ -21,13 +21,13 @@
  * Every channel is optional — a pure chat side-effect declares none.
  */
 
-import type { JsonSchemaObject } from "./json-schema.js";
-import type { SchemaCompatResult } from "./schema-compat.js";
+import type { JsonSchemaObject } from "./json-schema.ts";
+import type { SchemaCompatResult } from "./schema-compat.ts";
 
 // `SchemaCompatResult` lives with the compat engine (schema-compat.ts) that
 // defines its semantics — re-exported here so the contract vocabulary stays
 // self-contained for consumers (`CompositionComparator` returns it).
-export type { SchemaCompatResult } from "./schema-compat.js";
+export type { SchemaCompatResult } from "./schema-compat.ts";
 
 /**
  * Where a contract came from, in descending authority. `declared` = the skill's

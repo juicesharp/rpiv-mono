@@ -9,7 +9,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { registerBuiltInWorkflows } from "./register-built-in-workflows.js";
+import { registerBuiltInWorkflows } from "./register-built-in-workflows.ts";
 
 // Alphabetical: the four shipped presets.
 const BUILT_IN_NAMES = ["build", "meta", "polish", "ship", "vet"];
@@ -58,7 +58,7 @@ describe("registerBuiltInWorkflows", () => {
 			});
 
 			// Re-import the registrar so its internal dynamic import resolves the mock.
-			const fresh = await import("./register-built-in-workflows.js");
+			const fresh = await import("./register-built-in-workflows.ts");
 			await expect(fresh.registerBuiltInWorkflows()).resolves.toBeUndefined();
 
 			const { getBuiltIns, flushBuiltInProviders } = await import("@juicesharp/rpiv-workflow/internal");

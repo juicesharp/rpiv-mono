@@ -11,8 +11,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { formatError } from "../internal-utils.js";
-import { describe as describeValue, isEnvelope, isWorkflow } from "./shape-guards.js";
+import { formatError } from "../internal-utils.ts";
+import { describe as describeValue, isEnvelope, isWorkflow } from "./shape-guards.ts";
 
 describe("describe", () => {
 	it("returns 'null' for null", () => {

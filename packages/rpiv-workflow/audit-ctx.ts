@@ -5,16 +5,16 @@
  * runner + sessions has its own module, decoupled from the impure
  * terminal-outcome orchestration (`terminate`, the row writers, the notify
  * + lifecycle fires) that stayed behind in `audit.ts`. `audit.ts` re-exports
- * every symbol below, so existing `from "../audit.js"` import sites are
+ * every symbol below, so existing `from "../audit.ts"` import sites are
  * unchanged; new code imports directly from `audit-ctx.ts`.
  *
  * Depends on events (value: `skillStageRef`) + types + state (type-only).
  * Neither events nor the orchestrator imports back — one-way edges only.
  */
 
-import { skillStageRef } from "./events.js";
-import type { SessionRef } from "./state/index.js";
-import type { RunContext, SessionContext, UnitRef } from "./types.js";
+import { skillStageRef } from "./events.ts";
+import type { SessionRef } from "./state/index.ts";
+import type { RunContext, SessionContext, UnitRef } from "./types.ts";
 
 /**
  * Minimal bookkeeping ctx. Structurally derived from `SessionContext` so any

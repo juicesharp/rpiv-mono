@@ -1,4 +1,4 @@
-import { DEFAULT_NUM_THREADS } from "../config/voice-config.js";
+import { DEFAULT_NUM_THREADS } from "../config/voice-config.ts";
 
 export type RecordingStatus = "recording" | "paused";
 export type ScreenKind = "dictation" | "settings";

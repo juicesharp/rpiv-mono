@@ -62,16 +62,16 @@ beforeEach(async () => {
 	delete process.env.XDG_CONFIG_HOME;
 	delete process.env.WEB_SEARCH_PROVIDER;
 
-	const todo = await import("../packages/rpiv-todo/todo.js");
+	const todo = await import("../packages/rpiv-todo/todo.ts");
 	todo.__resetState();
 
-	const advisor = await import("../packages/rpiv-advisor/advisor/index.js");
+	const advisor = await import("../packages/rpiv-advisor/advisor/index.ts");
 	advisor.setAdvisorModel(undefined);
 	advisor.setAdvisorEffort(undefined);
 	advisor.setDisabledForModels([]);
 	advisor.__resetAdvisorAnnounced();
 
-	const args = await import("../packages/rpiv-args/args.js");
+	const args = await import("../packages/rpiv-args/args.ts");
 	args.invalidateSkillIndex();
 
 	const workflowInternal = await import("@juicesharp/rpiv-workflow/internal");
@@ -82,54 +82,54 @@ beforeEach(async () => {
 	workflowInternal.__resetStrikeBudgets();
 	workflowInternal.__resetWorkflowExecutionHost();
 
-	const guidance = await import("../packages/rpiv-pi/extensions/rpiv-core/guidance.js");
+	const guidance = await import("../packages/rpiv-pi/extensions/rpiv-core/guidance.ts");
 	guidance.clearInjectionState();
-	const gitContext = await import("../packages/rpiv-pi/extensions/rpiv-core/git-context.js");
+	const gitContext = await import("../packages/rpiv-pi/extensions/rpiv-core/git-context.ts");
 	gitContext.clearGitContextCache();
 	gitContext.resetInjectedMarker();
-	const sessionHooks = await import("../packages/rpiv-pi/extensions/rpiv-core/session-hooks.js");
+	const sessionHooks = await import("../packages/rpiv-pi/extensions/rpiv-core/session-hooks.ts");
 	sessionHooks.__resetSessionHooksAnnounced();
-	const sessionCapture = await import("../packages/rpiv-pi/extensions/rpiv-core/session-capture.js");
+	const sessionCapture = await import("../packages/rpiv-pi/extensions/rpiv-core/session-capture.ts");
 	sessionCapture.__resetSessionCaptureState();
-	const runLaneRegistry = await import("../packages/rpiv-pi/extensions/rpiv-core/run-lane-registry.js");
+	const runLaneRegistry = await import("../packages/rpiv-pi/extensions/rpiv-core/run-lane-registry.ts");
 	runLaneRegistry.__resetRunLaneRegistry();
-	const subagentUsage = await import("../packages/rpiv-pi/extensions/rpiv-core/subagent-usage.js");
+	const subagentUsage = await import("../packages/rpiv-pi/extensions/rpiv-core/subagent-usage.ts");
 	subagentUsage.__resetSubagentUsage();
-	const laneToolDefs = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-tool-defs.js");
+	const laneToolDefs = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-tool-defs.ts");
 	laneToolDefs.__resetLaneToolDefs();
-	const questionLifecycle = await import("../packages/rpiv-pi/extensions/rpiv-core/question-lifecycle.js");
+	const questionLifecycle = await import("../packages/rpiv-pi/extensions/rpiv-core/question-lifecycle.ts");
 	questionLifecycle.__resetQuestionLifecycle();
-	const laneSwitcher = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-switcher.js");
+	const laneSwitcher = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-switcher.ts");
 	laneSwitcher.__resetLaneSwitcher();
-	const laneProgress = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-progress.js");
+	const laneProgress = await import("../packages/rpiv-pi/extensions/rpiv-core/lane-progress.ts");
 	laneProgress.__resetLaneProgress();
 	const workflowQuestionWarpBridge = await import(
-		"../packages/rpiv-pi/extensions/rpiv-core/workflow-question-warp-bridge.js"
+		"../packages/rpiv-pi/extensions/rpiv-core/workflow-question-warp-bridge.ts"
 	);
 	workflowQuestionWarpBridge.__resetWorkflowQuestionWarpBridge();
-	const skillBracket = await import("../packages/rpiv-pi/extensions/rpiv-core/skill-bracket.js");
+	const skillBracket = await import("../packages/rpiv-pi/extensions/rpiv-core/skill-bracket.ts");
 	skillBracket.__resetSkillBracketState();
-	const modelsConfigModule = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config.js");
+	const modelsConfigModule = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config.ts");
 	modelsConfigModule.invalidateModelsConfigCache();
-	const modelsConfigValidate = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config-validate.js");
+	const modelsConfigValidate = await import("../packages/rpiv-pi/extensions/rpiv-core/models-config-validate.ts");
 	modelsConfigValidate.__resetModelsConfigValidation();
 
-	const titleSpinner = await import("../packages/rpiv-warp/title-spinner.js");
+	const titleSpinner = await import("../packages/rpiv-warp/title-spinner.ts");
 	titleSpinner.__resetState();
 
-	const warpIndex = await import("../packages/rpiv-warp/index.js");
+	const warpIndex = await import("../packages/rpiv-warp/index.ts");
 	warpIndex.__resetState();
 
-	const telemetry = await import("../packages/rpiv-telemetry/instrumentation/index.js");
+	const telemetry = await import("../packages/rpiv-telemetry/instrumentation/index.ts");
 	telemetry.teardownTelemetry();
 
-	const i18n = await import("../packages/rpiv-i18n/i18n.js");
+	const i18n = await import("../packages/rpiv-i18n/i18n.ts");
 	i18n.__resetState();
 
-	const voice = await import("../packages/rpiv-voice/config/voice-config.js");
+	const voice = await import("../packages/rpiv-voice/config/voice-config.ts");
 	voice.__resetState();
 
-	const webToolsInterceptors = await import("../packages/rpiv-web-tools/providers/interceptors/index.js");
+	const webToolsInterceptors = await import("../packages/rpiv-web-tools/providers/interceptors/index.ts");
 	webToolsInterceptors.__resetWebToolsInterceptors();
 
 	delete (globalThis as Record<symbol, unknown>)[ADVISOR_SYMBOL];

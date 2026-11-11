@@ -9,8 +9,8 @@
  * issue with the layer/path of the file the surviving workflow came from.
  */
 
-import type { ConfigLayer } from "../layers.js";
-import type { WorkflowValidationIssue } from "../validate/issue.js";
+import type { ConfigLayer } from "../layers.ts";
+import type { WorkflowValidationIssue } from "../validate/issue.ts";
 
 /**
  * Where a load issue originated: one of the config layers, or `"framework"`

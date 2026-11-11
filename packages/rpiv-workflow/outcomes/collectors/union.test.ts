@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { fs } from "../../handle.js";
-import type { ArtifactCollector } from "../../output-spec.js";
-import { unionCollectors } from "./union.js";
+import { fs } from "../../handle.ts";
+import type { ArtifactCollector } from "../../output-spec.ts";
+import { unionCollectors } from "./union.ts";
 
 const ctxOf = () => ({
 	cwd: "/tmp",

@@ -1,6 +1,6 @@
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { dispatchTelemetryEvent } from "../dispatcher.js";
+import { dispatchTelemetryEvent } from "../dispatcher.ts";
 import type {
 	SubAgentCompactedEvent,
 	SubAgentCompletedEvent,
@@ -9,7 +9,7 @@ import type {
 	SubAgentStartedEvent,
 	SubAgentSteeredEvent,
 	TelemetryEvent,
-} from "../types/events.js";
+} from "../types/events.ts";
 import {
 	type SubAgentCompactedPayload,
 	SubAgentCompactedPayloadSchema,
@@ -23,8 +23,8 @@ import {
 	SubAgentStartedPayloadSchema,
 	type SubAgentSteeredPayload,
 	SubAgentSteeredPayloadSchema,
-} from "./schemas.js";
-import { currentSessionId, inflightKey, inflightSubAgents } from "./state.js";
+} from "./schemas.ts";
+import { currentSessionId, inflightKey, inflightSubAgents } from "./state.ts";
 
 /**
  * One row per sub-agent EventBus channel subscribed via `pi.events.on(...)`.

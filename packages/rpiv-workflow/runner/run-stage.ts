@@ -20,16 +20,16 @@
  * JSONL failure row via failure.ts.
  */
 
-import type { StageDef, Unit } from "../api.js";
-import { auditCtxFor, failedArgs, notifyPartialArtifacts, recordFatalFailure, runIdentityOf } from "../audit.js";
-import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../chain-state.js";
-import { lifecycleCtxFor, skillStageRef } from "../events.js";
-import { failureMemoSuffix } from "../failure-memos.js";
-import { formatError } from "../internal-utils.js";
-import { announceLoopStart, runLoop } from "../loop.js";
-import { freezesEntryArgsOf } from "../loop-constructors.js";
-import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.js";
-import { ensureUnitDeps } from "../loop-waves.js";
+import type { StageDef, Unit } from "../api.ts";
+import { auditCtxFor, failedArgs, notifyPartialArtifacts, recordFatalFailure, runIdentityOf } from "../audit.ts";
+import { currentPrimaryArtifact, resolveStagePrompt, stageEntryArgs } from "../chain-state.ts";
+import { lifecycleCtxFor, skillStageRef } from "../events.ts";
+import { failureMemoSuffix } from "../failure-memos.ts";
+import { formatError } from "../internal-utils.ts";
+import { announceLoopStart, runLoop } from "../loop.ts";
+import { freezesEntryArgsOf } from "../loop-constructors.ts";
+import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../loop-kinds.ts";
+import { ensureUnitDeps } from "../loop-waves.ts";
 import {
 	FAIL_FANOUT_ALL_FAILED,
 	FAIL_LOOP_CAP_HALT,
@@ -38,31 +38,31 @@ import {
 	MSG_CONTINUE_FALLBACK,
 	MSG_RESUME_SESSION_FALLBACK,
 	MSG_SNAPSHOT_FAILED,
-} from "../messages.js";
+} from "../messages.ts";
 import {
 	continueStageSession,
 	executeStageSession,
 	locateSessionFile,
 	reattachStageSession,
-} from "../sessions/index.js";
-import { forkChildSession, reattachChildSession } from "../sessions/spawn.js";
-import type { SkillContractMap } from "../skill-contract.js";
-import { effectiveOutputSchemaOf } from "../stage-identity.js";
-import type { WorkflowStage } from "../state/index.js";
-import type { RunContext, RunState, StageSessionContext, WorkflowHostContext } from "../types.js";
-import { resolveDigest } from "../worktree-digest.js";
-import { advanceChain, type ChainDeps } from "./chain-advance.js";
-import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow, withStageEntryGuard } from "./failure.js";
-import { ensureContractInputValid, ensureInputValid } from "./input-validation.js";
-import { ensureLoopNotContinue, runLoopPreflights, runSingleStagePreflights } from "./preflight.js";
-import { type ResolvedStage, resolveStage } from "./resolve-stage.js";
-import { runScript } from "./script-stage.js";
+} from "../sessions/index.ts";
+import { forkChildSession, reattachChildSession } from "../sessions/spawn.ts";
+import type { SkillContractMap } from "../skill-contract.ts";
+import { effectiveOutputSchemaOf } from "../stage-identity.ts";
+import type { WorkflowStage } from "../state/index.ts";
+import type { RunContext, RunState, StageSessionContext, WorkflowHostContext } from "../types.ts";
+import { resolveDigest } from "../worktree-digest.ts";
+import { advanceChain, type ChainDeps } from "./chain-advance.ts";
+import { type ChainOutcome, haltChain, recordAbortedAtSeam, recordEntryThrow, withStageEntryGuard } from "./failure.ts";
+import { ensureContractInputValid, ensureInputValid } from "./input-validation.ts";
+import { ensureLoopNotContinue, runLoopPreflights, runSingleStagePreflights } from "./preflight.ts";
+import { type ResolvedStage, resolveStage } from "./resolve-stage.ts";
+import { runScript } from "./script-stage.ts";
 
 // Re-exported for the package barrel + existing consumers; the class itself
 // lives in the leaf errors.ts so preflight/input-validation can throw it
 // without importing this module back.
-export { StagePreflightError } from "./errors.js";
-export type { ResolvedStage } from "./resolve-stage.js";
+export { StagePreflightError } from "./errors.ts";
+export type { ResolvedStage } from "./resolve-stage.ts";
 
 // ---------------------------------------------------------------------------
 // Walk composition — the ONE place the mutual recursion is wired

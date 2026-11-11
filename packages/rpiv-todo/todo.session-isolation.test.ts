@@ -1,9 +1,9 @@
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, type vi } from "vitest";
-import registerTodo from "./index.js";
-import { EMPTY_STATE } from "./state/state.js";
-import { getActiveRenderSession, getRenderState, getState } from "./state/store.js";
-import { __resetState } from "./todo.js";
+import registerTodo from "./index.ts";
+import { EMPTY_STATE } from "./state/state.ts";
+import { getActiveRenderSession, getRenderState, getState } from "./state/store.ts";
+import { __resetState } from "./todo.ts";
 
 // Capture the extension's registered handlers + tool + command. Each registerTodo()
 // call builds a fresh closure (fresh module-level `todoOverlay`), so isolation

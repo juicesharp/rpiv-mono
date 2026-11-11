@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bufferToFloat32, clamp01, computeRmsFloat32, computeRmsInt16, samplesInInt16Chunk } from "./pcm.js";
+import { bufferToFloat32, clamp01, computeRmsFloat32, computeRmsInt16, samplesInInt16Chunk } from "./pcm.ts";
 
 describe("bufferToFloat32", () => {
 	it("converts int16 LE samples to float32 in [-1, +1]", () => {

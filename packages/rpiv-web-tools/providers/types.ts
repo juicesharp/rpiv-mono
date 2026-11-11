@@ -80,6 +80,7 @@ export interface ProviderConfigChange {
 // touching the orchestrator.
 //
 //   envVar          — the API-key env var (omit if the provider has no key)
+//   fallbackEnvVar  — a second API-key env var, read when envVar is unset
 //   baseUrlEnvVar   — the URL env var (set for self-hosted providers)
 //   defaultBaseUrl  — fallback URL when neither env nor config supplies one
 //   configure       — interactive setup; if present, /web-tools
@@ -88,6 +89,7 @@ export interface ProviderMeta {
 	name: string;
 	label: string;
 	envVar?: string;
+	fallbackEnvVar?: string;
 	baseUrlEnvVar?: string;
 	defaultBaseUrl?: string;
 	// Which role(s) the provider plays. Search-only providers (Brave, Serper,

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { RunView } from "./output.js";
+import type { RunView } from "./output.ts";
 import {
 	acts,
 	fanin,
@@ -17,7 +17,7 @@ import {
 	readsAll,
 	type StageDef,
 	type StageRead,
-} from "./stage-def.js";
+} from "./stage-def.ts";
 
 describe("fanin()", () => {
 	it("builds an all-entries read spec", () => {

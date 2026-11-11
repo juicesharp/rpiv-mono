@@ -5,10 +5,10 @@
  */
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import type { Output, ScriptContext } from "@juicesharp/rpiv-workflow/registration";
-import { verifyCitations } from "./citations.js";
-import { forEachLineOutsideFences } from "./markdown-fence.js";
-import { PLAN_PHASE_RE, phaseFiles } from "./plan-phases.js";
-import { haltPreflight, latestFsArtifact, readArtifactFile, writeStructureVerdict } from "./shared.js";
+import { verifyCitations } from "./citations.ts";
+import { forEachLineOutsideFences } from "./markdown-fence.ts";
+import { PLAN_PHASE_RE, phaseFiles } from "./plan-phases.ts";
+import { haltPreflight, latestFsArtifact, readArtifactFile, writeStructureVerdict } from "./shared.ts";
 
 /**
  * Slice a plan body into per-phase text keyed by phase number, splitting on
@@ -49,7 +49,7 @@ const EXTENSIONLESS_FILENAME_RE =
  *  with a `:12-30` range appended — carries a line range the bare form rejects).
  *  Extensionless recognition is allowlist-only (never "any `/`-bearing token"):
  *  prose like `and/or` must not read as a declared write. The extension is
- *  bounded to 1–5 chars starting with a letter (mirroring FILE_LINE_CITATION_RE)
+ *  bounded to 1–5 chars starting with a letter, tighter than FILE_LINE_CITATION_RE,
  *  so a dotted IDENTIFIER (`deps.finalize` — an observed false coverage
  *  finding) never reads as a file. */
 const isPathLike = (s: string): boolean => {

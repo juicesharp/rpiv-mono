@@ -50,6 +50,8 @@ TUI produces. Trade-offs inherent to the native primitives:
   Add a semicolon and custom text to return both (`1,3; another color`). Plain text still
   returns a custom-only multi-select answer. An empty input commits an empty selection,
   matching `Next` with nothing selected.
+- In a single-select question, picking `Type something.` opens a text input. Cancelling it
+  or leaving it blank returns to the options; it never records an empty answer.
 - Dismissing any dialog cancels the whole questionnaire, mirroring `Esc` in the TUI.
 
 If the host can render neither custom UI nor dialogs, the call returns

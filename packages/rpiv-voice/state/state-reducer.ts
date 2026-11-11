@@ -1,8 +1,8 @@
-import { isEqualizerEnabled, isHallucinationFilterEnabled, type VoiceConfig } from "../config/voice-config.js";
-import { t } from "./i18n-bridge.js";
-import type { VoiceAction } from "./key-router.js";
-import { SETTINGS_FIELD_ORDER, type SettingsDraft, type SettingsFieldKey, type VoiceState } from "./state.js";
-import { STATUS_META } from "./status-intent.js";
+import { isEqualizerEnabled, isHallucinationFilterEnabled, type VoiceConfig } from "../config/voice-config.ts";
+import { t } from "./i18n-bridge.ts";
+import type { VoiceAction } from "./key-router.ts";
+import { SETTINGS_FIELD_ORDER, type SettingsDraft, type SettingsFieldKey, type VoiceState } from "./state.ts";
+import { STATUS_META } from "./status-intent.ts";
 
 export interface ApplyContext {
 	/**

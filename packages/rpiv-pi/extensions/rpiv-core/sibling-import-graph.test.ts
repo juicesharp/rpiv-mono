@@ -21,7 +21,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { SIBLINGS } from "./siblings.js";
+import { SIBLINGS } from "./siblings.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -57,14 +57,14 @@ function staticEdges(source: string): ImportEdge[] {
 	return edges;
 }
 
-/** Resolve a relative `./x.js` specifier to the on-disk `.ts` source. A `.mjs`
+/** Resolve a relative `./x.ts` (or legacy `./x.js`) specifier to the on-disk `.ts` source. A `.mjs`
  *  specifier is real on disk as-is (loader-free ESM, e.g. reconcile-directives.mjs). */
 function resolveLocal(fromFile: string, specifier: string): string {
 	if (specifier.endsWith(".mjs")) {
 		const mjs = resolve(dirname(fromFile), specifier);
 		if (existsSync(mjs)) return mjs;
 	}
-	const base = resolve(dirname(fromFile), specifier.replace(/\.js$/, ""));
+	const base = resolve(dirname(fromFile), specifier.replace(/\.(js|ts)$/, ""));
 	for (const candidate of [`${base}.ts`, resolve(base, "index.ts")]) {
 		if (existsSync(candidate)) return candidate;
 	}

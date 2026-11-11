@@ -8,7 +8,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerBtwCommand, registerInvalidationHooks, registerMessageEndSnapshot } from "./btw.js";
+import { registerBtwCommand, registerInvalidationHooks, registerMessageEndSnapshot } from "./btw.ts";
 
 export default function (pi: ExtensionAPI): void {
 	registerBtwCommand(pi);

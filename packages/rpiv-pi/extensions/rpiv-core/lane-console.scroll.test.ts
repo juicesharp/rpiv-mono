@@ -21,7 +21,7 @@ import {
 	VStack,
 } from "@earendil-works/pi-tui";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { LaneConsole } from "./lane-console.js";
+import { LaneConsole } from "./lane-console.ts";
 import {
 	__resetRunLaneRegistry,
 	enqueueInput,
@@ -30,7 +30,7 @@ import {
 	SINGLE_UNIT_KEY,
 	setCurrentSession,
 	setUnitStarted,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 const identityTheme = {
 	fg: (_c: string, s: string) => s,

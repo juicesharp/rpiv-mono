@@ -12,10 +12,10 @@
  */
 
 import { validateWorkflow, type Workflow } from "@juicesharp/rpiv-workflow";
-import { builtInWorkflows } from "./built-in-workflows.js";
-import { deriveOutcomes } from "./outcome-derivation.js";
-import { BUNDLED_SKILLS_DIR } from "./paths.js";
-import { buildSkillContractsFromFrontmatter } from "./skill-contracts-source.js";
+import { builtInWorkflows } from "./built-in-workflows.ts";
+import { deriveOutcomes } from "./outcome-derivation.ts";
+import { BUNDLED_SKILLS_DIR } from "./paths.ts";
+import { buildSkillContractsFromFrontmatter } from "./skill-contracts-source.ts";
 
 // Built-ins are validated in production with the declared skill contracts
 // threaded in (load/index.ts: buildEffectiveContracts → validateWorkflow). The

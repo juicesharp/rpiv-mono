@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { type ArtifactHandle, fs } from "../../handle.js";
-import type { BranchEntry } from "../../transcript.js";
-import { textScanCollector } from "./text-scan.js";
+import { type ArtifactHandle, fs } from "../../handle.ts";
+import type { BranchEntry } from "../../transcript.ts";
+import { textScanCollector } from "./text-scan.ts";
 
 const asst = (text: string): BranchEntry => ({
 	type: "message",

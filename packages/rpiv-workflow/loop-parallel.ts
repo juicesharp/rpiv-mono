@@ -37,10 +37,10 @@
  * (`loop-kinds.ts`, `loop-waves.ts`) and never imports loop.ts back (loop.ts → here only).
  */
 
-import { decorateStage } from "./audit.js";
-import { lifecycleCtxFor, skillStageRef } from "./events.js";
-import { handleToString } from "./handle.js";
-import { isAbortError, nowIso, WorkflowAbortError } from "./internal-utils.js";
+import { decorateStage } from "./audit.ts";
+import { lifecycleCtxFor, skillStageRef } from "./events.ts";
+import { handleToString } from "./handle.ts";
+import { isAbortError, nowIso, WorkflowAbortError } from "./internal-utils.ts";
 import {
 	buildUnitSession,
 	fanoutUnitAt,
@@ -50,11 +50,11 @@ import {
 	type LoopDeps,
 	type LoopEntry,
 	type NextStep,
-} from "./loop-kinds.js";
-import { computeWaveLevels, unitIdIndex } from "./loop-waves.js";
-import { failedOutput, isFailedOutput, type Output, type OutputMeta, outputMeta } from "./output.js";
-import { Semaphore } from "./semaphore.js";
-import type { RunContext, UnitRef, WorkflowHostContext } from "./types.js";
+} from "./loop-kinds.ts";
+import { computeWaveLevels, unitIdIndex } from "./loop-waves.ts";
+import { failedOutput, isFailedOutput, type Output, type OutputMeta, outputMeta } from "./output.ts";
+import { Semaphore } from "./semaphore.ts";
+import type { RunContext, UnitRef, WorkflowHostContext } from "./types.ts";
 
 /** Structured identity for fanout unit `i` — carried on a worker-throw failure
  *  row (`recordWorkerThrow`) so the unit's identity lands in the row's structured

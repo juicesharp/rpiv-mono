@@ -6,10 +6,10 @@
  * comment; the ordering now lives in exactly one place (`stageModeOf`).
  */
 
-import type { LoopDef, StageDef } from "../api.js";
-import { resolveSkill } from "../chain-state.js";
-import { effectiveLoopOf } from "../loop-constructors.js";
-import type { RunContext } from "../types.js";
+import type { LoopDef, StageDef } from "../api.ts";
+import { resolveSkill } from "../chain-state.ts";
+import { effectiveLoopOf } from "../loop-constructors.ts";
+import type { RunContext } from "../types.ts";
 
 /**
  * How a stage's BODY is dispatched:

@@ -12,8 +12,8 @@
  * per-field type/enum/const rules are what catch most real producer↔consumer drift.
  */
 
-import { deepEqual } from "./internal-utils.js";
-import type { JsonSchemaObject } from "./json-schema.js";
+import { deepEqual } from "./internal-utils.ts";
+import type { JsonSchemaObject } from "./json-schema.ts";
 
 /**
  * Result of a conservative structural compatibility check between a

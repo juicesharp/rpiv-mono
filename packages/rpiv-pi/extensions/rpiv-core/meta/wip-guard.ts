@@ -24,9 +24,9 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fs, type Output, type RunView, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
-import { gitDirtyEntries, readGoalBaseline } from "../built-ins/goal-baseline.js";
-import { captureGoal } from "../built-ins/index.js";
-import type { Check } from "./unit-graph.js";
+import { gitDirtyEntries, readGoalBaseline } from "../built-ins/goal-baseline.ts";
+import { captureGoal } from "../built-ins/index.ts";
+import type { Check } from "./unit-graph.ts";
 
 interface WipRecord {
 	/** Paths dirty (tracked-modified or untracked) when the run started. */

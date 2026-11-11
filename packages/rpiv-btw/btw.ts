@@ -19,10 +19,10 @@ import {
 	type ExtensionContext,
 	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
-import { type CappedHistory, capHistory, type FitBranchResult, fitBranch } from "./btw-budget.js";
-import { assistantMessageText, type BtwTurn, userMessageText } from "./btw-messages.js";
-import { showBtwOverlay } from "./btw-ui.js";
-import { getRuntimeCompleteSimple, loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.js";
+import { type CappedHistory, capHistory, type FitBranchResult, fitBranch } from "./btw-budget.ts";
+import { assistantMessageText, type BtwTurn, userMessageText } from "./btw-messages.ts";
+import { showBtwOverlay } from "./btw-ui.ts";
+import { getRuntimeCompleteSimple, loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.ts";
 
 // ---------------------------------------------------------------------------
 // Constants — flat named consts, grouped by concern (advisor pattern, b9428e9)
@@ -55,11 +55,11 @@ const errCallThrew = (msg: string) => `/btw call threw: ${msg}`;
 // Budget (context-budgeting) constants — defined in btw-budget.ts (the leaf budget
 // module; keeps the module cycle type-only at runtime), re-exported here so the
 // package surface is unchanged.
-export { BTW_CONTEXT_RESERVE, BTW_HISTORY_TOKEN_BUDGET, BTW_NO_ANCHOR_SAFETY_FACTOR } from "./btw-budget.js";
+export { BTW_CONTEXT_RESERVE, BTW_HISTORY_TOKEN_BUDGET, BTW_NO_ANCHOR_SAFETY_FACTOR } from "./btw-budget.ts";
 // BtwTurn + the message-text extractors live in the cycle-break leaf
 // (packages/rpiv-btw/btw-messages.ts); re-exported here so the package surface is
 // unchanged (packages/rpiv-btw/btw.test.ts / btw-ui.test.ts / btw-budget.test.ts still
-// import them from "./btw.js"). Import-then-re-export (not `export … from`) because
+// import them from "./btw.ts"). Import-then-re-export (not `export … from`) because
 // btw.ts consumes all three internally (userMessageText at :166,
 // assistantMessageText at :341, BtwTurn in BtwState/getSessionHistory/pushSessionTurn).
 export { assistantMessageText, type BtwTurn, userMessageText };

@@ -1,6 +1,6 @@
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { filterItems, fuzzyScore, isBackspace, isPrintable } from "./fuzzy.js";
+import { filterItems, fuzzyScore, isBackspace, isPrintable } from "./fuzzy.ts";
 
 const advisorItems: SelectItem[] = [
 	{ label: "Claude Opus", value: "anthropic:claude-opus-4-7" },

@@ -21,9 +21,9 @@
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.js";
-import { I18N_NAMESPACE } from "./state/i18n-bridge.js";
-import { replayFromBranch } from "./state/replay.js";
+import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.ts";
+import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
+import { replayFromBranch } from "./state/replay.ts";
 import {
 	clearActiveRenderSession,
 	evictSession,
@@ -32,9 +32,9 @@ import {
 	replaceState,
 	setActiveRenderSession,
 	sid,
-} from "./state/store.js";
-import { registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.js";
-import type { TodoOverlay } from "./todo-overlay.js";
+} from "./state/store.ts";
+import { registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.ts";
+import type { TodoOverlay } from "./todo-overlay.ts";
 
 type I18nLoader = {
 	registerLocalesFromDir: (namespace: string, packageUrl: string, options?: { label?: string }) => void;
@@ -43,7 +43,7 @@ type I18nLoader = {
 /** Delay the overlay graph pre-warm until Pi's startup work has settled. */
 export const PREWARM_DELAY_MS = 2000;
 
-type TodoOverlayModule = typeof import("./todo-overlay.js");
+type TodoOverlayModule = typeof import("./todo-overlay.ts");
 type TodoOverlayImporter = () => Promise<TodoOverlayModule>;
 
 /**
@@ -65,7 +65,7 @@ export function isStaleOverlayModuleError(e: unknown): boolean {
  * error instead of a bare "TodoOverlay is not a constructor" TypeError.
  */
 export function makeTodoOverlayLoader(
-	importOverlay: TodoOverlayImporter = () => import("./todo-overlay.js"),
+	importOverlay: TodoOverlayImporter = () => import("./todo-overlay.ts"),
 ): TodoOverlayImporter {
 	let memo: Promise<TodoOverlayModule> | undefined;
 
@@ -125,7 +125,7 @@ function formatError(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
 }
 
-export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = () => import("./todo-overlay.js")) {
+export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = () => import("./todo-overlay.ts")) {
 	let todoOverlay: TodoOverlay | undefined;
 	const loadTodoOverlay = makeTodoOverlayLoader(importOverlay);
 	let uiCtx: ExtensionUIContext | undefined;

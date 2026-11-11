@@ -1,11 +1,11 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
-import type { QuestionData } from "../../../tool/types.js";
-import { OptionListView } from "../option-list-view.js";
-import type { WrappingSelectItem } from "../wrapping-select.js";
-import { adaptiveLeftWidth } from "./preview-layout-decider.js";
-import { NOTES_AFFORDANCE_TEXT, PreviewBlockRenderer, PreviewPane } from "./preview-pane.js";
+import type { QuestionData } from "../../../tool/types.ts";
+import { OptionListView } from "../option-list-view.ts";
+import type { WrappingSelectItem } from "../wrapping-select.ts";
+import { adaptiveLeftWidth } from "./preview-layout-decider.ts";
+import { NOTES_AFFORDANCE_TEXT, PreviewBlockRenderer, PreviewPane } from "./preview-pane.ts";
 
 // #210: under a row allowance the preview body fits itself — the box shrinks but always
 // closes and counts the hidden lines; the options scroll around the focused option.
@@ -61,7 +61,7 @@ function makePane(q: QuestionData, terminalWidth: number, selectedIndex = 0) {
 	items.push({ kind: "other", label: "Type something." });
 	const optionListView = new OptionListView({ items, theme: selectTheme });
 	optionListView.setProps({ selectedIndex, focused: true, inputBuffer: "" });
-	const previewBlock = new PreviewBlockRenderer({ question: q, theme, markdownTheme });
+	const previewBlock = new PreviewBlockRenderer({ question: q, theme, markdownTheme, notesKey: "n" });
 	const pane = new PreviewPane({
 		question: q,
 		theme,
@@ -76,7 +76,7 @@ function makePane(q: QuestionData, terminalWidth: number, selectedIndex = 0) {
 
 describe("PreviewBlockRenderer — fitting a row allowance", () => {
 	const q = question(1, 40);
-	const block = new PreviewBlockRenderer({ question: q, theme, markdownTheme });
+	const block = new PreviewBlockRenderer({ question: q, theme, markdownTheme, notesKey: "n" });
 
 	it("is unchanged when the allowance fits the full block", () => {
 		const full = block.renderBlock(60, 0, "side-by-side", "add");

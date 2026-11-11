@@ -1,8 +1,8 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Markdown, type MarkdownTheme, visibleWidth } from "@earendil-works/pi-tui";
-import { t } from "../../../state/i18n-bridge.js";
-import type { QuestionData } from "../../../tool/types.js";
-import { stripFenceMarkers } from "./preview-box-renderer.js";
+import { t } from "../../../state/i18n-bridge.ts";
+import type { QuestionData } from "../../../tool/types.ts";
+import { stripFenceMarkers } from "./preview-box-renderer.ts";
 
 /** CC parity in side-by-side layout. */
 export const MAX_PREVIEW_HEIGHT_SIDE_BY_SIDE = 20;

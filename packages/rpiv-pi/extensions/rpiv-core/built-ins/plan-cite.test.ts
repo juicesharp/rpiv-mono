@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { RunView } from "@juicesharp/rpiv-workflow";
 import { fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findWorkflow } from "../workflow-test-harness.js";
+import { findWorkflow } from "../workflow-test-harness.ts";
 
 describe("plan-time coverage floor (verifyPhaseFilesCoverage via plan-cite-check)", () => {
 	let tmpDir: string;
@@ -210,6 +210,18 @@ describe("plan-time coverage floor (verifyPhaseFilesCoverage via plan-cite-check
 			write(
 				rel,
 				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nAn evidence string is shaped like \`packages/x/y.ts:85 (helper)\`; templates use path/to/file.ext:12-30.\n`,
+			),
+		);
+		expect(data.pass).toBe(true);
+		expect(data.findings).toEqual([]);
+	});
+
+	it("verifies only dotted-extension citations — extensionless and word:number tokens in prose are not citations", () => {
+		const rel = ".rpiv/artifacts/plans/extensionless-prose.md";
+		const data = runOn(
+			write(
+				rel,
+				`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: One, files: [] }\n---\n# Plan\n## Phase 1: One\nThe target lives at scripts/Makefile:18; keep and/or:3 and HTTP:80 as prose.\n`,
 			),
 		);
 		expect(data.pass).toBe(true);

@@ -18,8 +18,8 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { getCachedToolDef } from "./lane-tool-defs.js";
-import type { RenderSource, ToolDefArg, ViewerEntry } from "./lane-transcript.js";
+import { getCachedToolDef } from "./lane-tool-defs.ts";
+import type { RenderSource, ToolDefArg, ViewerEntry } from "./lane-transcript.ts";
 
 /** A branch loaded from disk plus the render source the transcript pipeline needs. */
 export interface DiskBranch {

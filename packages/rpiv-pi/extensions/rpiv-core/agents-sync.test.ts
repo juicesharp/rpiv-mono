@@ -13,13 +13,13 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installedExtensionNames } from "./agent-enablement.js";
-import { type AgentInjectionContext, injectModelFrontmatter } from "./agents-inject.js";
-import { cleanupPerCwdAgents, isSafeDestructiveOp, syncBundledAgents } from "./agents-sync.js";
-import { CLEANUP_SKIP_REASON, SYNC_OP } from "./agents-types.js";
-import { loadModelsConfig, type ModelsConfig } from "./models-config.js";
-import { findInstalledSiblings, type LoadedSiblingSources } from "./package-checks.js";
-import { BUNDLED_AGENTS_DIR } from "./paths.js";
+import { installedExtensionNames } from "./agent-enablement.ts";
+import { type AgentInjectionContext, injectModelFrontmatter } from "./agents-inject.ts";
+import { cleanupPerCwdAgents, isSafeDestructiveOp, syncBundledAgents } from "./agents-sync.ts";
+import { CLEANUP_SKIP_REASON, SYNC_OP } from "./agents-types.ts";
+import { loadModelsConfig, type ModelsConfig } from "./models-config.ts";
+import { findInstalledSiblings, type LoadedSiblingSources } from "./package-checks.ts";
+import { BUNDLED_AGENTS_DIR } from "./paths.ts";
 
 const sha256 = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
 

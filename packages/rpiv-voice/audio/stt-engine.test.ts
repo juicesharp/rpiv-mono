@@ -38,7 +38,7 @@ vi.mock("sherpa-onnx-node", () => ({
 	OfflineRecognizer: MockOfflineRecognizer,
 }));
 
-import { createSttEngine, type SttEngineConfig } from "./stt-engine.js";
+import { createSttEngine, type SttEngineConfig } from "./stt-engine.ts";
 
 const BASE_CONFIG: SttEngineConfig = {
 	encoderPath: "/models/encoder.onnx",

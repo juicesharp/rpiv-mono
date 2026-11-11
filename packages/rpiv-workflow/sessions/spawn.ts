@@ -18,8 +18,8 @@
  *     identity.
  */
 
-import type { SessionPolicy } from "../api.js";
-import type { StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
+import type { SessionPolicy } from "../api.ts";
+import type { StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.ts";
 
 /**
  * The per-policy branch offset — fresh ignores the stage-captured value;

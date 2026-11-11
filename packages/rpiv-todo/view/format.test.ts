@@ -1,8 +1,8 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
-import type { Task } from "../tool/types.js";
-import { formatOverlayTaskLine } from "./format.js";
+import type { Task } from "../tool/types.ts";
+import { formatOverlayTaskLine } from "./format.ts";
 
 const recordingTheme = makeTheme({
 	fg: (color, text) => `<${color}>${text}</${color}>`,

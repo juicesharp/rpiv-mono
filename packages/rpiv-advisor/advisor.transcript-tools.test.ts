@@ -38,7 +38,7 @@ vi.mock("@earendil-works/pi-ai/compat", async (importOriginal) => {
 });
 
 import { completeSimple } from "@earendil-works/pi-ai/compat";
-import { registerAdvisorTool, setAdvisorModel } from "./advisor/index.js";
+import { registerAdvisorTool, setAdvisorModel } from "./advisor/index.ts";
 
 /** Run one real executor turn so Pi records its system prompt + tool loadout in the transcript. */
 async function executorSession(home: string): Promise<SessionManager> {
@@ -105,7 +105,10 @@ describe("advisor request carries no executor tool declarations (#295)", () => {
 		const context = vi.mocked(completeSimple).mock.calls[0]?.[1] as Context;
 		const request = normalizeContext(context).messages; // what every provider builds its request from
 		expect(getCurrentTools(request)).toEqual([]);
-		// The executor's prompt text still reaches the advisor — only the declarations go.
-		expect(getCurrentSystemPrompt(request)).toContain("You are an expert coding assistant");
+		// The executor's prompt text still reaches the advisor — only the declarations go. Read from
+		// the transcript, not pinned: Pi rewords its default prompt between releases.
+		const executorPrompt = getCurrentSystemPrompt(transcript);
+		expect(executorPrompt).toMatch(/coding assistant/);
+		expect(getCurrentSystemPrompt(request)).toContain(executorPrompt);
 	});
 });

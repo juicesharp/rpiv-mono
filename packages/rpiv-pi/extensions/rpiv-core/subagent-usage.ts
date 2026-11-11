@@ -37,7 +37,7 @@
  * into `test/setup.ts` beforeEach.
  */
 
-import { addLaneUsage, type LaneUsage } from "./lane-usage.js";
+import { addLaneUsage, type LaneUsage } from "./lane-usage.ts";
 
 /** A minimal structural view of a `subagents:completed` payload, used only for
  *  defensive narrowing. Typed loose so the module imports no pi-subagents type. */

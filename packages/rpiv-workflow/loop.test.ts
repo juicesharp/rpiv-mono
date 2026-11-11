@@ -31,15 +31,15 @@ import {
 	type ScriptContext,
 	type Unit,
 	type VerifySpec,
-} from "./api.js";
-import { type LifecycleListeners, registerLifecycle } from "./events.js";
-import { fs as fsHandle, handleToString } from "./handle.js";
-import { judge } from "./judge.js";
-import { all, any, assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.js";
-import { FAIL_FANOUT_ALL_FAILED } from "./messages.js";
-import type { Output } from "./output.js";
-import type { Outcome } from "./output-spec.js";
-import { runWorkflow } from "./runner/index.js";
+} from "./api.ts";
+import { type LifecycleListeners, registerLifecycle } from "./events.ts";
+import { fs as fsHandle, handleToString } from "./handle.ts";
+import { judge } from "./judge.ts";
+import { all, any, assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.ts";
+import { FAIL_FANOUT_ALL_FAILED } from "./messages.ts";
+import type { Output } from "./output.ts";
+import type { Outcome } from "./output-spec.ts";
+import { runWorkflow } from "./runner/index.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures

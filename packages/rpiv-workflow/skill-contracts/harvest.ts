@@ -8,12 +8,12 @@
  * framework-native `kind`/`reads`; the opaque `meta` bag is declared-only.
  */
 
-import type { Workflow } from "../api.js";
-import { extractJsonSchema } from "../json-schema.js";
-import type { ConsumesSpec, ProducesSpec, SkillContract } from "../skill-contract.js";
-import { readName } from "../stage-def.js";
-import { isDispatchingStage, resolveSkill } from "../stage-identity.js";
-import { getSkillContracts } from "./registry.js";
+import type { Workflow } from "../api.ts";
+import { extractJsonSchema } from "../json-schema.ts";
+import type { ConsumesSpec, ProducesSpec, SkillContract } from "../skill-contract.ts";
+import { readName } from "../stage-def.ts";
+import { isDispatchingStage, resolveSkill } from "../stage-identity.ts";
+import { getSkillContracts } from "./registry.ts";
 
 /**
  * Derive a best-effort `harvested` contract per dispatched skill from how

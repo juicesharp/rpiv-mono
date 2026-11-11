@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { configPath } from "@juicesharp/rpiv-config";
 import { beforeEach, describe, expect, it } from "vitest";
-import { getConfigPath, readConfig, WebToolsConfigSchema, writeConfig } from "./config.js";
+import { getConfigPath, readConfig, WebToolsConfigSchema, writeConfig } from "./config.ts";
 
 const CONFIG_PATH = configPath("rpiv-web-tools");
 

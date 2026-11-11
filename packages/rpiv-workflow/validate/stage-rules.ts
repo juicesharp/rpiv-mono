@@ -20,24 +20,24 @@ import {
 	STAGE_KINDS,
 	type StageDef,
 	type Workflow,
-} from "../api.js";
-import { type AnyJudge, isPanel } from "../judge.js";
+} from "../api.ts";
+import { type AnyJudge, isPanel } from "../judge.ts";
 import {
 	forEachJudgeChannel,
 	judgeSlotShapeIssues,
 	loopSpecOf,
 	panelVerdictChannel,
 	verifyShapeIssues,
-} from "../loop-constructors.js";
-import { readName } from "../stage-def.js";
-import { actsPublishName, resolvePublishName } from "../stage-identity.js";
+} from "../loop-constructors.ts";
+import { readName } from "../stage-def.ts";
+import { actsPublishName, resolvePublishName } from "../stage-identity.ts";
 import {
 	MAX_VALIDATION_RETRIES,
 	MAX_VALIDATION_RETRY_TIMEOUT_MS,
 	MIN_VALIDATION_RETRIES,
 	MIN_VALIDATION_RETRY_TIMEOUT_MS,
-} from "../validation-bounds.js";
-import type { IssueReporter, ReportFn } from "./issue.js";
+} from "../validation-bounds.ts";
+import type { IssueReporter, ReportFn } from "./issue.ts";
 
 /**
  * Orchestrates the per-stage rule blocks. The orchestration loop binds the

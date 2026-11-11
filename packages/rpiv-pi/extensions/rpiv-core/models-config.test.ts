@@ -10,7 +10,7 @@ import {
 	type ModelsConfig,
 	resolveMaxConcurrency,
 	resolveStageModel,
-} from "./models-config.js";
+} from "./models-config.ts";
 
 const TEST_HOME = process.env.HOME!;
 

@@ -2,7 +2,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("./btw-ui.js", () => ({
+vi.mock("./btw-ui.ts", () => ({
 	showBtwOverlay: vi.fn(),
 }));
 
@@ -24,8 +24,8 @@ vi.mock("@earendil-works/pi-ai/compat", async (importOriginal) => {
 });
 
 import { completeSimple } from "@earendil-works/pi-ai/compat";
-import { BTW_COMMAND_NAME, BTW_STATE_KEY, registerBtwCommand } from "./btw.js";
-import { showBtwOverlay } from "./btw-ui.js";
+import { BTW_COMMAND_NAME, BTW_STATE_KEY, registerBtwCommand } from "./btw.ts";
+import { showBtwOverlay } from "./btw-ui.ts";
 
 const model = { provider: "a", id: "m" } as unknown as Model<Api>;
 

@@ -18,11 +18,11 @@
  * second-guess that policy.
  */
 
-import type { Artifact } from "../../handle.js";
-import type { ArtifactCollector } from "../../output-spec.js";
-import { defineCollector } from "../../output-spec.js";
-import { iterToolUses } from "../../transcript.js";
-import { requireOpt } from "./require-opt.js";
+import type { Artifact } from "../../handle.ts";
+import type { ArtifactCollector } from "../../output-spec.ts";
+import { defineCollector } from "../../output-spec.ts";
+import { iterToolUses } from "../../transcript.ts";
+import { requireOpt } from "./require-opt.ts";
 
 export interface ToolCall {
 	name: string;

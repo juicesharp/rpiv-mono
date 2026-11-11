@@ -14,7 +14,7 @@ import {
 	type RunView,
 	type Unit,
 } from "@juicesharp/rpiv-workflow/registration";
-import { countHeadingsOutsideFences } from "./markdown-fence.js";
+import { countHeadingsOutsideFences } from "./markdown-fence.ts";
 import {
 	haltPreflight,
 	latestFsArtifact,
@@ -22,7 +22,7 @@ import {
 	type PhaseRecord,
 	readArtifactFile,
 	TEST_PATH_RE,
-} from "./shared.js";
+} from "./shared.ts";
 
 /**
  * `## Phase N:` headings — the source of truth a plan's `phases:` frontmatter

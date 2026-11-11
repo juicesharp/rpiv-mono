@@ -10,7 +10,7 @@ export {
 	canCompose,
 	compareDataChannel,
 	legalNextSkills,
-} from "./composition.js";
+} from "./composition.ts";
 export {
 	getBucketKindMappings,
 	getCompositionComparators,
@@ -19,8 +19,8 @@ export {
 	registerBucketKindMapping,
 	registerCompositionComparator,
 	registerOutcomeDeriver,
-} from "./extension-points.js";
-export { buildEffectiveContracts, harvestStageContracts } from "./harvest.js";
+} from "./extension-points.ts";
+export { buildEffectiveContracts, harvestStageContracts } from "./harvest.ts";
 export {
 	drainSkillContractCollisions,
 	drainSkillContractProviderErrors,
@@ -28,10 +28,10 @@ export {
 	getSkillContracts,
 	registerSkillContracts,
 	registerSkillContractsProvider,
-} from "./registry.js";
+} from "./registry.ts";
 
-import { __resetExtensionPoints } from "./extension-points.js";
-import { __resetContractRegistry } from "./registry.js";
+import { __resetExtensionPoints } from "./extension-points.ts";
+import { __resetContractRegistry } from "./registry.ts";
 
 /**
  * Test reset (wired into repo-wide setup). Clears the registry, pending lazy

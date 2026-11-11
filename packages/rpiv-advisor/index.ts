@@ -18,7 +18,7 @@ import {
 	registerAdvisorTool,
 	registerModelSelectHandler,
 	registerThinkingLevelSelectHandler,
-} from "./advisor/index.js";
+} from "./advisor/index.ts";
 
 export default function (pi: ExtensionAPI) {
 	registerAdvisorTool(pi);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { initialVoiceState, type VoiceState } from "../state.js";
-import type { BindingContext } from "./contract.js";
+import { initialVoiceState, type VoiceState } from "../state.ts";
+import type { BindingContext } from "./contract.ts";
 import {
 	selectHallucinationFilterFieldProps,
 	selectLanguageReadonlyFieldProps,
@@ -9,7 +9,7 @@ import {
 	selectNumThreadsReadonlyFieldProps,
 	selectStatusBarProps,
 	selectTranscriptProps,
-} from "./projections.js";
+} from "./projections.ts";
 
 const DICTATION_CTX: BindingContext = { activeView: "dictation" };
 

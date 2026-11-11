@@ -24,15 +24,15 @@ import {
 	terminal,
 	type VerifySpec,
 	type Workflow,
-} from "./api.js";
-import { judge } from "./judge.js";
-import { assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.js";
-import { noopCollector } from "./outcomes/index.js";
-import { eq, gt } from "./predicates.js";
-import type { CompositionComparator, SkillContractMap } from "./skill-contract.js";
-import { __resetSkillContracts, registerCompositionComparator } from "./skill-contracts/index.js";
-import { typeboxSchema } from "./typebox-adapter.js";
-import { validateWorkflow } from "./validate-workflow.js";
+} from "./api.ts";
+import { judge } from "./judge.ts";
+import { assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.ts";
+import { noopCollector } from "./outcomes/index.ts";
+import { eq, gt } from "./predicates.ts";
+import type { CompositionComparator, SkillContractMap } from "./skill-contract.ts";
+import { __resetSkillContracts, registerCompositionComparator } from "./skill-contracts/index.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
+import { validateWorkflow } from "./validate-workflow.ts";
 
 // `produces` stages require an outcome (validated at load time). These
 // tests focus on graph-shape validation, so we wire a noop collector into
@@ -277,7 +277,7 @@ describe("validateWorkflow — reachability", () => {
 // ---------------------------------------------------------------------------
 
 describe("validateWorkflow — semantic stage constraints", () => {
-	const baseWithStage = (overrides: Partial<import("./api.js").StageDef>): Workflow => ({
+	const baseWithStage = (overrides: Partial<import("./api.ts").StageDef>): Workflow => ({
 		name: "semantic",
 		start: "a",
 		stages: { a: { ...produces(), ...overrides } as StageDef },

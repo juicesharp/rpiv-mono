@@ -2,8 +2,8 @@ import { type ExtensionUIContext, initTheme, type Theme } from "@earendil-works/
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { LaneDock } from "./lane-dock.js";
-import type { ViewerMessage } from "./lane-transcript.js";
+import { LaneDock } from "./lane-dock.ts";
+import type { ViewerMessage } from "./lane-transcript.ts";
 import {
 	__resetRunLaneRegistry,
 	captureFinalSnapshot,
@@ -14,12 +14,12 @@ import {
 	recordRun,
 	retireRun,
 	SINGLE_UNIT_KEY,
-	seedPendingUnits,
+	seedUnits,
 	setCurrentSession,
 	setLaneProgress,
 	setLaneStatus,
 	setUnitStarted,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 const WIDGET_KEY = "rpiv-lanes";
 
@@ -787,7 +787,7 @@ describe("LaneDock — fanout unit sub-rows", () => {
 	it("a pending unit sub-row renders the ○ glyph + 'pending' tail (not ✓)", () => {
 		recordRun("run-1", "ship");
 		// Seed a pending unit directly (the onLoopStart fan-out seed); no onUnitStart yet.
-		seedPendingUnits("run-1", [{ index: 0, label: "phase 1/3" }]);
+		seedUnits("run-1", [{ index: 0, label: "phase 1/3" }]);
 		const overlay = new LaneDock();
 		const { widget } = mount(overlay, makeCtx());
 		const out = (widget?.render(120) ?? []).join("\n");

@@ -4,7 +4,7 @@
  * requests, unit sub-lanes, stage progress, lane entries, dock display rows)
  * with zero runtime surface except the SINGLE_UNIT_KEY sentinel const. The
  * registry owns all state and behavior and re-exports everything declared
- * here — consumers keep importing from "./run-lane-registry.js", never from
+ * here — consumers keep importing from "./run-lane-registry.ts", never from
  * this module directly.
  */
 
@@ -12,7 +12,7 @@ import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 
 import type { RunRecap } from "@juicesharp/rpiv-workflow";
 
-import type { LaneUsage } from "./lane-usage.js";
+import type { LaneUsage } from "./lane-usage.ts";
 
 /** Lane status taxonomy — mirrors rpiv-workflow's RunTermination.status (types.ts:145-149). */
 export type LaneStatus = "running" | "completed" | "failed" | "aborted" | "cancelled";
@@ -95,9 +95,10 @@ export interface UnitLane {
 	 *  until `setUnitStarted` fires — the host may publish a live session first. */
 	label?: string;
 	/** Per-unit lifecycle status — drives the sub-row glyph and the orphan sweep.
-	 *  "pending" is seeded by `seedPendingUnits` (a fanout `onLoopStart`) and flipped to
+	 *  "pending" is seeded by `seedUnits` (a fanout `onLoopStart`) and flipped to
 	 *  "running" by `setUnitStarted` (`onUnitStart`); "running" until `markUnitDone`/
-	 *  `sweepRunningUnits`/`retireRun` flips it terminal. */
+	 *  `sweepRunningUnits`/`retireRun` flips it terminal. A resumed generation's replayed
+	 *  units are seeded terminal directly — they fire no unit events. */
 	status: "running" | "pending" | "done" | "failed";
 	/** This unit's currently-live child session (the viewer/preview source);
 	 *  undefined before the child spawns, between stages, or after teardown. */

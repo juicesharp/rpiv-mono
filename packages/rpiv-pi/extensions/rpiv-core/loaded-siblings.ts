@@ -4,8 +4,8 @@
  * Reads a structural slice of `ExtensionAPI`, so it imports no Pi value.
  */
 
-import type { LoadedSiblingSources } from "./package-checks.js";
-import { SIBLINGS } from "./siblings.js";
+import type { LoadedSiblingSources } from "./package-checks.ts";
+import { SIBLINGS } from "./siblings.ts";
 
 /** The structural slice of `ExtensionAPI` the snapshot reads (Pi ≥ 0.80.1 carries `sourceInfo` on both). */
 export interface LoadedSourcesReader {

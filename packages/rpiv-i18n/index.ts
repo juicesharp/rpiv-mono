@@ -17,8 +17,8 @@ import {
 	getActiveLocale,
 	SUPPORTED_LOCALES,
 	saveLocaleConfig,
-} from "./i18n.js";
-import { showLanguagePicker } from "./i18n-ui.js";
+} from "./i18n.ts";
+import { showLanguagePicker } from "./i18n-ui.ts";
 
 const FLAG_NAME = "locale";
 const COMMAND_NAME = "languages";

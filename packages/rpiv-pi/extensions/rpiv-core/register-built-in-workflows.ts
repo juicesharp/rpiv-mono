@@ -18,7 +18,7 @@
  * other siblings already follow (siblings.ts header).
  */
 
-import { isModuleNotFound } from "./utils.js";
+import { isModuleNotFound } from "./utils.ts";
 
 /**
  * Register the four built-in workflows (build / polish / vet / ship)
@@ -34,7 +34,7 @@ export async function registerBuiltInWorkflows(): Promise<void> {
 		// ERR_MODULE_NOT_FOUND → no-op (no `/wf` without it).
 		const { registerBuiltInsProvider, registerBuiltIns } = await import("@juicesharp/rpiv-workflow/startup");
 		registerBuiltInsProvider(async () => {
-			const { builtInWorkflows } = await import("./built-in-workflows.js");
+			const { builtInWorkflows } = await import("./built-in-workflows.ts");
 			registerBuiltIns(builtInWorkflows);
 		});
 	} catch (err) {

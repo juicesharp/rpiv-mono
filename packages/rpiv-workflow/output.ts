@@ -10,7 +10,7 @@
  * `output-spec.ts`.
  */
 
-import type { Artifact } from "./handle.js";
+import type { Artifact } from "./handle.ts";
 
 // ---------------------------------------------------------------------------
 // Output envelope

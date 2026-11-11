@@ -20,11 +20,11 @@ import type {
 	LoopDef,
 	ResultProjection,
 	UnitSelector,
-} from "../api.js";
-import { requireNonEmptyString } from "../internal-utils.js";
-import { type AnyJudge, assertShape, isPanel, judgeShapeIssues } from "../judge.js";
-import type { Output } from "../output.js";
-import { panelShapeIssues } from "./panel.js";
+} from "../api.ts";
+import { requireNonEmptyString } from "../internal-utils.ts";
+import { type AnyJudge, assertShape, isPanel, judgeShapeIssues } from "../judge.ts";
+import type { Output } from "../output.ts";
+import { panelShapeIssues } from "./panel.ts";
 
 /** Default round cap when an `assess()` call omits `max`. Clamped by `run.maxIterations`. */
 export const DEFAULT_ASSESS_MAX = 8;

@@ -13,9 +13,9 @@
  * No back-edges — the value-import DAG stays acyclic.
  */
 
-import type { AuditContext } from "./audit-ctx.js";
-import { nowIso } from "./internal-utils.js";
-import type { FailureMemo, RunState } from "./types.js";
+import type { AuditContext } from "./audit-ctx.ts";
+import { nowIso } from "./internal-utils.ts";
+import type { FailureMemo, RunState } from "./types.ts";
 
 /**
  * Maximum number of memos retained on `RunState.failureMemos`. The array is

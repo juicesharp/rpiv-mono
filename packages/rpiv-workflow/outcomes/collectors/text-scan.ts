@@ -20,12 +20,12 @@
  * in wrapping layers, never here).
  */
 
-import type { ArtifactHandle } from "../../handle.js";
-import type { ArtifactCollector } from "../../output-spec.js";
-import { defineCollector } from "../../output-spec.js";
-import { type BranchEntry, iterToolUses, lastMatchInBranch } from "../../transcript.js";
-import { requireOpt } from "./require-opt.js";
-import type { ToolCall } from "./tool-call.js";
+import type { ArtifactHandle } from "../../handle.ts";
+import type { ArtifactCollector } from "../../output-spec.ts";
+import { defineCollector } from "../../output-spec.ts";
+import { type BranchEntry, iterToolUses, lastMatchInBranch } from "../../transcript.ts";
+import { requireOpt } from "./require-opt.ts";
+import type { ToolCall } from "./tool-call.ts";
 
 export interface TextScanCollectorOpts {
 	/**

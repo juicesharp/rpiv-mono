@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetState, scope } from "./i18n.js";
-import { registerLocalesFromDir } from "./loader.js";
+import { __resetState, scope } from "./i18n.ts";
+import { registerLocalesFromDir } from "./loader.ts";
 
 let pkgDir: string;
 let pkgUrl: string;

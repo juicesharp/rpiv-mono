@@ -8,7 +8,7 @@ import registerWebTools, {
 	DEFAULT_WEB_FETCH_SNIPPET,
 	DEFAULT_WEB_SEARCH_GUIDELINES,
 	DEFAULT_WEB_SEARCH_SNIPPET,
-} from "./index.js";
+} from "./index.ts";
 
 const CONFIG_PATH = configPath("rpiv-web-tools");
 const DEFAULT_SEARCH_GUIDELINES_LENGTH = DEFAULT_WEB_SEARCH_GUIDELINES.length;

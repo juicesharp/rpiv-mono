@@ -22,8 +22,8 @@
  */
 
 import { writeFileSync } from "node:fs";
-import { LEGACY_SIBLINGS } from "./siblings.js";
-import { getPiAgentSettingsPath, readPiAgentSettings } from "./utils.js";
+import { LEGACY_SIBLINGS } from "./siblings.ts";
+import { getPiAgentSettingsPath, readPiAgentSettings } from "./utils.ts";
 
 export interface PruneLegacySiblingsResult {
 	/** settings.json `packages[]` entries that were removed (empty = no-op). */

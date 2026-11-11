@@ -1,4 +1,4 @@
-import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.js";
+import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.ts";
 
 const JINA_SEARCH_API_URL = "https://s.jina.ai/";
 const JINA_READER_API_URL = "https://r.jina.ai/";

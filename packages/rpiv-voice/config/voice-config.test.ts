@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadVoiceConfig, resolveNumThreads, saveVoiceConfig } from "./voice-config.js";
+import { loadVoiceConfig, resolveNumThreads, saveVoiceConfig } from "./voice-config.ts";
 
 const CONFIG_PATH = join(homedir(), ".config", "rpiv-voice", "voice.json");
 

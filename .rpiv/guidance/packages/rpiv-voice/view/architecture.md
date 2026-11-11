@@ -5,8 +5,8 @@ Orchestration above leaf components: composes per-screen child layouts, swaps be
 
 ## Dependencies
 - **`@earendil-works/pi-tui`**: `Component`, `Container` primitives
-- **`../state/state.js`**: `VoiceState` shape
-- **`../state/selectors/{contract,focus,derivations}.js`**: `BindingContext`, `GlobalSelector`, `selectActiveView`, `clipToTerminalHeight`
+- **`../state/state.ts`**: `VoiceState` shape
+- **`../state/selectors/{contract,focus,derivations}.ts`**: `BindingContext`, `GlobalSelector`, `selectActiveView`, `clipToTerminalHeight`
 - No `audio/` reach-in; view stays state-only
 
 ## Module Structure

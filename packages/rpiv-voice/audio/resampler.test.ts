@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Int16LinearResampler } from "./resampler.js";
+import { Int16LinearResampler } from "./resampler.ts";
 
 function pcmFromSamples(samples: number[]): Buffer {
 	const buf = Buffer.alloc(samples.length * 2);

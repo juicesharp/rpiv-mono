@@ -1,9 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { type AgentInjectionContext, injectModelFrontmatter } from "./agents-inject.js";
-import type { ModelsConfig } from "./models-config.js";
-import { BUNDLED_AGENTS_DIR } from "./paths.js";
+import { type AgentInjectionContext, injectModelFrontmatter } from "./agents-inject.ts";
+import type { ModelsConfig } from "./models-config.ts";
+import { BUNDLED_AGENTS_DIR } from "./paths.ts";
 
 // Pure-transform coverage for injectModelFrontmatter (string-in/string-out —
 // no filesystem writes; the only fs touch is reading bundled agent sources).

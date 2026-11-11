@@ -1,4 +1,4 @@
-import type { QuestionAnswer } from "./types.js";
+import type { QuestionAnswer } from "./types.ts";
 
 /**
  * Placeholder for empty / null answer text. Used uniformly across both variants — the

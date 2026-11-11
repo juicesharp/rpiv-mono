@@ -6,9 +6,9 @@
  * back to the live session). Absent provider ⇒ the live ctx executes directly
  * (graceful degrade for non-Pi embedders / tests).
  */
-import type { ModelSelection, WorkflowHostContext } from "./host.js";
-import { globalSlot } from "./internal-utils.js";
-import type { BranchEntry } from "./transcript.js";
+import type { ModelSelection, WorkflowHostContext } from "./host.ts";
+import { globalSlot } from "./internal-utils.ts";
+import type { BranchEntry } from "./transcript.ts";
 
 /** What the provider hands back per run: the detached executor, an optional
  *  cancellation `signal` (rpiv-pi wires it from `ctx.ui.onTerminalInput`),

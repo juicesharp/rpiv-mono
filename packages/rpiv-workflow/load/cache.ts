@@ -42,10 +42,10 @@ type Jiti = ReturnType<typeof createJiti>;
  */
 async function overlayVirtualModules(): Promise<Record<string, unknown>> {
 	const [root, registration, startup, runner] = await Promise.all([
-		import("../index.js"),
-		import("../registration.js"),
-		import("../startup.js"),
-		import("../runner/index.js"),
+		import("../index.ts"),
+		import("../registration.ts"),
+		import("../startup.ts"),
+		import("../runner/index.ts"),
 	]);
 	const modules: Record<string, unknown> = {
 		"@juicesharp/rpiv-workflow": root,

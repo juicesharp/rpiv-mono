@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CollectContext, ParseContext } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { gitTreeDigest, remediationOutcome } from "./remediation.js";
+import { gitTreeDigest, remediationOutcome } from "./remediation.ts";
 
 // The outcome's whole job: report deterministically whether the repair arm
 // mutated the tree between snapshot and collect — `changed: false` ONLY on a

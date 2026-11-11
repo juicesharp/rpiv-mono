@@ -61,21 +61,22 @@ export {
 	type UnitSelector,
 	type VerifySpec,
 	type Workflow,
-} from "./api.js";
-export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.js";
+} from "./api.ts";
+export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.ts";
 // The shared dispatch predicate (and SkillStage type guard) — public so
 // extension points that key on a stage's skill identity (outcome derivers,
 // contract tooling) apply the same gate the loader/validator/harvest use.
-export { isDispatchingStage } from "./chain-state.js";
+export { isDispatchingStage } from "./chain-state.ts";
 export {
 	type LifecycleContext,
 	type LifecycleListeners,
 	type LoopCapInfo,
 	type LoopStartInfo,
 	registerLifecycle,
+	type SettledUnit,
 	type StageRef,
 	type UnitEvent,
-} from "./events.js";
+} from "./events.ts";
 export {
 	type Artifact,
 	type ArtifactHandle,
@@ -84,20 +85,20 @@ export {
 	inline,
 	opaque,
 	url,
-} from "./handle.js";
+} from "./handle.ts";
 export type {
 	ModelSelection,
 	WorkflowHost,
 	WorkflowHostContext,
 	WorkflowSessionContext,
-} from "./host.js";
+} from "./host.ts";
 // Only the contract data types are public — they're referenced by kept public
 // signatures (`JsonSchemaCapable` ← `typeboxSchema`, `JsonSchemaObject` ←
 // `ConsumesSpec`/`ProducesSpec.data`, `SchemaCompatResult` ← `canCompose`). The
 // low-level json-schema and schema-compat FUNCTIONS stay package-private (no
 // consumer needs them); internal callers import them from their source modules
 // directly.
-export type { JsonSchemaCapable, JsonSchemaObject } from "./json-schema.js";
+export type { JsonSchemaCapable, JsonSchemaObject } from "./json-schema.ts";
 export {
 	type AnyJudge,
 	type FoldFn,
@@ -112,9 +113,9 @@ export {
 	type PromptJudge,
 	panelMembers,
 	type SkillJudge,
-} from "./judge.js";
-export type { ConfigLayer, Issue, LoadedWorkflows, LoadIssue, OverlayPaths } from "./load/index.js";
-export { aliasSkills, loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.js";
+} from "./judge.ts";
+export type { ConfigLayer, Issue, LoadedWorkflows, LoadIssue, OverlayPaths } from "./load/index.ts";
+export { aliasSkills, loadWorkflows, projectOverlayPaths, userOverlayPaths } from "./load/index.ts";
 export {
 	type AnyJudgeSpec,
 	all,
@@ -141,7 +142,7 @@ export {
 	type StageShape,
 	verify,
 	verifyShapeIssues,
-} from "./loop-constructors.js";
+} from "./loop-constructors.ts";
 export {
 	type DirectoryPathCollectorOpts,
 	directoryPathCollector,
@@ -165,8 +166,8 @@ export {
 	type WorkspaceDiffCollectorOpts,
 	type WorkspaceDiffSnapshot,
 	workspaceDiffCollector,
-} from "./outcomes/index.js";
-export type { Output, OutputMeta, RunView, Verdict } from "./output.js";
+} from "./outcomes/index.ts";
+export type { Output, OutputMeta, RunView, Verdict } from "./output.ts";
 // Producer-side surface — `output-spec.ts` is the ONE canonical import path
 // for collector/parser/outcome authoring types (`output.ts` keeps only the
 // envelope). `OutputSpec` is the deprecated pre-rename alias of `Outcome`.
@@ -182,8 +183,8 @@ export {
 	type ParseContext,
 	type ParseResult,
 	type SnapshotContext,
-} from "./output-spec.js";
-export { eq, gt, gte, lt, lte, type NumericPredicate, type Predicate } from "./predicates.js";
+} from "./output-spec.ts";
+export { eq, gt, gte, lt, lte, type NumericPredicate, type Predicate } from "./predicates.ts";
 export type {
 	ConsumesReadSpec,
 	ConsumesSpec,
@@ -192,7 +193,7 @@ export type {
 	SchemaCompatResult,
 	SkillContract,
 	SkillContractMap,
-} from "./skill-contract.js";
+} from "./skill-contract.ts";
 export {
 	canCompose,
 	getBucketKindMappings,
@@ -203,7 +204,7 @@ export {
 	registerOutcomeDeriver,
 	registerSkillContracts,
 	registerSkillContractsProvider,
-} from "./skill-contracts/index.js";
+} from "./skill-contracts/index.ts";
 export {
 	type LoopCapRow,
 	listArtifacts,
@@ -223,21 +224,21 @@ export {
 	summarizeRun,
 	type WorkflowHeader,
 	type WorkflowStage,
-} from "./state/index.js";
+} from "./state/index.ts";
 // The persisted-session branch shape the host-injected `readSessionBranch`
 // reader returns (`WorkflowExecutionProvider.readSessionBranch` /
 // `RunContext.readSessionBranch`). Re-exported so the rpiv-pi host can name the
 // return type when it narrows `SessionManager.open(file).getBranch()`.
-export type { BranchEntry } from "./transcript.js";
-export { DEFAULT_TRIGGER, type RunTrigger } from "./triggers.js";
-export { typeboxSchema } from "./typebox-adapter.js";
+export type { BranchEntry } from "./transcript.ts";
+export { DEFAULT_TRIGGER, type RunTrigger } from "./triggers.ts";
+export { typeboxSchema } from "./typebox-adapter.ts";
 // `RunState` is deliberately NOT here — it is runner-private; user contexts
 // use the deep-readonly `RunView`. Test fixtures that must construct one
 // import it from `@juicesharp/rpiv-workflow/internal`.
-export type { RunTermination } from "./types.js";
-export { type SchemaValidationFailure, validateOutputData } from "./validate-output.js";
+export type { RunTermination } from "./types.ts";
+export { type SchemaValidationFailure, validateOutputData } from "./validate-output.ts";
 export {
 	type ValidationIssueCode,
 	validateWorkflow,
 	type WorkflowValidationIssue,
-} from "./validate-workflow.js";
+} from "./validate-workflow.ts";

@@ -10,4 +10,4 @@ export {
 	saveJsonConfig,
 	validateConfig,
 	validateGuidanceFields,
-} from "./config.js";
+} from "./config.ts";

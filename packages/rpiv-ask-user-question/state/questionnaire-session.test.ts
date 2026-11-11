@@ -2,10 +2,10 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { buildQuestionnaireResponse } from "../tool/response-envelope.js";
-import type { QuestionnaireResult, QuestionParams } from "../tool/types.js";
-import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
-import { QuestionnaireSession } from "./questionnaire-session.js";
+import { buildQuestionnaireResponse } from "../tool/response-envelope.ts";
+import type { QuestionnaireResult, QuestionParams } from "../tool/types.ts";
+import type { WrappingSelectItem } from "../view/components/wrapping-select.ts";
+import { QuestionnaireSession } from "./questionnaire-session.ts";
 
 const DOWN = "\x1b[B";
 const UP = "\x1b[A";
@@ -86,6 +86,7 @@ function makeSession(options: SessionTestOptions = {}) {
 		keybindings: options.keybindings ?? keybindings,
 		editInput: options.editInput ?? (async () => undefined),
 		collapseKey: "off",
+		notesKey: "n",
 		canReopenWhileHidden: false,
 		rowBudget: (rows) => rows,
 	});
@@ -98,6 +99,38 @@ function focusCustomAnswer(session: QuestionnaireSession): void {
 }
 
 describe("QuestionnaireSession — custom-answer drafts", () => {
+	it("answers with a row's digit like Enter on it", () => {
+		const { session, done } = makeSession();
+		session.dispatch("2");
+		expect(done).toHaveBeenCalledWith({
+			answers: [{ questionIndex: 0, question: "Which?", kind: "option", answer: "B" }],
+			cancelled: false,
+		});
+	});
+
+	it("the Type something. row's digit focuses it without typing itself", () => {
+		const { session, done } = makeSession();
+		session.dispatch("3");
+		session.dispatch("4");
+		session.dispatch("2");
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith({
+			answers: [{ questionIndex: 0, question: "Which?", kind: "custom", answer: "42" }],
+			cancelled: false,
+		});
+	});
+
+	it("types a digit as text inside Type something.", () => {
+		const { session, done } = makeSession();
+		focusCustomAnswer(session);
+		session.dispatch("1");
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith({
+			answers: [{ questionIndex: 0, question: "Which?", kind: "custom", answer: "1" }],
+			cancelled: false,
+		});
+	});
+
 	it("preserves a draft while browsing options and restores it on return", () => {
 		const { session, done } = makeSession();
 		focusCustomAnswer(session);
@@ -163,11 +196,7 @@ describe("QuestionnaireSession — custom-answer drafts", () => {
 		session.dispatch("discard me");
 		session.dispatch(CTRL_U);
 		session.dispatch(ENTER);
-
-		expect(done).toHaveBeenCalledWith({
-			answers: [expect.objectContaining({ kind: "custom", answer: null })],
-			cancelled: false,
-		});
+		expect(done).not.toHaveBeenCalled(); // a cleared draft is not an answer (#301)
 	});
 
 	it("replaces the inline draft with the external editor result", async () => {

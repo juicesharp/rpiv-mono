@@ -20,9 +20,9 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { formatError } from "../../internal-utils.js";
-import type { ArtifactParser } from "../../output-spec.js";
-import { defineParser } from "../../output-spec.js";
+import { formatError } from "../../internal-utils.ts";
+import type { ArtifactParser } from "../../output-spec.ts";
+import { defineParser } from "../../output-spec.ts";
 
 export const jsonBodyParser: ArtifactParser<unknown, "json", unknown> = defineParser({
 	parse: (ctx) => {

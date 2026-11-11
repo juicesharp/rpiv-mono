@@ -2,13 +2,13 @@ import { EventEmitter } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getErrorLogPath } from "../audio/error-log.js";
-import type { DecibriLike } from "../audio/mic-source.js";
-import { TARGET_SAMPLE_RATE } from "../audio/mic-source.js";
-import type { SttEngine } from "../audio/stt-engine.js";
-import type { VoiceAction } from "../state/key-router.js";
-import type { VoiceSession } from "../state/voice-session.js";
-import { startDictationPipeline } from "./pipeline-runner.js";
+import { getErrorLogPath } from "../audio/error-log.ts";
+import type { DecibriLike } from "../audio/mic-source.ts";
+import { TARGET_SAMPLE_RATE } from "../audio/mic-source.ts";
+import type { SttEngine } from "../audio/stt-engine.ts";
+import type { VoiceAction } from "../state/key-router.ts";
+import type { VoiceSession } from "../state/voice-session.ts";
+import { startDictationPipeline } from "./pipeline-runner.ts";
 
 class FakeMic extends EventEmitter implements DecibriLike {
 	on(event: string, listener: (...args: never[]) => void): this {

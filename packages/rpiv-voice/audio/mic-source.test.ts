@@ -52,13 +52,13 @@ vi.mock("decibri", () => {
 	return { default: MockMic };
 });
 
-vi.mock("./error-log.js", () => ({
+vi.mock("./error-log.ts", () => ({
 	appendErrorLog: vi.fn(),
 	appendDiagnosticLog: vi.fn(),
 }));
 
-import { appendDiagnosticLog } from "./error-log.js";
-import { createMic, FRAMES_PER_BUFFER, TARGET_SAMPLE_RATE } from "./mic-source.js";
+import { appendDiagnosticLog } from "./error-log.ts";
+import { createMic, FRAMES_PER_BUFFER, TARGET_SAMPLE_RATE } from "./mic-source.ts";
 
 interface MockMicInstance {
 	opts: Record<string, unknown>;

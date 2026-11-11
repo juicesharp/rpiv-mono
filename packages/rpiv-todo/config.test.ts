@@ -9,7 +9,7 @@ import {
 	isValidCollapseKeySpec,
 	loadConfig,
 	resolveCollapseKey,
-} from "./config.js";
+} from "./config.ts";
 
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-todo", "config.json");
 

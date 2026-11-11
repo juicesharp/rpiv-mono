@@ -6,9 +6,9 @@
  * EXECUTION lives in routing.ts — this module is authoring-surface only.
  */
 
-import { markSymbol, readSymbol, requireNonEmptyString, throwInvalid } from "./internal-utils.js";
-import type { Output, RunView } from "./output.js";
-import type { NumericPredicate } from "./predicates.js";
+import { markSymbol, readSymbol, requireNonEmptyString, throwInvalid } from "./internal-utils.ts";
+import type { Output, RunView } from "./output.ts";
+import type { NumericPredicate } from "./predicates.ts";
 
 /**
  * Runtime context handed to an `EdgeFn`. The sole context shape for both

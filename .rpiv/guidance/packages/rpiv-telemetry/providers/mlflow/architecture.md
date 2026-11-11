@@ -9,7 +9,7 @@ Translates the provider-agnostic `TelemetryEvent` stream into an MLflow trace **
 - **`../../types/{events,provider}`**: the `TelemetryEvent` union + the `TelemetryProvider` interface this implements
 
 ## Consumers
-- **`../index.ts`** (provider catalog): lists MLflow in `BUILT_IN_PROVIDERS` via `meta.ts` only, then loads the impl through a fire-and-forget `import("./mlflow/index.js")` — **only when `providers.mlflow` is configured**
+- **`../index.ts`** (provider catalog): lists MLflow in `BUILT_IN_PROVIDERS` via `meta.ts` only, then loads the impl through a fire-and-forget `import("./mlflow/index.ts")` — **only when `providers.mlflow` is configured**
 - **`../../index.ts`** (package barrel): re-exports `MlflowProvider` directly for standalone embedders (accepts the SDK cost — not the Pi extension path)
 
 ## Module Structure
@@ -31,7 +31,7 @@ export const MLFLOW_PROVIDER_META: TelemetryProviderMeta = { name: "mlflow", lab
 
 // ../index.ts — catalog imports ONLY meta; defers the heavy module behind a dynamic import.
 if (config.providers.mlflow !== undefined)
-  void import("./mlflow/index.js").then(({ MlflowProvider }) => registerTelemetryProvider(new MlflowProvider(...)));
+  void import("./mlflow/index.ts").then(({ MlflowProvider }) => registerTelemetryProvider(new MlflowProvider(...)));
 ```
 
 ## TelemetryProvider Impl — Lazy-Once Init + Per-Kind Failure Isolation

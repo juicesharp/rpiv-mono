@@ -44,7 +44,7 @@
  */
 
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { enqueueInput, getFocusedRun } from "./run-lane-registry.js";
+import { enqueueInput, getFocusedRun } from "./run-lane-registry.ts";
 
 /** Brand stamped on a relay so launcher-only session hooks can detect a detached
  *  child's ctx.ui and skip (session-capture / lane-switcher). */

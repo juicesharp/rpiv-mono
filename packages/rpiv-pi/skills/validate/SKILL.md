@@ -161,7 +161,7 @@ For each phase in the plan:
 ### Step 3: Write the Validation Report
 
 1. **Determine metadata** (from the Metadata block at the top of this skill):
-   - Filename: `.rpiv/artifacts/validation/<slug>_<plan-topic-kebab>.md` — `<slug>` is the second tab-separated field on line 1 of the Metadata block above; `<plan-topic-kebab>` is the plan's `topic:` frontmatter value lowercased and hyphen-joined.
+   - Filename: `.rpiv/artifacts/validation/<slug>_<plan-name>.md` — `<slug>` is the second tab-separated field on line 1 of the Metadata block above; `<plan-name>` is the plan file's basename without its leading timestamp and `.md` (plan `2026-10-15_13-56-46_tkt-1234-widget-sync.md` → `tkt-1234-widget-sync`). Never build it from the plan's `topic:` value: its em dashes, parentheses and commas make a path the workflow cannot collect.
    - `repository:` ← `repo:` label; `branch:` / `commit:` ← matching labels.
    - `date:` ← `<iso>` (first tab-separated field on line 1 of the Metadata block above, offset verbatim).
    - `author:` ← matching label (fallback: `unknown`).

@@ -1,5 +1,5 @@
-import { GitHubInterceptor, readUserGitHubConfig, resolveGitHubOptions } from "./github.js";
-import type { UrlInterceptor } from "./types.js";
+import { GitHubInterceptor, readUserGitHubConfig, resolveGitHubOptions } from "./github.ts";
+import type { UrlInterceptor } from "./types.ts";
 
 export {
 	DEFAULTS as GITHUB_INTERCEPTOR_DEFAULTS,
@@ -11,8 +11,8 @@ export {
 	type ResolvedGitHubOptions,
 	readUserGitHubConfig,
 	resolveGitHubOptions,
-} from "./github.js";
-export type { UrlInterceptor } from "./types.js";
+} from "./github.ts";
+export type { UrlInterceptor } from "./types.ts";
 
 // Package-private singletons set by registerWebTools at startup. The
 // orchestrator reads `getInterceptors()` per-request rather than caching the
