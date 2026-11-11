@@ -5,12 +5,15 @@ import { windowLines } from "../../scroll-window.ts";
 import type { StatefulView } from "../../stateful-view.ts";
 import type { OptionListView } from "../option-list-view.ts";
 import type { NotesAffordance, PreviewBlockRenderer } from "./preview-block-renderer.ts";
+import { BORDER_HORIZONTAL_OVERHEAD, BORDER_INNER_PADDING_HORIZONTAL } from "./preview-box-renderer.ts";
 import {
 	bodyWidths,
 	columnWidths,
 	decideLayout,
+	MIN_PREVIEW_WIDTH,
 	PREVIEW_PADDING_LEFT,
 	type PreviewLayoutMode,
+	previewRigidWidth,
 	STACKED_GAP_ROWS,
 } from "./preview-layout-decider.ts";
 
@@ -81,7 +84,8 @@ export interface PreviewPaneConfig {
  * bordered-box composition).
  *
  * `naturalHeight` and `maxNaturalHeight` query both children's heights; `render`
- * combines them via `decideLayout` (mode threaded into both calls — never
+ * combines them via the resolved layout mode (`resolveMode` — decideLayout's width
+ * gate plus the preview-fit check; mode threaded into both calls, never
  * re-derived).
  */
 export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
@@ -122,6 +126,25 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 
 	private getAdaptiveLeft(paneWidth: number): number {
 		return this.globalLeftWidth(paneWidth);
+	}
+
+	/**
+	 * decideLayout's width gate, plus "does the rigid preview content fit whole?".
+	 * The options column is sized by its own content (labels + descriptions), so it
+	 * stays readable by construction; prose wraps to whatever width it gets. But
+	 * fenced code, ASCII diagrams and table rows are rigid — cutting them loses
+	 * information. Downgrade to stacked only when the right column cannot hold the
+	 * rigid content (or a minimal useful box) whole.
+	 */
+	private resolveMode(width: number): PreviewLayoutMode {
+		const decided = decideLayout(this.getTerminalWidth(), width);
+		if (decided !== "side-by-side") return decided;
+		const { rightWidth } = columnWidths(width, this.getAdaptiveLeft(width));
+		const rigid = previewRigidWidth(this.question);
+		// Box border (2) + box inner padding (2) + column padding (1).
+		const boxOverhead = BORDER_HORIZONTAL_OVERHEAD + 2 * BORDER_INNER_PADDING_HORIZONTAL + PREVIEW_PADDING_LEFT;
+		const need = rigid > 0 ? rigid + boxOverhead : MIN_PREVIEW_WIDTH;
+		return rightWidth >= Math.max(MIN_PREVIEW_WIDTH, need) ? "side-by-side" : "stacked";
 	}
 
 	setProps(props: PreviewPaneProps): void {
@@ -166,7 +189,7 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 	 * `focusedItemRowRange` and `naturalHeight` agree by construction.
 	 */
 	private layout(width: number): { lines: string[]; focus: [number, number] | undefined } {
-		const mode = decideLayout(this.getTerminalWidth(), width);
+		const mode = this.resolveMode(width); // decideLayout gate + preview-fit check
 		return mode === "side-by-side" ? this.layoutSideBySide(width, mode) : this.layoutStacked(width, mode);
 	}
 
@@ -264,7 +287,7 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 		// the `naturalHeight === render.length` parity invariant.
 		if (this.props.inputMode) return this.optionListView.render(width).length;
 		if (this.rowAllowance !== undefined) return this.layout(width).lines.length;
-		const mode = decideLayout(this.getTerminalWidth(), width);
+		const mode = this.resolveMode(width); // decideLayout gate + preview-fit check
 		const adaptiveLeft = this.getAdaptiveLeft(width);
 		const { optionsWidth, previewWidth } = bodyWidths(width, mode, adaptiveLeft);
 		const optionsHeight = this.optionListView.render(optionsWidth).length;
@@ -279,7 +302,7 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 		// `inputMode`: like naturalHeight — full-width option list only, so the
 		// `maxNaturalHeight >= naturalHeight` parity invariant holds (both equal the list height).
 		if (this.props.inputMode) return this.optionListView.render(width).length;
-		const mode = decideLayout(this.getTerminalWidth(), width);
+		const mode = this.resolveMode(width); // decideLayout gate + preview-fit check
 		const adaptiveLeft = this.getAdaptiveLeft(width);
 		const { optionsWidth, previewWidth } = bodyWidths(width, mode, adaptiveLeft);
 		const optionsHeight = this.optionListView.render(optionsWidth).length;
@@ -305,14 +328,13 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 			this.notesAffordance(),
 			maxRows,
 		);
-		const boxWidth = Math.max(1, visibleWidth(contentLines[0] ?? ""));
-		const boxAlignedPad = Math.max(PREVIEW_PADDING_LEFT, colWidth - boxWidth);
+		// Left-aligned: every line gets the column's 1-col padding and is clipped to
+		// the column. The previous right-alignment parked narrower boxes at the far
+		// edge of the column (boxAlignedPad = colWidth − boxWidth), leaving a wide
+		// empty gap between the options column and the preview box.
 		return contentLines.map((line) => {
 			if (line === "") return "";
-			// A line wider than the box (a long-locale notes affordance) slides left to
-			// stay fully visible; truncation engages only when the column itself runs out.
-			const pad = Math.max(PREVIEW_PADDING_LEFT, Math.min(boxAlignedPad, colWidth - visibleWidth(line)));
-			return `${" ".repeat(pad)}${truncateToWidth(line, colWidth - pad, "")}`;
+			return `${" ".repeat(PREVIEW_PADDING_LEFT)}${truncateToWidth(line, colWidth - PREVIEW_PADDING_LEFT, "")}`;
 		});
 	}
 }

@@ -1,7 +1,6 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { QuestionData } from "../../../tool/types.ts";
 import type { WrappingSelectItem } from "../wrapping-select.ts";
-import { BORDER_HORIZONTAL_OVERHEAD, BORDER_INNER_PADDING_HORIZONTAL } from "./preview-box-renderer.ts";
 
 /** Min terminal/pane width for the side-by-side layout to engage. */
 export const PREVIEW_MIN_WIDTH = 100;
@@ -38,13 +37,20 @@ export function decideLayout(terminalWidth: number, paneWidth: number): PreviewL
 }
 
 /**
- * Compute the adaptive left column width from option labels.
+ * Compute the adaptive left column width from option labels and descriptions.
  * Pure function — deterministic for a given (items, totalForNumbering, paneWidth).
  *
  * Pipeline:
- *   1. Measure: longest visible label width + prefix overhead + confirmed-mark overhead
+ *   1. Measure: max of the longest visible label and half the longest description
+ *      width (target: the longest description wraps to at most 2 lines), plus the
+ *      prefix overhead and the confirmed-mark overhead
  *   2. Clamp: floor MIN_LEFT, ceiling paneWidth * MAX_LEFT_RATIO
  *   3. Safety net: never exceed available = paneWidth - GAP - MIN_PREVIEW_WIDTH
+ *
+ * Descriptions are measured because they share the column with the label rows:
+ * sizing from labels alone leaves a sentence-length description only
+ * (columnWidth − prefix) columns wide, wrapping it into a few characters per
+ * line and ballooning the dialog height (which is content-driven).
  */
 export function adaptiveLeftWidth(
 	items: readonly WrappingSelectItem[],
@@ -54,11 +60,14 @@ export function adaptiveLeftWidth(
 	const prefixW = String(Math.max(1, totalForNumbering)).length + 4; // digits + "❯ " + ". "
 	const confirmedOverhead = CONFIRMED_OVERHEAD; // visibleWidth(" ✔") = 2 (space + ✔ codepoint)
 	let maxLabel = 0;
+	let maxDesc = 0;
 	for (const item of items) {
 		const w = visibleWidth(item.label);
 		if (w > maxLabel) maxLabel = w;
+		const d = item.description ? visibleWidth(item.description) : 0;
+		if (d > maxDesc) maxDesc = d;
 	}
-	const desired = maxLabel + prefixW + confirmedOverhead;
+	const desired = Math.max(maxLabel, Math.ceil(maxDesc / 2)) + prefixW + confirmedOverhead;
 	const ratioCapped = Math.min(desired, Math.floor(paneWidth * MAX_LEFT_RATIO));
 	const available = paneWidth - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
 	return Math.max(MIN_LEFT, Math.min(ratioCapped, Math.max(1, available)));
@@ -89,23 +98,32 @@ export function crossTabMaxLeftWidth(
 }
 
 /**
- * Source-line probe: measures the widest source line across all options' previews.
- * Returns 0 when no option carries a preview.
+ * Rigid-content probe: the widest non-wrappable line across all options' previews —
+ * lines inside fenced code blocks and table rows. Returns 0 when nothing rigid is
+ * present (no previews, or prose only).
  *
- * V1 heuristic — works well for tree/table/heading/list content where source-line
- * width ≈ rendered width. Paragraphs overstate (source width "wants" the full pane);
- * the worst case is "donation does nothing useful" — fallback to the label-driven path.
- * Upgrade path: replace with a render-width probe that invokes Markdown at a probe width.
+ * Prose is ignored on purpose: markdown wraps it to whatever width it gets, so it
+ * never justifies a wider column on its own. Fenced code, ASCII diagrams and table
+ * rows are rigid — cutting them loses information, so their width is what the
+ * preview column must be able to hold whole.
  *
- * Pure function — O(total chars) per question; no Markdown invocation, no cache interaction.
+ * Pure function — O(total chars) per question; no Markdown invocation, no cache
+ * interaction.
  */
-export function previewSourceWidth(question: QuestionData): number {
+export function previewRigidWidth(question: QuestionData): number {
 	let max = 0;
 	for (const option of question.options) {
 		const text = option.preview;
 		if (!text) continue;
+		let inFence = false;
 		for (const line of text.split("\n")) {
-			const w = visibleWidth(line);
+			const trimmed = line.trimStart();
+			if (trimmed.startsWith("```")) {
+				inFence = !inFence;
+				continue;
+			}
+			if (!inFence && !trimmed.startsWith("|")) continue;
+			const w = visibleWidth(line.replace(/ +$/, ""));
 			if (w > max) max = w;
 		}
 	}
@@ -113,66 +131,35 @@ export function previewSourceWidth(question: QuestionData): number {
 }
 
 /**
- * Cross-tab/cross-option preview budget. Iterates all questions, computes each question's
- * preview appetite via `previewSourceWidth`, adds box + padding overhead (5 cols), and
- * returns the widest result. Floor is `MIN_PREVIEW_WIDTH` so a previewless question still
- * reserves a usable column. Ceiling ensures the left column retains its `MIN_LEFT` floor.
- *
- * Pure function — same cross-tab max pattern as `crossTabMaxLeftWidth`.
- */
-export function crossTabPreviewBudget(questions: readonly QuestionData[], paneWidth: number): number {
-	let max = MIN_PREVIEW_WIDTH;
-	for (const question of questions) {
-		const rawWidth = previewSourceWidth(question);
-		const capped = Math.min(rawWidth, paneWidth - PREVIEW_COLUMN_GAP - MIN_LEFT);
-		const budget = capped + BORDER_HORIZONTAL_OVERHEAD + 2 * BORDER_INNER_PADDING_HORIZONTAL + PREVIEW_PADDING_LEFT;
-		if (budget > max) max = budget;
-	}
-	return max;
-}
-
-/**
- * Cross-tab left-column width with slack donation. Combines the label-driven width
- * (from `crossTabMaxLeftWidth`) with the slack donated by narrow previews.
- *
- * Pipeline:
- *   1. `labelDriven` = `crossTabMaxLeftWidth(tabs, itemsByTab, paneWidth)`
- *   2. `previewBudget` = `crossTabPreviewBudget(questions, paneWidth)`
- *   3. `slackDonation` = `paneWidth − GAP − previewBudget`
- *   4. Return `min(max(labelDriven, slackDonation), ceiling)` where `ceiling` is the
- *      tighter of the preview-width safety limit and `MAX_LEFT_RATIO`
+ * Cross-tab left-column width, sized by the options column's own content — the
+ * cross-tab aggregate of `adaptiveLeftWidth` (labels + descriptions), clamped by
+ * the same ceilings. Preview appetite no longer participates: the previous slack
+ * donation grew the options column to "all the width the preview doesn't need",
+ * which left a wide empty void between the columns whenever the preview box was
+ * narrower than its allocation.
  *
  * Invariants (hold at side-by-side widths, paneWidth ≥ PREVIEW_MIN_WIDTH — the only
- * mode that consumes this value; narrower panes can pull both ceilings under MIN_LEFT):
- *   - Floor: result ≥ MIN_LEFT (ratioCeiling ≥ 50 once paneWidth ≥ 100)
+ * mode that consumes this value):
+ *   - Floor: result ≥ MIN_LEFT (adaptiveLeftWidth's own floor; ratioCeiling ≥ 50
+ *     once paneWidth ≥ 100)
  *   - Options cap: left column ≤ paneWidth × MAX_LEFT_RATIO
- *   - Preview floor: right column ≥ MIN_PREVIEW_WIDTH — enforced transitively by the
- *     MAX_LEFT_RATIO cap (right column keeps ≥ paneWidth/2 − GAP ≥ 48 cols);
- *     previewSafetyCeiling is defensive depth that binds only if MAX_LEFT_RATIO
- *     ever rises above ~0.53
- *   - Cross-tab stability: both reductions are tab-independent
- *   - Determinism: pure of (questions, itemsByTab, paneWidth)
- *
- * `crossTabMaxLeftWidth` is NOT replaced — it continues to exist as the primitive.
- * Donation obeys the same `MAX_LEFT_RATIO` cap as the label-driven path; the preview
- * composer right-aligns narrower boxes inside the remaining column.
+ *   - Preview floor: right column ≥ MIN_PREVIEW_WIDTH — enforced transitively by
+ *     the MAX_LEFT_RATIO cap; previewSafetyCeiling is defensive depth that binds
+ *     only if MAX_LEFT_RATIO ever rises above ~0.53, or on narrow panes where the
+ *     MIN_LEFT floor can exceed what a side-by-side split would allow
+ *   - Cross-tab stability: the reduction is tab-independent
+ *   - Determinism: pure of (itemsByTab, paneWidth)
  */
-export function crossTabLeftWidthWithDonation(
+export function crossTabLeftWidth(
 	tabs: ReadonlyArray<{ multiSelect?: boolean }>,
 	itemsByTab: ReadonlyArray<readonly WrappingSelectItem[]>,
-	questions: readonly QuestionData[],
 	paneWidth: number,
 ): number {
 	const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, paneWidth);
-	const previewBudget = crossTabPreviewBudget(questions, paneWidth);
-	const slackDonation = paneWidth - PREVIEW_COLUMN_GAP - previewBudget;
-	// At side-by-side widths the ratio ceiling is always the tighter bound
-	// (paneWidth/2 ≤ paneWidth − GAP − MIN_PREVIEW_WIDTH once paneWidth ≥ 94);
-	// previewSafetyCeiling stays as defensive depth should MAX_LEFT_RATIO grow.
 	const previewSafetyCeiling = paneWidth - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
 	const ratioCeiling = Math.floor(paneWidth * MAX_LEFT_RATIO);
 	const ceiling = Math.min(previewSafetyCeiling, ratioCeiling);
-	return Math.min(Math.max(labelDriven, slackDonation), Math.max(1, ceiling));
+	return Math.min(labelDriven, Math.max(1, ceiling));
 }
 
 /**

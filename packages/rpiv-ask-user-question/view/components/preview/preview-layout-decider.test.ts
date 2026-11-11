@@ -3,23 +3,60 @@ import type { QuestionData } from "../../../tool/types.ts";
 import type { WrappingSelectItem } from "../wrapping-select.ts";
 import {
 	adaptiveLeftWidth,
-	crossTabLeftWidthWithDonation,
+	crossTabLeftWidth,
 	crossTabMaxLeftWidth,
-	crossTabPreviewBudget,
 	MAX_LEFT_RATIO,
 	MIN_LEFT,
 	MIN_PREVIEW_WIDTH,
 	PREVIEW_COLUMN_GAP,
-	previewSourceWidth,
+	previewRigidWidth,
 } from "./preview-layout-decider.ts";
 
 const opt = (label: string): WrappingSelectItem => ({ kind: "option", label });
 
-const question = (options: Array<{ label: string; preview?: string }>, multiSelect?: boolean): QuestionData => ({
+const optWithDesc = (label: string, description: string): WrappingSelectItem => ({
+	kind: "option",
+	label,
+	description,
+});
+
+const question = (options: Array<{ label: string; preview?: string }>): QuestionData => ({
 	question: "Test?",
 	header: "Test",
 	options: options.map((o) => ({ label: o.label, description: "", preview: o.preview })),
-	...(multiSelect !== undefined ? { multiSelect } : {}),
+});
+
+describe("adaptiveLeftWidth", () => {
+	// prefixW for totalForNumbering=2 is 1 digit + 4 ("❯ " + ". ") = 5; confirmedOverhead = 2.
+	const OVERHEAD = 7;
+
+	it("label-only items keep the label-driven width", () => {
+		expect(adaptiveLeftWidth([opt("x".repeat(40)), opt("y")], 2, 200)).toBe(40 + OVERHEAD);
+		// An empty description is ignored, same as a missing one.
+		expect(adaptiveLeftWidth([optWithDesc("x".repeat(40), ""), opt("y")], 2, 200)).toBe(40 + OVERHEAD);
+	});
+
+	it("longest description drives the width so it wraps to at most two lines", () => {
+		// 60-col description → target content width 30 → column 30 + 7 = 37.
+		expect(adaptiveLeftWidth([optWithDesc("A", "d".repeat(60))], 2, 200)).toBe(30 + OVERHEAD);
+	});
+
+	it("label wins when it is wider than half the longest description", () => {
+		expect(adaptiveLeftWidth([optWithDesc("x".repeat(80), "d".repeat(60))], 2, 200)).toBe(80 + OVERHEAD);
+	});
+
+	it("respects MAX_LEFT_RATIO ceiling even with long descriptions", () => {
+		expect(adaptiveLeftWidth([optWithDesc("A", "d".repeat(300))], 2, 120)).toBe(Math.floor(120 * MAX_LEFT_RATIO));
+	});
+
+	it("floors at MIN_LEFT when descriptions are short", () => {
+		expect(adaptiveLeftWidth([optWithDesc("A", "short")], 2, 200)).toBe(MIN_LEFT);
+	});
+
+	it("description width is measured in display columns (CJK counts double)", () => {
+		// 26 Han chars → 52 display columns → half-target 26 → column 26 + 7 = 33.
+		expect(adaptiveLeftWidth([optWithDesc("选项", "汉".repeat(26))], 2, 200)).toBe(26 + OVERHEAD);
+	});
 });
 
 describe("crossTabMaxLeftWidth", () => {
@@ -84,132 +121,79 @@ describe("crossTabMaxLeftWidth", () => {
 	});
 });
 
-describe("previewSourceWidth", () => {
+describe("previewRigidWidth", () => {
 	it("returns 0 when no option has a preview", () => {
-		expect(previewSourceWidth(question([{ label: "A" }, { label: "B" }]))).toBe(0);
+		expect(previewRigidWidth(question([{ label: "A" }, { label: "B" }]))).toBe(0);
 	});
 
-	it("returns max source-line width for single-line preview", () => {
+	it("returns 0 for prose-only previews — markdown wraps prose to any width", () => {
+		const q = question([{ label: "A", preview: "a plain sentence\nanother prose line" }]);
+		expect(previewRigidWidth(q)).toBe(0);
+	});
+
+	it("measures the widest line inside fenced code blocks", () => {
+		const q = question([{ label: "A", preview: "```\nshort\n" + "x".repeat(80) + "\nshorter\n```" }]);
+		expect(previewRigidWidth(q)).toBe(80);
+	});
+
+	it("measures table rows outside fences", () => {
+		const q = question([{ label: "A", preview: "intro prose\n| col | col |" }]);
+		expect(previewRigidWidth(q)).toBe("| col | col |".length);
+	});
+
+	it("takes the max across all options", () => {
 		const q = question([
-			{ label: "A", preview: "short" },
-			{ label: "B", preview: "a longer line here" },
+			{ label: "A", preview: "```\n" + "y".repeat(30) + "\n```" },
+			{ label: "B", preview: "```\n" + "z".repeat(60) + "\n```" },
 		]);
-		expect(previewSourceWidth(q)).toBe("a longer line here".length);
+		expect(previewRigidWidth(q)).toBe(60);
 	});
 
-	it("returns max across multiple lines in a single preview", () => {
-		const q = question([{ label: "A", preview: "short\na much longer line here" }]);
-		expect(previewSourceWidth(q)).toBe("a much longer line here".length);
+	it("ignores trailing spaces on rigid lines", () => {
+		const q = question([{ label: "A", preview: "```\ncode   \n```" }]);
+		expect(previewRigidWidth(q)).toBe(4);
 	});
 
-	it("returns max across all options' previews", () => {
-		const q = question([
-			{ label: "A", preview: "tiny" },
-			{ label: "B", preview: "small\na very wide preview line" },
-		]);
-		expect(previewSourceWidth(q)).toBe("a very wide preview line".length);
-	});
-
-	it("skips options without preview", () => {
-		const q = question([{ label: "A" }, { label: "B", preview: "wide content" }]);
-		expect(previewSourceWidth(q)).toBe("wide content".length);
+	it("measures indented fenced lines at their full visible width", () => {
+		const q = question([{ label: "A", preview: "```\n    " + "x".repeat(10) + "\n```" }]);
+		expect(previewRigidWidth(q)).toBe(14);
 	});
 });
 
-describe("crossTabPreviewBudget", () => {
-	const OVERHEAD = 5; // BORDER_HORIZONTAL_OVERHEAD(2) + 2*BORDER_INNER_PADDING_HORIZONTAL(2) + PREVIEW_PADDING_LEFT(1)
-
-	it("floors at MIN_PREVIEW_WIDTH when no question has previews", () => {
-		const qs = [question([{ label: "A" }]), question([{ label: "B" }])];
-		expect(crossTabPreviewBudget(qs, 120)).toBe(MIN_PREVIEW_WIDTH);
-	});
-
-	it("returns preview content width + overhead when previews are present", () => {
-		const qs = [question([{ label: "A", preview: "x".repeat(50) }])];
-		expect(crossTabPreviewBudget(qs, 200)).toBe(50 + OVERHEAD);
-	});
-
-	it("takes the max across all questions", () => {
-		const qs = [question([{ label: "A", preview: "short" }]), question([{ label: "B", preview: "x".repeat(80) }])];
-		expect(crossTabPreviewBudget(qs, 200)).toBe(80 + OVERHEAD);
-	});
-
-	it("ceilings at paneWidth - GAP - MIN_LEFT", () => {
-		const qs = [question([{ label: "A", preview: "x".repeat(200) }])];
-		const maxContent = 120 - PREVIEW_COLUMN_GAP - MIN_LEFT;
-		expect(crossTabPreviewBudget(qs, 120)).toBe(maxContent + OVERHEAD);
-	});
-
-	it("is permutation-invariant", () => {
-		const a = question([{ label: "A", preview: "x".repeat(30) }]);
-		const b = question([{ label: "B", preview: "x".repeat(70) }]);
-		expect(crossTabPreviewBudget([a, b], 120)).toBe(crossTabPreviewBudget([b, a], 120));
-	});
-});
-
-describe("crossTabLeftWidthWithDonation", () => {
+describe("crossTabLeftWidth", () => {
 	// 26-char label → labelDriven = 26 + 5 (prefix) + 2 (confirmed) = 33 > MIN_LEFT(30).
 	const LONG_LABEL = "Verbose Descriptive Option";
 
-	it("short labels still donate newly available width", () => {
+	it("short labels keep the column at MIN_LEFT on a wide pane — no slack donation", () => {
 		const tabs = [{ multiSelect: false }];
 		const itemsByTab = [[opt("npm"), opt("yarn")]];
-		const qs = [
-			question([
-				{ label: "npm", preview: "npm install" },
-				{ label: "yarn", preview: "yarn install" },
-			]),
-		];
-		const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, 200);
-		expect(labelDriven).toBe(MIN_LEFT);
-		expect(crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 200)).toBe(Math.floor(200 * MAX_LEFT_RATIO));
+		expect(crossTabLeftWidth(tabs, itemsByTab, 200)).toBe(MIN_LEFT);
 	});
 
-	it("donation uses the tighter of the ratio and preview-safety ceilings", () => {
+	it("returns the cross-tab label-driven width — previews no longer participate", () => {
 		const tabs = [{ multiSelect: false }];
 		const itemsByTab = [[opt(LONG_LABEL), opt("B")]];
-		const qs = [question([{ label: LONG_LABEL }, { label: "B" }])];
-		const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, 120);
-		expect(labelDriven).toBeGreaterThan(MIN_LEFT);
-		const result = crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 120);
-		const previewSafetyCeiling = 120 - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH;
-		const ratioCeiling = Math.floor(120 * MAX_LEFT_RATIO);
-		expect(result).toBe(Math.min(previewSafetyCeiling, ratioCeiling));
+		expect(crossTabLeftWidth(tabs, itemsByTab, 200)).toBe(crossTabMaxLeftWidth(tabs, itemsByTab, 200));
 	});
 
-	it("long labels + narrow previews → slack donation engaged", () => {
+	it("respects MAX_LEFT_RATIO ceiling — never exceeds floor(paneWidth * 0.5)", () => {
+		const tabs = [{ multiSelect: false }];
+		const itemsByTab = [[opt("x".repeat(120)), opt("y")]];
+		expect(crossTabLeftWidth(tabs, itemsByTab, 120)).toBe(Math.floor(120 * MAX_LEFT_RATIO));
+	});
+
+	it("re-clamps the MIN_LEFT floor to the preview-safety ceiling on narrow panes", () => {
+		const tabs = [{ multiSelect: false }];
+		const itemsByTab = [[opt("x".repeat(60)), opt("y")]];
+		// At width 70: adaptiveLeftWidth's own floor keeps 30, but the side-by-side
+		// safety net only allows 70 - GAP(2) - MIN_PREVIEW_WIDTH(45) = 23.
+		expect(crossTabLeftWidth(tabs, itemsByTab, 70)).toBe(70 - PREVIEW_COLUMN_GAP - MIN_PREVIEW_WIDTH);
+	});
+
+	it("respects MIN_PREVIEW_WIDTH ceiling — right column never below MIN_PREVIEW_WIDTH", () => {
 		const tabs = [{ multiSelect: false }];
 		const itemsByTab = [[opt(LONG_LABEL), opt("B")]];
-		const qs = [question([{ label: LONG_LABEL, preview: "tiny" }, { label: "B" }])];
-		const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, 120);
-		const donated = crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 120);
-		expect(donated).toBeGreaterThan(labelDriven);
-	});
-
-	it("long labels + any wide preview → reverts to label-driven (donation suppressed)", () => {
-		const tabs = [{ multiSelect: false }];
-		const itemsByTab = [[opt(LONG_LABEL), opt("B")]];
-		const qs = [question([{ label: LONG_LABEL, preview: "x".repeat(100) }])];
-		const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, 120);
-		expect(crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 120)).toBe(labelDriven);
-	});
-
-	it("any wide preview anywhere suppresses donation across all tabs", () => {
-		const tabs = [{ multiSelect: false }, { multiSelect: false }];
-		const itemsByTab = [[opt(LONG_LABEL)], [opt("B")]];
-		const qs = [
-			question([{ label: LONG_LABEL, preview: "tiny" }]),
-			question([{ label: "B", preview: "x".repeat(100) }]),
-		];
-		const labelDriven = crossTabMaxLeftWidth(tabs, itemsByTab, 120);
-		expect(crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 120)).toBe(labelDriven);
-	});
-
-	it("respects MIN_PREVIEW_WIDTH ceiling — right column never below MIN_PREVIEW_WIDTH when donating", () => {
-		const tabs = [{ multiSelect: false }];
-		const itemsByTab = [[opt(LONG_LABEL), opt("B")]];
-		const qs = [question([{ label: LONG_LABEL, preview: "tiny" }])];
-		const result = crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 120);
+		const result = crossTabLeftWidth(tabs, itemsByTab, 120);
 		const rightWidth = 120 - result - PREVIEW_COLUMN_GAP;
 		expect(rightWidth).toBeGreaterThanOrEqual(MIN_PREVIEW_WIDTH);
 	});
@@ -218,28 +202,18 @@ describe("crossTabLeftWidthWithDonation", () => {
 		const tabs = [{ multiSelect: false }, { multiSelect: false }];
 		const a = [opt(LONG_LABEL)];
 		const b = [opt("B")];
-		const qs = [
-			question([{ label: LONG_LABEL, preview: "tiny" }]),
-			question([{ label: "B", preview: "x".repeat(60) }]),
-		];
-		expect(crossTabLeftWidthWithDonation(tabs, [a, b], qs, 120)).toBe(
-			crossTabLeftWidthWithDonation(tabs, [b, a], qs, 120),
-		);
+		expect(crossTabLeftWidth(tabs, [a, b], 120)).toBe(crossTabLeftWidth(tabs, [b, a], 120));
 	});
 
-	it("floors at MIN_LEFT even with donation", () => {
+	it("floors at MIN_LEFT", () => {
 		const tabs = [{ multiSelect: false }];
 		const itemsByTab = [[opt(LONG_LABEL)]];
-		const qs = [question([{ label: LONG_LABEL, preview: "tiny" }])];
-		expect(crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 200)).toBeGreaterThanOrEqual(MIN_LEFT);
+		expect(crossTabLeftWidth(tabs, itemsByTab, 200)).toBeGreaterThanOrEqual(MIN_LEFT);
 	});
 
 	it("is deterministic — same args always produce same result", () => {
 		const tabs = [{ multiSelect: false }];
 		const itemsByTab = [[opt("A"), opt("B")]];
-		const qs = [question([{ label: "A", preview: "medium content" }])];
-		const first = crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 120);
-		const second = crossTabLeftWidthWithDonation(tabs, itemsByTab, qs, 120);
-		expect(first).toBe(second);
+		expect(crossTabLeftWidth(tabs, itemsByTab, 120)).toBe(crossTabLeftWidth(tabs, itemsByTab, 120));
 	});
 });
