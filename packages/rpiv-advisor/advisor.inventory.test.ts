@@ -1,77 +1,113 @@
-import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { getInventoryMessage, stableStringify } from "./advisor/index.ts";
+import { getInventoryMessage, MAX_INVENTORY_CHARS } from "./advisor/index.ts";
 
-const tool = (overrides: Partial<ToolInfo>): ToolInfo =>
-	({
-		name: "t",
-		description: "desc",
-		parameters: { type: "object", properties: {}, required: [] },
-		sourceInfo: { path: "/some/path" },
-		...overrides,
-	}) as ToolInfo;
+const textOf = (message: NonNullable<ReturnType<typeof getInventoryMessage>>): string =>
+	(message.content[0] as { type: "text"; text: string }).text;
 
-describe("stableStringify", () => {
-	it("returns JSON.stringify for primitives + null", () => {
-		expect(stableStringify(null)).toBe("null");
-		expect(stableStringify(42)).toBe("42");
-		expect(stableStringify("x")).toBe('"x"');
-		expect(stableStringify(true)).toBe("true");
+describe("getInventoryMessage — active tool names", () => {
+	it("returns undefined when no tool is active", () => {
+		expect(getInventoryMessage([])).toBeUndefined();
 	});
-	it("sorts object keys recursively", () => {
-		expect(stableStringify({ b: 1, a: { d: 4, c: 3 } })).toBe('{"a":{"c":3,"d":4},"b":1}');
+	it("returns undefined when only the advisor itself is active", () => {
+		expect(getInventoryMessage(["advisor"])).toBeUndefined();
 	});
-	it("drops undefined properties in objects", () => {
-		expect(stableStringify({ a: 1, b: undefined })).toBe('{"a":1}');
+	it("lists active names only, with no descriptions or parameter schemas", () => {
+		const text = textOf(getInventoryMessage(["read"])!);
+		expect(text).toContain("active tool names");
+		expect(text).toContain("- read");
+		expect(text).not.toContain("Parameters");
+		expect(text).not.toContain("description");
 	});
-	it("emits null for undefined in arrays", () => {
-		expect(stableStringify([1, undefined, 2])).toBe("[1,null,2]");
+	it("sorts names so the cache prefix is order-independent", () => {
+		const text = textOf(getInventoryMessage(["zeta", "alpha", "read"])!);
+		expect(text.indexOf("- alpha")).toBeLessThan(text.indexOf("- read"));
+		expect(text.indexOf("- read")).toBeLessThan(text.indexOf("- zeta"));
 	});
-	it("produces same string for differently-inserted same-key objects", () => {
-		expect(stableStringify({ b: 1, a: 2 })).toBe(stableStringify({ a: 2, b: 1 }));
+	it("omits the advisor itself from the inventory", () => {
+		const text = textOf(getInventoryMessage(["advisor", "bash"])!);
+		expect(text).toContain("- bash");
+		expect(text).not.toContain("- advisor");
+	});
+	it("deduplicates repeated active names", () => {
+		const text = textOf(getInventoryMessage(["read", "read", "bash"])!);
+		expect(text.split("\n").filter((line) => line === "- read")).toHaveLength(1);
+		expect(text).not.toContain("omitted");
 	});
 });
 
 describe("getInventoryMessage — caching", () => {
-	it("returns undefined when tool list is empty", () => {
-		expect(getInventoryMessage([])).toBeUndefined();
-	});
-	it("returns the same reference on repeated calls with same-name-set", () => {
-		const tools = [tool({ name: "a" }), tool({ name: "b" })];
-		const first = getInventoryMessage(tools);
-		const second = getInventoryMessage(tools);
+	it("returns the same reference on repeated calls with the same active set", () => {
+		const first = getInventoryMessage(["a", "b"]);
+		const second = getInventoryMessage(["a", "b"]);
 		expect(second).toBe(first);
 	});
-	it("returns the same reference when tool order changes", () => {
-		const first = getInventoryMessage([tool({ name: "a" }), tool({ name: "b" })]);
-		const second = getInventoryMessage([tool({ name: "b" }), tool({ name: "a" })]);
+	it("returns the same reference when the active set order changes", () => {
+		const first = getInventoryMessage(["a", "b"]);
+		const second = getInventoryMessage(["b", "a"]);
 		expect(second).toBe(first);
 	});
-	it("returns the same reference when sourceInfo differs (per :187-192 omission)", () => {
-		const first = getInventoryMessage([tool({ name: "a", sourceInfo: { path: "/p1" } as never })]);
-		const second = getInventoryMessage([tool({ name: "a", sourceInfo: { path: "/p2" } as never })]);
-		expect(second).toBe(first);
-	});
-	it("returns the same reference when description differs (name-only signature)", () => {
-		const first = getInventoryMessage([tool({ name: "a", description: "d1" })]);
-		const second = getInventoryMessage([tool({ name: "a", description: "d2" })]);
-		expect(second).toBe(first);
-	});
-	it("returns a DIFFERENT reference when tool-name set changes", () => {
-		const first = getInventoryMessage([tool({ name: "a" })]);
-		const second = getInventoryMessage([tool({ name: "a" }), tool({ name: "b" })]);
+	it("returns a DIFFERENT reference when the active set changes", () => {
+		const first = getInventoryMessage(["a"]);
+		const second = getInventoryMessage(["a", "b"]);
 		expect(second).not.toBe(first);
 	});
 	it("rebuilds after deleting the globalThis cache", () => {
-		const first = getInventoryMessage([tool({ name: "a" })]);
+		const first = getInventoryMessage(["a"]);
 		delete (globalThis as Record<symbol, unknown>)[Symbol.for("rpiv-advisor")];
-		const second = getInventoryMessage([tool({ name: "a" })]);
+		const second = getInventoryMessage(["a"]);
 		expect(second).not.toBe(first);
 	});
-	it("renders inventory body with sorted stableStringified params", () => {
-		const m = getInventoryMessage([tool({ name: "b", parameters: { b: 1, a: 2 } as never }), tool({ name: "a" })]);
-		const text = (m!.content[0] as { type: "text"; text: string }).text;
-		expect(text.indexOf("### a")).toBeLessThan(text.indexOf("### b"));
-		expect(text).toContain('{"a":2,"b":1}');
+});
+
+describe("getInventoryMessage — size budget", () => {
+	it("caps the name list at MAX_INVENTORY_CHARS on whole-name boundaries and reports the exact omission count", () => {
+		const names = Array.from({ length: 623 }, (_, i) => `tool-${String(i).padStart(4, "0")}-${"x".repeat(40)}`);
+		const text = textOf(getInventoryMessage(names)!);
+		const lines = text.split("\n").filter((line) => line.startsWith("- "));
+
+		expect(lines.length).toBeGreaterThan(0);
+		const renderedChars = lines.reduce((total, line) => total + line.length + 1, 0);
+		expect(renderedChars).toBeLessThanOrEqual(MAX_INVENTORY_CHARS);
+		for (const line of lines) expect(names).toContain(line.slice(2));
+
+		const marker = /\(\+(\d+) more active tool names omitted\)/.exec(text);
+		expect(marker).not.toBeNull();
+		expect(Number(marker?.[1])).toBe(names.length - lines.length);
+	});
+	it("omits a single name longer than the budget without exceeding it or cutting the name", () => {
+		const oversized = "x".repeat(MAX_INVENTORY_CHARS + 1);
+		const text = textOf(getInventoryMessage([oversized, "read"])!);
+		expect(text).not.toContain(oversized);
+		expect(text).toContain("- read");
+		expect(text).toContain("(+1 more active tool names omitted)");
+		const lines = text.split("\n").filter((line) => line.startsWith("- "));
+		const renderedChars = lines.reduce((total, line) => total + line.length + 1, 0);
+		expect(renderedChars).toBeLessThanOrEqual(MAX_INVENTORY_CHARS);
+	});
+	it("keeps the cached prefix when only already-omitted names change, and rebuilds when the omission count changes", () => {
+		const included = Array.from({ length: 10 }, (_, i) => `a-${String(i).padStart(2, "0")}`);
+		const longName = (tag: string) => `z-${tag}-${"x".repeat(5000)}`;
+		const omitted = ["b", "c", "d", "e", "f"];
+
+		const first = getInventoryMessage([...included, ...omitted.map(longName)]);
+		const changed = getInventoryMessage([
+			...included,
+			longName("b"),
+			longName("c"),
+			longName("d"),
+			longName("replaced"),
+			longName("f"),
+		]);
+		expect(changed).toBe(first);
+		const text = textOf(first!);
+		expect(text).not.toContain("z-d-");
+		expect(text).toContain("(+3 more active tool names omitted)");
+
+		const grown = getInventoryMessage([...included, ...omitted.map(longName), longName("extra")]);
+		expect(grown).not.toBe(first);
+	});
+	it("adds no omission marker when every name fits", () => {
+		const text = textOf(getInventoryMessage(["a", "b"])!);
+		expect(text).not.toContain("omitted");
 	});
 });

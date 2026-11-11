@@ -38,7 +38,7 @@ export function registerAdvisorTool(pi: ExtensionAPI): void {
         promptSnippet: guidance.promptSnippet ?? DEFAULT_PROMPT_SNIPPET, promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
         parameters: Type.Object({}),                  // zero params — branch comes from ctx
         execute: async (_id, _params, signal, onUpdate, ctx) =>
-            executeAdvisor(ctx, pi, signal, onUpdate), // pi threaded for getAllTools()
+            executeAdvisor(ctx, pi, signal, onUpdate), // pi threaded for getActiveTools()
     });
 }
 ```
@@ -61,14 +61,14 @@ export const ADVISOR_SYSTEM_PROMPT = readFileSync(fileURLToPath(
     new URL("../prompts/advisor-system.txt", import.meta.url)), "utf-8").trimEnd(); // trimEnd() keeps cache prefix stable
 ```
 
-## Side-Call Shape (executor branch + tool inventory → reviewer model)
+## Side-Call Shape (executor branch + active tool names → reviewer model)
 ```typescript
 // execute.ts — buildSessionContext preserves Pi's RESOLVED LLM context (compaction + branch summaries).
 const { messages: sessionMessages } = buildSessionContext(ctx.sessionManager.getEntries(), ctx.sessionManager.getLeafId());
 // stripToolDeclarations: Pi >= 1.0 transcripts carry the executor's tool loadout as toolsAdded/toolsRemoved on system messages, and providers
 // resolve request tools from them — `tools: []` alone leaves them callable (empty `toolUse` replies, #295). Prompt text is kept.
 const branchMessages = ensureUserTailForAdvisor(stripInflightAdvisorCall(stripToolDeclarations(convertToLlm(sessionMessages))));
-const inventoryMessage = getInventoryMessage(pi.getAllTools()); // signature-keyed cache on a globalThis Symbol — rebuilds only when the tool-name set changes
+const inventoryMessage = getInventoryMessage(pi.getActiveTools()); // Pi's active set, names only — inactive tools (incl. deferred not yet activated) absent, and some active names may be hidden from the provider request; advisor excluded, 12k name-list cap; cache keyed on the rendered text on a globalThis Symbol — rebuilds only when the sent prefix changes
 const messages = inventoryMessage ? [inventoryMessage, ...branchMessages] : branchMessages;
 const runtime = getRuntimeCompleteSimple(ctx.modelRegistry); // resolved BEFORE the try and the missing-key guard — OAuth hosts resolve ok:true with
 // no literal apiKey, so a missing key is fatal only when the facade is also absent (!auth.apiKey && !runtime). The resolver never throws (returns

@@ -1,17 +1,28 @@
 /**
- * inventory — stable tool-inventory Message for advisor prompt-cache parity.
+ * inventory — stable active-tool-name Message for advisor prompt-cache parity.
  *
  * globalThis-keyed (Symbol.for("rpiv-advisor")) so the cache survives module
  * re-import on /new, /fork, /resume (mirrors rpiv-btw/btw.ts). Single-slot — the
- * Pi tool registry is process-scoped, so per-session keying would be redundant;
- * the cache invalidates only when the set of registered tool names changes. Also
- * exposes the key-sorted JSON serializer (stableStringify) the block is built from.
+ * active tool set is process-scoped, so per-session keying would be redundant;
+ * the cache invalidates only when the rendered prefix actually changes. Names
+ * only: schemas and descriptions are deliberately omitted, so the block stays
+ * small, and an inactive tool — including a deferred tool that was not activated — never reads as active.
  */
 
 import type { Message } from "@earendil-works/pi-ai";
-import type { ToolInfo } from "@earendil-works/pi-coding-agent";
+import { ADVISOR_TOOL_NAME } from "./messages.ts";
 
 const ADVISOR_STATE_KEY = Symbol.for("rpiv-advisor");
+
+// Upper bound on the rendered name list. The fixed header and the omission
+// marker sit outside it, so the message stays close to this budget even when
+// the executor has hundreds of long tool names.
+export const MAX_INVENTORY_CHARS = 12_000;
+
+const INVENTORY_HEADER = `## Active Executor Tools
+
+The executor's active tool names (Pi's active set; names only, no schemas) are listed below. This is not the executor's complete reachable capability set, and not an exact list of what the provider request declares: inactive tools (including deferred tools not yet activated) are not listed, while some active names may be hidden from the provider request, and indirect capabilities may still be reachable through codemode scripts or tool search. If you need evidence that a tool exists or how to call it, ask the executor to check its own tool list instead of assuming.
+`;
 
 interface AdvisorState {
 	inventorySignature?: string;
@@ -28,53 +39,42 @@ function getAdvisorRuntimeState(): AdvisorState {
 	return state;
 }
 
-// Recursive key-sorted JSON serializer — matches JSON.stringify semantics
-// (drops `undefined` in objects, emits `null` for `undefined` in arrays) but
-// guarantees stable key ordering across V8 insertion-order variation. Required
-// because nested TypeBox schemas may be authored in any order, and prompt
-// caching is byte-sensitive.
-export function stableStringify(value: unknown): string {
-	if (value === null || typeof value !== "object") {
-		return JSON.stringify(value);
+// Adds whole names in sorted order, skipping a name that would cross the
+// character budget rather than cutting it — a truncated tool name would be
+// worse than no name. Omitted names are counted for the explicit marker.
+function buildInventoryBlock(names: readonly string[]): { block: string; omitted: number } {
+	const lines: string[] = [];
+	let used = 0;
+	for (const name of names) {
+		const line = `- ${name}`;
+		const cost = line.length + 1; // + the newline joining it to the next line
+		if (used + cost > MAX_INVENTORY_CHARS) continue;
+		lines.push(line);
+		used += cost;
 	}
-	if (Array.isArray(value)) {
-		return `[${value.map((v) => (v === undefined ? "null" : stableStringify(v))).join(",")}]`;
-	}
-	const obj = value as Record<string, unknown>;
-	const entries: string[] = [];
-	for (const k of Object.keys(obj).sort()) {
-		const v = obj[k];
-		if (v === undefined) continue;
-		entries.push(`${JSON.stringify(k)}:${stableStringify(v)}`);
-	}
-	return `{${entries.join(",")}}`;
+	return { block: lines.join("\n"), omitted: names.length - lines.length };
 }
 
-function buildInventoryBlock(tools: ToolInfo[]): string {
-	// Omit `sourceInfo` — its `path` field is install-location-dependent and
-	// would bust cache parity across machines/reinstalls.
-	return tools
-		.map((t) => `### ${t.name}\n${t.description}\n\nParameters: ${stableStringify(t.parameters)}`)
-		.join("\n\n---\n\n");
-}
-
-// Returns `undefined` when the registry is empty (no extensions loaded) so
+// Returns `undefined` when no tool is active (or only the advisor itself) so
 // callers can skip prepending an empty block that would still cost a cache unit.
-export function getInventoryMessage(tools: ToolInfo[]): Message | undefined {
-	if (tools.length === 0) return undefined;
-	const sorted = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-	const signature = sorted.map((t) => t.name).join("|");
+export function getInventoryMessage(activeToolNames: readonly string[]): Message | undefined {
+	const sorted = [...new Set(activeToolNames)].filter((name) => name !== ADVISOR_TOOL_NAME).sort();
+	if (sorted.length === 0) return undefined;
+	const { block, omitted } = buildInventoryBlock(sorted);
+	const marker = omitted > 0 ? `\n\n(+${omitted} more active tool names omitted)` : "";
+	const text = `${INVENTORY_HEADER}\n${block}${marker}`;
 	const state = getAdvisorRuntimeState();
-	if (state.inventorySignature === signature && state.inventoryMessage) {
+	// Cache on the rendered text, not the full active-name list: a change confined
+	// to names the budget already omitted cannot alter the sent prefix.
+	if (state.inventorySignature === text && state.inventoryMessage) {
 		return state.inventoryMessage;
 	}
-	const text = `## Available Executor Tools\n\n${buildInventoryBlock(sorted)}`;
 	const message: Message = {
 		role: "user",
 		content: [{ type: "text", text }],
 		timestamp: Date.now(),
 	};
-	state.inventorySignature = signature;
+	state.inventorySignature = text;
 	state.inventoryMessage = message;
 	return message;
 }
