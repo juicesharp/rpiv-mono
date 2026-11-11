@@ -95,6 +95,7 @@ export class TodoOverlay {
 			this.hiddenCompletedTaskIds.add(taskId);
 		}
 		this.completedTaskIdsPendingHide.clear();
+		// update(), not a bare repaint: hiding the last row must unregister the widget.
 		this.update();
 	}
 
@@ -188,7 +189,7 @@ export class TodoOverlay {
 			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));
 		}
 
-		const newlyDisplayedCompletedTaskIds = layout.visible
+		const newlyDisplayedCompletedTaskIds = overlayTasks
 			.filter(
 				(task) =>
 					task.status === "completed" &&

@@ -45,19 +45,18 @@ async function completedParent() {
 }
 
 describe("completed todo visibility", () => {
-	it("hides displayed completions on the next foreground turn within the same agent run", async () => {
+	it("hides displayed completions when the foreground session starts its next agent run", async () => {
 		const { emit, widget } = await completedParent();
-		await emit("turn_start");
+		await emit("agent_start");
 		expect(widget.render(100)).toEqual([]);
 	});
 
-	it("does not let child agent or turn starts hide foreground completions", async () => {
+	it("does not let a child session's agent start hide foreground completions", async () => {
 		const { emit, widget } = await completedParent();
 		const child = createMockCtx({ hasUI: true, sessionId: "child" });
 		await emit("agent_start", child);
-		await emit("turn_start", child);
 		expect(widget.render(100).join("\n")).toContain("finished parent task");
-		await emit("turn_start");
+		await emit("agent_start");
 		expect(widget.render(100)).toEqual([]);
 	});
 
@@ -75,33 +74,5 @@ describe("completed todo visibility", () => {
 		overlay.hideCompletedTasksFromPreviousTurn();
 		expect(overlay.isRegistered()).toBe(false);
 		expect(ui.setWidget).toHaveBeenLastCalledWith("rpiv-todos", undefined);
-	});
-
-	it("keeps overflow completions available until they have actually been displayed", () => {
-		setActiveRenderSession("parent");
-		commitState("parent", {
-			tasks: Array.from({ length: 12 }, (_, index) => ({
-				id: index + 1,
-				subject: `done-${index + 1}`,
-				status: "completed" as const,
-			})),
-			nextId: 13,
-		});
-		let expanded = false;
-		const ui = createMockUI({ getToolsExpanded: () => expanded }) as unknown as ExtensionUIContext;
-		const overlay = new TodoOverlay();
-		overlay.setUICtx(ui);
-		overlay.update();
-		const widget = mount(ui);
-		const first = widget.render(100).join("\n");
-		expect(first).toContain("done-10");
-		expect(first).not.toContain("done-11");
-		overlay.hideCompletedTasksFromPreviousTurn();
-		expanded = true;
-		const next = widget.render(100).join("\n");
-		expect(next).toContain("done-11");
-		expect(next).toContain("done-12");
-		expect(next).not.toContain("done-10");
-		expect(overlay.isRegistered()).toBe(true);
 	});
 });

@@ -219,25 +219,18 @@ describe("TodoOverlay — overflow collapse", () => {
 		expect(summary).toContain("2 pending");
 	});
 
-	it("hides overflowed completions only after expansion has displayed them", async () => {
+	it("hides overflowed completed tasks on the next agent turn too", async () => {
 		const actions: Array<{ action: TaskAction; [k: string]: unknown }> = [];
 		for (let i = 1; i <= 11; i++) actions.push({ action: "create", subject: `p${i}` });
 		for (let i = 12; i <= 16; i++) {
 			actions.push({ action: "create", subject: `c${i}` });
 			actions.push({ action: "update", id: i, status: "completed" });
 		}
-		let expanded = false;
-		const { widget, overlay } = await setup(actions, { getToolsExpanded: () => expanded });
+		const { widget, overlay } = await setup(actions);
 		const beforeNextTurn = widget.render(200).join("\n");
 		expect(beforeNextTurn).toContain("Todos (5/16)");
 		expect(beforeNextTurn).toContain("+6 more");
 		expect(beforeNextTurn).toContain("5 completed");
-		overlay.hideCompletedTasksFromPreviousTurn();
-		expect(widget.render(200).join("\n")).toContain("Todos (5/16)");
-		expanded = true;
-		const expandedOutput = widget.render(200).join("\n");
-		expect(expandedOutput).toContain("c12");
-		expect(expandedOutput).toContain("c16");
 		overlay.hideCompletedTasksFromPreviousTurn();
 		const afterNextTurn = widget.render(200).join("\n");
 		expect(afterNextTurn).toContain("Todos (0/11)");
