@@ -1,7 +1,8 @@
 import { execSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EXPECTED_VCS_STATUS_ENTRIES, hasJj, seedJjStatusWorkspace } from "@juicesharp/rpiv-test-utils/vcs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CollectContext, SnapshotContext } from "../../output-spec.ts";
 import { parsePorcelain, type WorkspaceDiffSnapshot, workspaceDiffCollector } from "./workspace-diff.ts";
@@ -57,6 +58,11 @@ describe("parsePorcelain", () => {
 	it("strips wrapping quotes from cquote-escaped paths", () => {
 		const map = parsePorcelain('?? "quoted name.txt"');
 		expect(map.get("quoted name.txt")).toBe("??");
+	});
+
+	it("decodes a cquote-escaped path to its on-disk spelling", () => {
+		const map = parsePorcelain('?? "caf\\303\\251.ts"');
+		expect(map.get("café.ts")).toBe("??");
 	});
 
 	it("splits the rename arrow before stripping quotes (a quoted rename keys the unquoted new path)", () => {
@@ -115,6 +121,20 @@ describe.runIf(hasGit)("workspaceDiffCollector", () => {
 		).toEqual(["new.txt"]);
 	});
 
+	it("collects a file a stage created inside a pre-existing untracked directory", async () => {
+		initRepo(tmpDir);
+		mkdirSync(join(tmpDir, "nested"), { recursive: true });
+		writeFileSync(join(tmpDir, "nested/preexisting.txt"), "x");
+		const collector = workspaceDiffCollector();
+		const snapshot = await collector.snapshot?.(snapshotCtxOf(tmpDir));
+		writeFileSync(join(tmpDir, "nested/created.txt"), "y");
+
+		const result = await collector.collect(collectCtxOf(tmpDir, snapshot));
+		expect(
+			result.kind === "ok" && result.artifacts.map((a) => (a.handle.kind === "fs" ? a.handle.path : "")),
+		).toEqual(["nested/created.txt"]);
+	});
+
 	it("applies the optional filter", async () => {
 		initRepo(tmpDir);
 		const collector = workspaceDiffCollector({ filter: (p) => p.endsWith(".md") });
@@ -146,6 +166,43 @@ describe.runIf(hasGit)("workspaceDiffCollector", () => {
 		rmSync(tmpDir, { recursive: true, force: true });
 		const result = await collector.collect(collectCtxOf(tmpDir, snapshot));
 		expect(result.kind).toBe("fatal");
-		expect(result.kind === "fatal" && result.message).toMatch(/worked at snapshot time but failed after/);
+		expect(result.kind === "fatal" && result.message).toMatch(/git status worked at snapshot time but failed after/);
+	});
+});
+
+describe.runIf(hasJj())("workspaceDiffCollector — jj workspace parity", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-wd-jj-"));
+		seedJjStatusWorkspace(tmpDir);
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("collects the seeded working-copy entries with the same XY codes git produces", async () => {
+		// Rewind the seeded working copy (back to its baseline commit) so the
+		// snapshot sees a clean tree, then re-apply the fixture's edits as
+		// "the stage" — the collected delta is exactly the seeded entry set.
+		execSync("jj restore", { cwd: tmpDir, stdio: "ignore" });
+		const collector = workspaceDiffCollector();
+		const snapshot = await collector.snapshot?.(snapshotCtxOf(tmpDir));
+		writeFileSync(join(tmpDir, "modified.ts"), "two\n");
+		rmSync(join(tmpDir, "deleted.ts"));
+		rmSync(join(tmpDir, "old.ts"));
+		writeFileSync(join(tmpDir, "new.ts"), "renamed\n");
+		writeFileSync(join(tmpDir, "added.ts"), "new\n");
+
+		const result = await collector.collect(collectCtxOf(tmpDir, snapshot));
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		const entries = result.artifacts
+			.map((a) => ({
+				path: a.handle.kind === "fs" ? a.handle.path : "",
+				xy: (a.meta?.gitStatus as string) ?? "",
+			}))
+			.sort((a, b) => a.path.localeCompare(b.path));
+		expect(entries).toEqual([...EXPECTED_VCS_STATUS_ENTRIES].sort((a, b) => a.path.localeCompare(b.path)));
 	});
 });
