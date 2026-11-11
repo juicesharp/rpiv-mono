@@ -21,8 +21,9 @@
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
+import { readAutoCollapse, saveAutoCollapse } from "./auto-collapse.ts";
 import { COLLAPSE_KEY_OFF, resolveCollapseKey } from "./config.ts";
-import { I18N_NAMESPACE } from "./state/i18n-bridge.ts";
+import { I18N_NAMESPACE, t } from "./state/i18n-bridge.ts";
 import { replayFromBranch } from "./state/replay.ts";
 import {
 	clearActiveRenderSession,
@@ -127,6 +128,14 @@ function formatError(e: unknown): string {
 
 export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = () => import("./todo-overlay.ts")) {
 	let todoOverlay: TodoOverlay | undefined;
+	let autoCollapse = false;
+	try {
+		autoCollapse = readAutoCollapse();
+	} catch (error) {
+		console.warn(
+			t("auto.readError", "Could not read auto-collapse setting: {error}").replace("{error}", formatError(error)),
+		);
+	}
 	const loadTodoOverlay = makeTodoOverlayLoader(importOverlay);
 	let uiCtx: ExtensionUIContext | undefined;
 	let lifecycleGeneration = 0;
@@ -141,7 +150,10 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 		const { TodoOverlay } = await loadTodoOverlay();
 		if (generation !== lifecycleGeneration || !uiCtx) return;
 
-		todoOverlay ??= new TodoOverlay();
+		if (!todoOverlay) {
+			todoOverlay = new TodoOverlay();
+			todoOverlay.setAutoCollapse(autoCollapse);
+		}
 		todoOverlay.setUICtx(uiCtx);
 		if (resetCompletedDisplayState) todoOverlay.resetCompletedDisplayState();
 		todoOverlay.update();
@@ -149,6 +161,48 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 
 	registerTodoTool(pi);
 	registerTodosCommand(pi);
+	pi.registerCommand("todos-auto", {
+		description: t("auto.description", "Configure automatic collapse while viewing history"),
+		handler: async (args, ctx) => {
+			let value = args.trim().toLowerCase();
+			if (!value && ctx.hasUI) {
+				const on = t("auto.on", "On");
+				const off = t("auto.off", "Off");
+				const title = t("auto.title", "Auto-collapse (current: {state})").replace(
+					"{state}",
+					autoCollapse ? on : off,
+				);
+				const choice = await ctx.ui.select(title, [on, off]);
+				if (!choice) return;
+				value = choice === on ? "on" : "off";
+			}
+			if (value !== "on" && value !== "off") {
+				ctx.ui.notify(t("auto.usage", "Usage: /todos-auto on or /todos-auto off"), "warning");
+				return;
+			}
+			try {
+				const enabled = value === "on";
+				saveAutoCollapse(enabled);
+				autoCollapse = enabled;
+				todoOverlay?.setAutoCollapse(enabled);
+				ctx.ui.notify(
+					t("auto.saved", "Auto-collapse: {state}").replace(
+						"{state}",
+						enabled ? t("auto.on", "On") : t("auto.off", "Off"),
+					),
+					"info",
+				);
+			} catch (error) {
+				ctx.ui.notify(
+					t("auto.saveError", "Could not save auto-collapse setting: {error}").replace(
+						"{error}",
+						formatError(error),
+					),
+					"error",
+				);
+			}
+		},
+	});
 
 	// Collapse/expand hotkey for the todo overlay. The key is resolved once at
 	// factory scope from config (register-once contract: a config change needs

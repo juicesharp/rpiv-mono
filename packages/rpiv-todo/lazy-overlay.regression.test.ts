@@ -162,6 +162,7 @@ it("swallows a failed pre-warm, then retries on the first real update", async ()
 	const overlayUpdate = vi.fn();
 	const healthyModule = {
 		TodoOverlay: class {
+			setAutoCollapse(): void {}
 			setUICtx(): void {}
 			resetCompletedDisplayState(): void {}
 			update(): void {
@@ -226,6 +227,7 @@ it("tool_execution_end swallows a transient load failure and heals on the next e
 	const overlayUpdate = vi.fn();
 	const healthyModule = {
 		TodoOverlay: class {
+			setAutoCollapse(): void {}
 			setUICtx(): void {}
 			resetCompletedDisplayState(): void {}
 			update(): void {

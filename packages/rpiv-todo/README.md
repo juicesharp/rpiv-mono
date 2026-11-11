@@ -39,6 +39,8 @@ input box, updating as work moves:
 
 ![Todo overlay panel: a Todos (2/7) heading above two struck-through completed rows, one in-progress row with its activity label, and four pending rows](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/overlay.jpg)
 
+Click the heading (including `[-]` / `[+]`) to collapse or expand the panel in fullscreen mode. Run `/todos-auto` to enable or disable automatic collapse while viewing history (off by default); returning to the bottom restores the previous manual state. The setting is saved across sessions.
+
 Press `ctrl+shift+t` to collapse the panel to its heading plus a one-line hint,
 and again to expand it. Run `/todos` at any time to print the full list grouped
 by status.

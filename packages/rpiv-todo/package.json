@@ -28,6 +28,7 @@
 	},
 	"files": [
 		"config.ts",
+		"auto-collapse.ts",
 		"index.ts",
 		"locales/",
 		"todo.ts",

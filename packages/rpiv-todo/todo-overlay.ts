@@ -36,6 +36,16 @@ export class TodoOverlay {
 	private hiddenCompletedTaskIds = new Set<number>();
 	private lastNextId: number | undefined;
 	private collapsed = false;
+	private autoCollapse = false;
+	private awayFromBottom = false;
+	private awayOverride: boolean | undefined;
+
+	setAutoCollapse(enabled: boolean): void {
+		this.autoCollapse = enabled;
+		this.awayFromBottom = false;
+		this.awayOverride = undefined;
+		this.tui?.requestRender(this.tui.mode !== "fullscreen");
+	}
 
 	setUICtx(ctx: ExtensionUIContext): void {
 		// Identity-compare so repeat session_start handlers are idempotent;
@@ -68,6 +78,12 @@ export class TodoOverlay {
 					this.tui = tui;
 					return {
 						render: (width: number) => this.renderWidget(this.uiCtx?.theme ?? factoryTheme, width),
+						handleMouse: (event) => {
+							if (event.type !== "click" || event.button !== "left" || event.y !== 0) return;
+							if (event.shift || event.alt || event.ctrl) return;
+							this.toggleCollapse();
+							return { handled: true };
+						},
 						invalidate: () => {
 							// No rendered strings are cached. Pi invalidates on theme changes;
 							// the next render reads uiCtx.theme.
@@ -98,11 +114,14 @@ export class TodoOverlay {
 	}
 
 	toggleCollapse(): void {
-		this.collapsed = !this.collapsed;
-		// Forced full redraw on the collapsed↔expanded height step, mirroring the
-		// lane-dock's requestRender(shapeChanged); distinct from the non-forced
-		// requestRender() refresh paths in update()/hideCompletedTasksFromPreviousTurn().
-		this.tui?.requestRender(true);
+		if (this.awayFromBottom) {
+			this.awayOverride = !(this.awayOverride ?? true);
+		} else {
+			this.collapsed = !this.collapsed;
+		}
+		// Fullscreen force-redraw clears the scroll layout before widget rendering.
+		// Keep it so isFollowingOutput still reflects the actual transcript position.
+		this.tui?.requestRender(this.tui.mode !== "fullscreen");
 	}
 
 	isRegistered(): boolean {
@@ -146,10 +165,19 @@ export class TodoOverlay {
 		const hasActive = selectHasActive(overlayState);
 		const showIds = selectShowTaskIds(overlayState);
 
+		const following = this.tui && "isFollowingOutput" in this.tui ? this.tui.isFollowingOutput : undefined;
+		const away = this.autoCollapse && following === false;
+		if (away !== this.awayFromBottom) this.awayOverride = undefined;
+		this.awayFromBottom = away;
+		const collapsed = away ? (this.awayOverride ?? true) : this.collapsed;
+
 		const headingColor = hasActive ? "accent" : "dim";
 		const headingIcon = hasActive ? "●" : "○";
 		const headingText = `${t("overlay.heading", OVERLAY_HEADING)} (${counts.completed}/${counts.total})`;
-		const heading = truncate(`${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}`);
+		const button = collapsed ? "[+]" : "[-]";
+		const heading = truncate(
+			`${theme.fg(headingColor, button)} ${theme.fg(headingColor, headingIcon)} ${theme.fg(headingColor, headingText)}`,
+		);
 
 		// Collapsed view: just the heading + a dim "└─" expand hint, then the
 		// trailing spacer. Short-circuit before the budget math and the completed-
@@ -160,7 +188,7 @@ export class TodoOverlay {
 		// "off" sentinel is reachable here mid-session (config edited after the
 		// shortcut was bound and the overlay collapsed) — render a static collapsed
 		// label instead of splicing the sentinel into the placeholder.
-		if (this.collapsed) {
+		if (collapsed) {
 			const key = resolveCollapseKey();
 			const hint =
 				key === COLLAPSE_KEY_OFF
@@ -229,6 +257,8 @@ export class TodoOverlay {
 		this.tui = undefined;
 		this.uiCtx = undefined;
 		this.collapsed = false;
+		this.awayFromBottom = false;
+		this.awayOverride = undefined;
 		this.resetCompletedDisplayState();
 	}
 }
