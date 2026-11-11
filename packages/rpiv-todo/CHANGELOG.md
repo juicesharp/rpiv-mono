@@ -10,6 +10,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **`maxWidgetLines: 0` turns the overlay off.** The panel above the editor is no longer drawn, while the `todo` tool and `/todos` keep working. Like any other `maxWidgetLines` value, it applies on the next repaint, without `/reload`.
+- **Clicking the panel heading collapses and expands it.** This helps in terminals where the collapse shortcut never arrives. Only a plain left click on the heading row counts; task rows, modified clicks, drags and the mouse wheel work as before, and it works with `collapseKey: "off"`. It needs Pi's fullscreen TUI mode (`tuiMode: "fullscreen"`, the default), which turns on mouse tracking. Thanks @summer-tt ([#323](https://github.com/juicesharp/rpiv-mono/pull/323)).
 
 ### Fixed
 
