@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_HEARTBEAT_MS, getBlockingTools, getHeartbeatMs } from "./config.ts";
+import { DEFAULT_HEARTBEAT_MS, getBlockingTools, getHeartbeatMs, getPromptBlocking } from "./config.ts";
 import {
 	buildIdlePromptPayload,
 	buildPromptSubmitPayload,
@@ -199,6 +199,7 @@ export default function (pi: ExtensionAPI): void {
 	if (!warp.isWarp || !warp.supportsStructured) return;
 
 	const blockingTools = getBlockingTools();
+	const promptBlocking = getPromptBlocking();
 	heartbeatMs = getHeartbeatMs();
 
 	pi.on("session_start", async (event, ctx) => {
@@ -294,7 +295,7 @@ export default function (pi: ExtensionAPI): void {
 	// `ctx.ui` raised inside a `tool_call` handler on the gated tool — so the
 	// name-based check above can never see them.
 	pi.on("ui_prompt_start", async (_event, ctx) => {
-		if (!turnActive) return; // config modal etc. outside a turn
+		if (!promptBlocking || !turnActive) return; // switched off, or a config modal etc. outside a turn
 		if (addBlockReason(PROMPT_BLOCK_REASON)) {
 			emit(buildQuestionAskedPayload(ctx));
 			stopSpinner();

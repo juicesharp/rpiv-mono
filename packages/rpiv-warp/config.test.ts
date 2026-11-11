@@ -8,6 +8,7 @@ import {
 	DEFAULT_HEARTBEAT_MS,
 	getBlockingTools,
 	getHeartbeatMs,
+	getPromptBlocking,
 	loadConfig,
 } from "./config.ts";
 
@@ -83,5 +84,30 @@ describe("getHeartbeatMs", () => {
 	it("returns the configured value for positive numbers", () => {
 		writeConfigFile(JSON.stringify({ heartbeatMs: 5000 }));
 		expect(getHeartbeatMs()).toBe(5000);
+	});
+});
+
+describe("getPromptBlocking", () => {
+	it("is on by default", () => {
+		expect(getPromptBlocking()).toBe(true);
+	});
+	it("is on beside a custom blockingTools list", () => {
+		writeConfigFile(JSON.stringify({ blockingTools: ["my_custom_tool"] }));
+		expect(getPromptBlocking()).toBe(true);
+	});
+	// `blockingTools: []` was the documented way to turn the badge off; prompts keep it off.
+	it("is off when blockingTools is explicitly empty and promptBlocking is unset", () => {
+		writeConfigFile(JSON.stringify({ blockingTools: [] }));
+		expect(getPromptBlocking()).toBe(false);
+	});
+	it("follows an explicit promptBlocking over the blockingTools default", () => {
+		writeConfigFile(JSON.stringify({ blockingTools: [], promptBlocking: true }));
+		expect(getPromptBlocking()).toBe(true);
+		writeConfigFile(JSON.stringify({ promptBlocking: false }));
+		expect(getPromptBlocking()).toBe(false);
+	});
+	it("ignores a non-boolean promptBlocking", () => {
+		writeConfigFile(JSON.stringify({ promptBlocking: "no" }));
+		expect(getPromptBlocking()).toBe(true);
 	});
 });

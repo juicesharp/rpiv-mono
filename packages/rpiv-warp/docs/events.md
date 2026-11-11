@@ -16,7 +16,7 @@ no slash commands, no widgets, and no keyboard shortcuts.
 | `agent_end` | the drain's `tool_complete` (see below), then `stop` | clears every block reason and marks the turn inactive, stops the spinner, stops the heartbeat, arms the 300 ms idle timer |
 | `tool_call` | `question_asked` — only for a tool in `blockingTools`, and only on the 0→1 block-reason transition | records the call's input; on that transition, stops the spinner and pauses the heartbeat |
 | `tool_execution_end` | `tool_complete` — only for a tool in `blockingTools`, and only on the 1→0 block-reason transition | restarts the spinner, resumes the heartbeat |
-| `ui_prompt_start` | `question_asked` — for any extension UI prompt raised during a turn, and only on the 0→1 block-reason transition | stops the spinner, pauses the heartbeat |
+| `ui_prompt_start` | `question_asked` — for any extension UI prompt raised during a turn while `promptBlocking` is on, and only on the 0→1 block-reason transition | stops the spinner, pauses the heartbeat |
 | `ui_prompt_end` | `tool_complete` — only on the 1→0 block-reason transition | restarts the spinner and resumes the heartbeat, but only if the turn is still live |
 | `session_shutdown` | nothing | cancels the idle timer, stops the heartbeat, stops the spinner, clears pending state |
 

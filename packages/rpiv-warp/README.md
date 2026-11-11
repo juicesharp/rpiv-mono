@@ -74,10 +74,11 @@ Optional. Create `~/.config/rpiv-warp/config.json`:
 
 | Key | What it does | Default |
 | --- | --- | --- |
-| `blockingTools` | Tool names whose calls raise the Blocked badge and clear it when they finish. It does not control the badge as a whole: any extension UI prompt raised during a turn raises it whatever this list says, so `[]` removes the tool-name raises but leaves the prompt-driven ones in place. | `["ask_user_question"]` |
+| `blockingTools` | Tool names whose calls raise the Blocked badge and clear it when they finish. `[]` turns the badge off entirely, prompts included, unless `promptBlocking` says otherwise. | `["ask_user_question"]` |
+| `promptBlocking` | Whether an extension UI prompt raised during a turn (a questionnaire, a permission dialog, any `ctx.ui` select, confirm or input) raises the Blocked badge. | `true`, or `false` when `blockingTools` is `[]` |
 | `heartbeatMs` | How often the running prompt is re-announced so Warp doesn't mark the tab idle. Set to `0` to disable. | `15000` |
 
-Both keys are optional, and a missing or malformed file falls back to the
+All keys are optional, and a missing or malformed file falls back to the
 defaults. If `XDG_CONFIG_HOME` is set to an absolute path the file is read from
 `$XDG_CONFIG_HOME/rpiv-warp/config.json` instead, falling back to the
 `~/.config` location when that file does not exist. Config is read once when the

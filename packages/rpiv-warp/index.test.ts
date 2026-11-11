@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { dirname } from "node:path";
 import {
 	buildSessionEntries,
 	createMockCtx,
@@ -18,6 +19,7 @@ vi.mock("node:fs", async () => {
 	};
 });
 
+import { CONFIG_PATH } from "./config.ts";
 import register, { __resetState, createWorkflowQuestionTransport } from "./index.ts";
 import { FRAME_INTERVAL_MS, __resetState as resetSpinner, SPINNER_FRAMES } from "./title-spinner.ts";
 
@@ -973,6 +975,27 @@ describe("ui_prompt handlers raise Blocked", () => {
 			await handler(payload as never, ctx as never);
 		}
 	}
+
+	it.each([
+		["blockingTools: [] (the documented off switch)", { blockingTools: [] }],
+		["promptBlocking: false", { promptBlocking: false }],
+	])("leaves the badge down for a UI prompt under %s", async (_label, config) => {
+		fs.mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+		fs.writeFileSync(CONFIG_PATH, JSON.stringify(config));
+		try {
+			setWorkingWarpEnv();
+			const { write } = primeFs();
+			const { pi, captured } = createMockPi();
+			register(pi);
+			await fire(captured, "agent_start", {});
+			await fire(captured, "ui_prompt_start", { type: "ui_prompt_start", reason: "ui_prompt", kind: "confirm" });
+			await fire(captured, "ui_prompt_end", { type: "ui_prompt_end", reason: "ui_prompt", kind: "confirm" });
+			expect(payloadsOf(osc(write), "question_asked")).toHaveLength(0);
+			expect(payloadsOf(osc(write), "tool_complete")).toHaveLength(0);
+		} finally {
+			fs.rmSync(CONFIG_PATH, { force: true });
+		}
+	});
 
 	it("raises Blocked on ui_prompt_start during a live turn, and goes quiet", async () => {
 		setWorkingWarpEnv();

@@ -8,7 +8,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
-- Extension UI prompts (e.g. a `@gotgenes/pi-permission-system` "allow this bash command?" prompt) now raise Warp's **Blocked** badge and fire the OS toast, and the heartbeat pauses instead of re-announcing `prompt_submit` every 15 s while the agent is actually waiting on the user. `ui_prompt_start` / `ui_prompt_end` join the same reason set that drives the blocking-tool badge, so `ask_user_question` — which fires both `tool_call` and `ui_prompt_start` — still raises exactly once and clears exactly once, in either event order. A stale reason surviving a missed `agent_end` is reset (and the badge cleared) at the next `agent_start`.
+
+- **Warp shows Blocked while Pi waits on any dialog, not only on listed tools.** A permission prompt ("allow this bash command?") or any other `ctx.ui` select, confirm, input or custom dialog left the tab reading in progress, and the heartbeat kept re-announcing the prompt every 15 s. rpiv-warp now also follows Pi's `ui_prompt_start`/`ui_prompt_end` events during a turn: the badge rises once and clears once, even when a questionnaire fires both its tool call and its prompt, in either order, and the heartbeat pauses while you're asked. A badge left up by a missed `agent_end` is cleared at the next turn. The new `promptBlocking` setting switches prompt-driven badges off; it defaults to off for anyone who set `blockingTools: []`, which keeps turning the badge off entirely. Thanks @jg33 ([#303](https://github.com/juicesharp/rpiv-mono/pull/303)).
 
 ## [2.15.0] - 2026-10-24
 
