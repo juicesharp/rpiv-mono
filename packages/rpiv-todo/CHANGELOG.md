@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`maxWidgetLines: 0` turns the overlay off.** The panel above the editor is no longer drawn, while the `todo` tool and `/todos` keep working. Like any other `maxWidgetLines` value, it applies on the next repaint, without `/reload`.
+
 ## [2.15.0] - 2026-10-24
 
 ### Fixed

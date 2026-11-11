@@ -49,7 +49,9 @@ extension only reads it.
 on overflow, the `+N more` summary row both count against it. Only the trailing
 blank spacer sits outside the budget, so `12` renders up to 13 terminal rows.
 
-- Floor of `3`. A number below `3` falls back to the default.
+- `0` turns the overlay off. The `todo` tool and `/todos` keep working, and
+  Pi's tool-output expansion mode does not bring the panel back.
+- Floor of `3`. Any other number below `3` falls back to the default.
 - A non-number falls back to the default.
 - No ceiling.
 - Read fresh on every render, so a change takes effect on the next repaint —
