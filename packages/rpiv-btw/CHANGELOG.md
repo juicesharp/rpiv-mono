@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `/btw` now sends a session id (`btw-<pi session id>`). OpenCode / OpenCode Go no longer reject every call with `MissingSessionID`, and OpenAI-family providers can route the side call to its own prompt cache. The id is separate from the main agent's, so `/btw` never shares its cache key or Codex websocket, and its provider resources are released on session shutdown.
+
 ## [2.15.0] - 2026-10-24
 
 ## [2.14.2] - 2026-10-23

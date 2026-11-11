@@ -10,6 +10,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { AssistantMessage, Message, StopReason, UserMessage } from "@earendil-works/pi-ai";
+import { cleanupSessionResources } from "@earendil-works/pi-ai";
 import {
 	buildContextEntries,
 	buildSessionContext,
@@ -23,6 +24,16 @@ import { type CappedHistory, capHistory, type FitBranchResult, fitBranch } from 
 import { assistantMessageText, type BtwTurn, userMessageText } from "./btw-messages.ts";
 import { showBtwOverlay } from "./btw-ui.ts";
 import { getRuntimeCompleteSimple, loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.ts";
+
+/**
+ * The session id every /btw call sends. Providers derive the prompt cache key,
+ * session-affinity headers and OpenCode's required session header from it. It is
+ * stable per Pi session so consecutive side questions hit the cache, and
+ * distinct from the main agent's id so /btw never shares its cache key or Codex
+ * websocket. Provider resources held under it are released on `session_shutdown`
+ * (see registerSessionCleanup).
+ */
+export const btwSessionId = (ctx: ExtensionContext): string => `btw-${ctx.sessionManager.getSessionId()}`;
 
 // ---------------------------------------------------------------------------
 // Constants — flat named consts, grouped by concern (advisor pattern, b9428e9)
@@ -321,9 +332,10 @@ export async function executeBtw(
 		// preflight key/headers to that path: explicit overrides would bypass
 		// that resolution.
 		const completeSimple = runtimeCompleteSimple ?? (await loadCompleteSimple());
+		const sessionId = btwSessionId(ctx);
 		const requestOptions = runtimeCompleteSimple
-			? { signal: controller.signal } // own AbortController, NOT ctx.signal (Decision 8)
-			: { apiKey: auth.apiKey, headers: auth.headers, signal: controller.signal };
+			? { sessionId, signal: controller.signal } // own AbortController, NOT ctx.signal (Decision 8)
+			: { apiKey: auth.apiKey, headers: auth.headers, sessionId, signal: controller.signal };
 		const overflowFn = await loadIsContextOverflow();
 		let retried = false;
 		const callCompleteSimple = async (
@@ -402,6 +414,15 @@ export function registerMessageEndSnapshot(pi: ExtensionAPI): void {
 export function registerInvalidationHooks(pi: ExtensionAPI): void {
 	pi.on("session_compact", async (_e, ctx) => safeInvalidateSnapshot(ctx));
 	pi.on("session_tree", async (_e, ctx) => safeInvalidateSnapshot(ctx));
+}
+
+// Pi releases provider resources (e.g. pooled Codex websockets) only for the
+// executor's session id; without this, /btw's scoped socket would linger until
+// its idle timer fires.
+export function registerSessionCleanup(pi: ExtensionAPI): void {
+	pi.on("session_shutdown", async (_event, ctx) => {
+		cleanupSessionResources(btwSessionId(ctx));
+	});
 }
 
 // Auto-compaction races session disposal: pi-core invalidates the extension

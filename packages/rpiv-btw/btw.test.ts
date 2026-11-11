@@ -12,6 +12,7 @@ vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
 	return {
 		...actual,
 		getSupportedThinkingLevels: vi.fn(() => ["off", "minimal", "low", "medium", "high"]),
+		cleanupSessionResources: vi.fn(),
 	};
 });
 
@@ -42,6 +43,7 @@ vi.mock("./pi-compat.ts", async (importOriginal) => {
 });
 
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
+import { cleanupSessionResources } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import {
 	assistantMessageText,
@@ -56,6 +58,7 @@ import {
 	registerBtwCommand,
 	registerInvalidationHooks,
 	registerMessageEndSnapshot,
+	registerSessionCleanup,
 	userMessageText,
 } from "./btw.ts";
 import { loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.ts";
@@ -79,6 +82,7 @@ function makeCompletionResponse(input: {
 
 beforeEach(() => {
 	vi.mocked(completeSimple).mockReset();
+	vi.mocked(cleanupSessionResources).mockClear();
 	vi.mocked(loadCompleteSimple).mockReset();
 	vi.mocked(loadIsContextOverflow).mockReset();
 	// Route the loader to the shared completeSimple spy so existing
@@ -258,6 +262,42 @@ describe("executeBtw — error branches", () => {
 		expect(completeSimple).not.toHaveBeenCalled();
 		const options = runtime.completeSimple.mock.calls[0]?.[2] as Record<string, unknown> | undefined;
 		expect(options).not.toHaveProperty("apiKey");
+	});
+	it("sends a /btw-scoped session id on the runtime path", async () => {
+		const ctx = createMockCtx({ sessionId: "session-123" });
+		ctx.model = { provider: "a", id: "m" } as never;
+		const runtime = {
+			completeSimple: vi.fn((..._args: unknown[]) =>
+				Promise.resolve(makeCompletionResponse({ text: "runtime answer" })),
+			),
+		};
+		Object.defineProperty(ctx.modelRegistry, "runtime", { value: runtime });
+		await executeBtw("q", ctx, new AbortController());
+		const options = runtime.completeSimple.mock.calls[0]?.[2] as Record<string, unknown> | undefined;
+		expect(options).toHaveProperty("sessionId", "btw-session-123");
+	});
+	it("sends the same /btw-scoped session id on the legacy path and the overflow retry", async () => {
+		const ctx = createMockCtx({ sessionId: "session-456" });
+		ctx.model = { provider: "a", id: "m" } as never;
+		vi.mocked(loadIsContextOverflow).mockResolvedValue((() => true) as never);
+		vi.mocked(completeSimple)
+			.mockResolvedValueOnce(makeCompletionResponse({ stopReason: "error", errorMessage: "too long" }) as never)
+			.mockResolvedValueOnce(makeCompletionResponse({ text: "answer" }) as never);
+		const r = await executeBtw("q", ctx, new AbortController());
+		expect(r.kind).toBe("success");
+		const calls = vi.mocked(completeSimple).mock.calls;
+		expect(calls).toHaveLength(2);
+		for (const call of calls) {
+			expect(call[2]).toMatchObject({ apiKey: "test-key", headers: {}, sessionId: "btw-session-456" });
+		}
+	});
+	it("releases the /btw session's provider resources on session_shutdown", async () => {
+		const { pi, captured } = createMockPi();
+		registerSessionCleanup(pi);
+		const ctx = createMockCtx({ sessionId: "session-789" });
+		for (const handler of captured.events.get("session_shutdown") ?? []) await handler({}, ctx);
+		expect(cleanupSessionResources).toHaveBeenCalledTimes(1);
+		expect(cleanupSessionResources).toHaveBeenCalledWith("btw-session-789");
 	});
 	it("returns aborted when stopReason=aborted", async () => {
 		const ctx = createMockCtx();
