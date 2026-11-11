@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hasJj, seedJjStatusWorkspace } from "@juicesharp/rpiv-test-utils/vcs";
 import type { CollectContext, ParseContext } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { gitTreeDigest, remediationOutcome } from "./remediation.ts";
@@ -78,6 +79,19 @@ describe("remediationOutcome", () => {
 		expect(changedOf(collect(before))).toBe(false);
 	});
 
+	it("ignores a TRACKED .rpiv/ file's content change (the diff-text component)", () => {
+		// `-f`: a developer machine may carry a global `.rpiv/` ignore entry, and
+		// the digest must not depend on it. The status component sees the same
+		// path, so this pins the change-text component specifically.
+		mkdirSync(join(tmpDir, ".rpiv", "artifacts"), { recursive: true });
+		writeFileSync(join(tmpDir, ".rpiv", "artifacts", "report.md"), "# one\n");
+		execFileSync("git", ["add", "-f", ".rpiv/artifacts/report.md"], { cwd: tmpDir, stdio: "ignore" });
+		execFileSync("git", ["commit", "-q", "-m", "track report"], { cwd: tmpDir, stdio: "ignore" });
+		const before = gitTreeDigest(tmpDir);
+		writeFileSync(join(tmpDir, ".rpiv", "artifacts", "report.md"), "# two\n");
+		expect(gitTreeDigest(tmpDir)).toBe(before);
+	});
+
 	it("reports changed: false when a gitignored path appears in the window (--exclude-standard drops it)", () => {
 		// The .gitignore is committed BEFORE the snapshot so the ignore file's
 		// own tracked state cannot flip the digest — this fixture tests
@@ -98,6 +112,32 @@ describe("remediationOutcome", () => {
 		} finally {
 			rmSync(nonRepo, { recursive: true, force: true });
 		}
+	});
+
+	// Under jj the digest reads through the same seam (`jj diff --summary` +
+	// `jj diff --git` + `??`-class content), so a jj run reports the same
+	// did-anything-change signal a git run does.
+	describe.runIf(hasJj())("jj workspace", () => {
+		let jjDir: string;
+		beforeEach(() => {
+			jjDir = mkdtempSync(join(tmpdir(), "rpiv-remediation-jj-"));
+			seedJjStatusWorkspace(jjDir);
+		});
+		afterEach(() => {
+			rmSync(jjDir, { recursive: true, force: true });
+		});
+
+		it("returns a digest for a seeded jj tree, and the SAME digest twice", () => {
+			const first = gitTreeDigest(jjDir);
+			expect(first).toBeDefined();
+			expect(gitTreeDigest(jjDir)).toBe(first);
+		});
+
+		it("changes the digest when a seeded file is edited", () => {
+			const before = gitTreeDigest(jjDir);
+			writeFileSync(join(jjDir, "modified.ts"), "three\n");
+			expect(gitTreeDigest(jjDir)).not.toBe(before);
+		});
 	});
 
 	it("parser projects the collected meta onto the remediation channel", () => {

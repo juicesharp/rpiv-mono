@@ -7,10 +7,12 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EXPECTED_VCS_STATUS_ENTRIES, hasJj, seedJjStatusWorkspace } from "@juicesharp/rpiv-test-utils/vcs";
 import type { RunView } from "@juicesharp/rpiv-workflow";
 import { fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { findWorkflow } from "../workflow-test-harness.ts";
+import { vcsDirtyEntries } from "./goal-baseline.ts";
 
 describe("build goal channel (verbatim brief threading)", () => {
 	const build = () => findWorkflow("build");
@@ -296,3 +298,52 @@ describe("build validate + commit dispatch thread the run-start baseline", () =>
 // the implement-scope-check stage's published verdict (no direct helper import:
 // the file exports only builtInWorkflows, as the suite does at line 42).
 // ---------------------------------------------------------------------------
+
+// Under jj the baseline writer must read the SAME path universe a git run
+// records: every untracked file enumerated individually (never a collapsed
+// directory) and the shared `XY` codes, so the scope floors partition on `??`
+// identically under both backends.
+describe.runIf(hasJj())("run-start baseline under jj", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-goal-baseline-jj-"));
+		seedJjStatusWorkspace(tmpDir);
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	const runGoalStage = () => {
+		const stage = findWorkflow("build").stages.goal;
+		if (!stage?.run) throw new Error("build goal stage has no run function");
+		return (
+			stage.run as (ctx: { cwd: string; input?: undefined; state: RunView }) => {
+				artifacts: readonly { handle: { kind: string; path: string }; role?: string }[];
+			}
+		)({
+			cwd: tmpDir,
+			input: undefined,
+			state: { originalInput: "fix the thing in the app please", named: {} } as unknown as RunView,
+		});
+	};
+
+	it("vcsDirtyEntries returns the shared expected entries for a seeded jj workspace", () => {
+		const entries = vcsDirtyEntries(tmpDir).sort((a, b) => a.path.localeCompare(b.path));
+		expect(entries).toEqual([...EXPECTED_VCS_STATUS_ENTRIES].sort((a, b) => a.path.localeCompare(b.path)));
+	});
+
+	it("the baseline writer records a new file as a path, never a collapsed directory", () => {
+		const output = runGoalStage();
+		const baseline = output.artifacts[1];
+		expect(baseline?.role).toBe("baseline");
+		const parsed = JSON.parse(readFileSync(join(tmpDir, baseline?.handle.path ?? ""), "utf-8")) as {
+			paths: string[];
+		};
+		expect(parsed.paths).toContain("added.ts");
+		expect(parsed.paths).not.toContain(".");
+		expect(parsed.paths.some((p) => p.endsWith("/"))).toBe(false);
+		// The run's own goal file is dirty when the baseline is taken; the seam's
+		// bookkeeping predicate keeps it out of the recorded set.
+		expect(parsed.paths.some((p) => p.startsWith(".rpiv/") || p.startsWith("thoughts/"))).toBe(false);
+	});
+});

@@ -3,6 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hasJj, seedJjStatusWorkspace } from "@juicesharp/rpiv-test-utils/vcs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const GIT_CONTEXT_MJS = fileURLToPath(new URL("./git-context.mjs", import.meta.url));
@@ -37,7 +38,7 @@ afterEach(() => {
 });
 
 describe("git-context.mjs", () => {
-	it("emits six labeled lines for a fresh repo with one commit", () => {
+	it("emits seven labeled lines for a fresh repo with one commit", () => {
 		initRepo(dir);
 		writeFileSync(join(dir, "f.txt"), "hello");
 		gitIn(dir, "add", "f.txt");
@@ -49,6 +50,7 @@ describe("git-context.mjs", () => {
 		// --show-toplevel` normalises symlinks to `/private/var/folders/...`.
 		// Compare against realpath so the test is platform-stable.
 		const realDir = realpathSync(dir);
+		expect(lines).toContain("vcs: git");
 		expect(lines).toContain("branch: main");
 		expect(lines.some((l) => /^commit: [0-9a-f]{7,}$/.test(l))).toBe(true);
 		expect(lines).toContain(`repo: ${basename(realDir)}`);
@@ -86,5 +88,19 @@ describe("git-context.mjs", () => {
 		gitIn(dir, "commit", "-m", "init", "-q");
 		const out = runIn(dir);
 		expect(out.endsWith("\n")).toBe(true);
+	});
+
+	describe.runIf(hasJj())("jj workspace", () => {
+		beforeEach(() => seedJjStatusWorkspace(dir));
+
+		it("reports the jj backend with a real working-copy commit and author", () => {
+			const lines = runIn(dir).split("\n");
+			expect(lines).toContain("vcs: jj");
+			expect(lines).toContain("in_repo: yes");
+			expect(lines.some((l) => /^commit: [0-9a-f]{7,}$/.test(l))).toBe(true);
+			const author = lines.find((l) => l.startsWith("author: "));
+			expect(author).toBeDefined();
+			expect(author).not.toBe("author: unknown");
+		});
 	});
 });

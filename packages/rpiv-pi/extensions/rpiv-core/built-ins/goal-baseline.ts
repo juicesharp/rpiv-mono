@@ -1,8 +1,7 @@
 /**
- * The goal channel (verbatim brief capture) and the run-start git baseline the
- * scope floors and the validate/commit prompts consume.
+ * The goal channel (verbatim brief capture) and the run-start VCS baseline
+ * (git or jj) the scope floors and the validate/commit prompts consume.
  */
-import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
@@ -12,6 +11,8 @@ import {
 	type RunView,
 	type ScriptContext,
 } from "@juicesharp/rpiv-workflow/registration";
+import { isBookkeepingPath } from "../vcs-path.ts";
+import { type VcsStatusEntry, vcsStatusEntries } from "../vcs-status.ts";
 import { haltPreflight, latestFsArtifact, readArtifactFile } from "./shared.ts";
 
 /** Bucket directory the goal capture writes into — build's verbatim-brief channel. */
@@ -94,54 +95,16 @@ const writeGoalCapture = (state: ScriptContext["state"], cwd: string): Omit<Outp
 	};
 };
 
-/** One parsed `git status --porcelain`/`--short` line: the 2-char `XY` status
- *  code plus the resolved path. `xy === "??"` is the untracked class — the only
- *  code whose content cannot have overwritten anything a phase owns, which is
- *  what the scope floor's quarantine partition keys on. */
-interface GitStatusEntry {
-	xy: string;
-	path: string;
-}
+/** One working-copy entry: the 2-char `XY` status code plus the resolved path.
+ *  `xy === "??"` is the untracked class — the only code whose content cannot
+ *  have overwritten anything a phase owns, which is what the scope floor's
+ *  quarantine partition keys on. Now the seam's `VcsStatusEntry` — aliased so
+ *  the public export name this module has always carried stays stable. */
+type GitStatusEntry = VcsStatusEntry;
 
-/** Parse `git status --porcelain`/`--short` output into `{ xy, path }` entries.
- *  Keeps the 2-char `XY` status code and resolves rename targets
- *  (`XY old -> new` → `new`), so the two output forms (`--porcelain`, `--short`)
- *  normalize identically. A porcelain line is always `XY <path>` or
- *  `XY <old> -> <new>`; blank lines drop. */
-const parseGitStatusEntries = (out: string): GitStatusEntry[] =>
-	out
-		.split("\n")
-		.filter((l) => l.trim() !== "")
-		.map((l) => {
-			const rest = l.slice(3).trim();
-			const arrow = rest.indexOf(" -> ");
-			return { xy: l.slice(0, 2), path: arrow >= 0 ? rest.slice(arrow + 4).trim() : rest };
-		});
-
-/** Path-only projection of `parseGitStatusEntries` — the baseline writer's shape. */
-const parseGitStatusPaths = (out: string): string[] => parseGitStatusEntries(out).map((e) => e.path);
-
-/** Record the paths dirty before the run to `rel` (best-effort; empty on any git failure). */
+/** Record the paths dirty before the run to `rel` (best-effort; empty on any VCS failure). */
 const writeCommitBaseline = (cwd: string, rel: string): void => {
-	let paths: string[] = [];
-	try {
-		// stdio: stderr ignored — without this, git's "fatal: not a git repository"
-		// leaks to the parent's stderr even though the catch treats it as a
-		// supported silent degrade (best-effort baseline, empty on failure).
-		// -uall: git collapses an untracked directory to one `dir/` entry by
-		// default, so a phase's brand-new files under a new directory would never
-		// string-match their `files:` declarations at the scope floor. Enumerate
-		// every file; the baseline and both scope checks MUST share this flag or
-		// their path universes diverge.
-		const out = execFileSync("git", ["status", "--short", "--untracked-files=all"], {
-			cwd,
-			encoding: "utf-8",
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		paths = parseGitStatusPaths(out);
-	} catch {
-		paths = [];
-	}
+	const paths = vcsDirtyEntries(cwd).map((e) => e.path);
 	mkdirSync(dirname(join(cwd, rel)), { recursive: true });
 	writeFileSync(join(cwd, rel), JSON.stringify({ paths }, null, 2), "utf-8");
 };
@@ -171,41 +134,23 @@ const readGoalBaseline = (path: string | undefined, cwd: string): string[] => {
 };
 
 /**
- * Current dirty set via `git status --porcelain`, as `{ xy, path }` entries
- * (rename targets resolved by the shared parser) — the scope floors read the
- * paths AND partition on the `??` untracked code. Best-effort — `[]` on a
- * non-repo / git-missing tree (the scope floor degrades to unguarded rather
- * than failing a non-repo run; the catch treats that as a supported silent
- * degrade). stdio: stderr is ignored, otherwise git's "fatal: not a git
- * repository" leaks to the parent's stderr despite the catch. `-uall`
- * enumerates untracked files individually (a collapsed `newdir/` entry can
- * never string-match a declared `files:` path) — the baseline writer and both
- * scope checks MUST share this flag or their path universes diverge.
+ * Current dirty set as `{ xy, path }` entries — the scope floors read the paths
+ * AND partition on the `??` code. One reader for both backends: git enumerates
+ * untracked files (`--untracked-files=all`) and jj maps its `A` letter to `??`,
+ * so the baseline writer and both scope checks keep one path universe.
+ * Best-effort — `[]` when no backend answers (the scope floor degrades to
+ * unguarded rather than failing a non-repo run).
  */
-const gitDirtyEntries = (cwd: string): GitStatusEntry[] => {
-	try {
-		const out = execFileSync("git", ["status", "--porcelain", "--untracked-files=all"], {
-			cwd,
-			encoding: "utf-8",
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		return parseGitStatusEntries(out);
-	} catch {
-		return [];
-	}
-};
-
-/** Paths under these run-bookkeeping trees are NEVER a scope violation — the run
- *  legitimately writes its artifacts/notes/trails here regardless of phase scope. */
-const SCOPE_BOOKKEEPING_DIRS: ReadonlySet<string> = new Set([".rpiv", "thoughts"]);
+const vcsDirtyEntries = (cwd: string): GitStatusEntry[] => vcsStatusEntries(cwd);
 
 /**
  * The lane-level scope floor's pure core. Returns the dirty paths that are NOT
  * explained by the run's declared write-set: a path is excess when it is outside
  * `declared`, was NOT dirty at the run-start `baseline`, and is NOT under a
- * bookkeeping tree (`.rpiv/`, `thoughts/`). The `implement` lane declared-set is
- * the union of its plan's per-phase `files:`; `validate`'s whole-repo
- * build/test writes are owned by a later stage, never by a phase.
+ * bookkeeping tree (`.rpiv/`, `thoughts/` — the seam's `isBookkeepingPath`).
+ * The `implement` lane declared-set is the union of its plan's per-phase
+ * `files:`; `validate`'s whole-repo build/test writes are owned by a later
+ * stage, never by a phase.
  *
  * Empty `declared` ⇒ `[]` (degradation): a `files:`-less plan is serial-by-
  * construction under the DAG fanout's missing-`files:` clause (full dep chain ⇒
@@ -229,8 +174,7 @@ const scopeExcess = (dirty: readonly string[], baseline: readonly string[], decl
 	const excess: string[] = [];
 	for (const path of dirty) {
 		if (declaredSet.has(path) || baselineSet.has(path)) continue;
-		const top = path.split("/")[0];
-		if (SCOPE_BOOKKEEPING_DIRS.has(top)) continue;
+		if (isBookkeepingPath(path)) continue;
 		excess.push(path);
 	}
 	return excess;
@@ -303,9 +247,9 @@ export {
 	COMMIT_BASELINE_PROMPT,
 	captureGoal,
 	captureReviewScope,
-	gitDirtyEntries,
 	goalBaselinePath,
 	readGoalBaseline,
 	scopeExcess,
 	VALIDATE_GOAL_PROMPT,
+	vcsDirtyEntries,
 };

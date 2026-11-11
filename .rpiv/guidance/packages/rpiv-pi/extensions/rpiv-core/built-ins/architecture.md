@@ -39,9 +39,11 @@ citations.ts        — verifyCitations: file:line citation verification against
                       fallback + declared-files:/prose tiebreaks; arrow-pair revision notes skipped). ALL findings advisory.
 priors.ts           — Pre-fix snapshots (planSnapshot/codeSnapshot), section diffs, surgical-fix guard,
                       risk-duty demotion stamps (planDemote/codeDemote)
-remediation.ts      — remediationOutcome + gitTreeDigest (git subprocess, wall-clock ceiling)
+remediation.ts      — remediationOutcome + gitTreeDigest (VCS subprocess via ../vcs-status.ts, git or jj,
+                      wall-clock ceiling)
 scope-checks.ts     — implementScopeCheck(/Vet): declared write-set (full plans channel; vet's fix loop appends
-                      distinct plans) vs git dirty set; tiered pass/untracked-only/excess; scopeQuarantine arm;
+                      distinct plans) vs VCS dirty set (git or jj, via vcsDirtyEntries); tiered
+                      pass/untracked-only/excess; scopeQuarantine arm;
                       fail-closed — an unreadable plan never widens the declared set. Accepts validate-report-named
                       writes as declared scope.
 slice-checks.ts     — sliceStructureCheck (brief conservation, citeDischarged stamp), subplanCoverageCheck,

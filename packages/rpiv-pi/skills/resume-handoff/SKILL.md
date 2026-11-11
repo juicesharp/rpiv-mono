@@ -29,6 +29,30 @@ echo "recent handoffs:"
 node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/handoffs 10
 ```
 
+## VCS backend
+
+One decision governs every command in this skill:
+
+1. `jj root` succeeds → backend `jj`.
+2. Otherwise `git rev-parse --show-toplevel` succeeds → backend `git`.
+3. Neither → this skill's repository gate applies, unchanged.
+
+When the Metadata block prints a `vcs:` line, it carries the same decision.
+
+| Purpose | `git` | `jj` |
+|---|---|---|
+| working-copy state | `git status --short --untracked-files=all` | `jj diff --summary` — an `A` line is a new file, not untracked |
+| change against the parent | `git diff HEAD` | `jj diff --git` |
+| recent commits | `git log --oneline -n 20` | `jj log -r '::@-' --no-graph -T 'commit_id.short() ++ " " ++ description.first_line() ++ "\n"'` |
+| one commit | `git show <id>` | `jj show <id>` — a change id and a commit id both resolve |
+| one file in one commit | `git show <id>:<path>` | `jj file show -r <id> <path>` |
+| changed paths between two revisions | `git diff <a> <b> --name-only` | `jj diff --from <a> --to <b> --name-only` |
+| path-filtered history | `git log -- <path>` | `jj log -r '::@' -- <path>` |
+| parent revision | `<id>^` | `<id>-` |
+| ancestry proof | `git merge-base --is-ancestor <a> <b>` | `jj log -r '<a> & ::<b>' --no-graph -T commit_id` prints `<a>` when `<a>` is an ancestor of `<b>` |
+| undo a local edit | `git restore <path>` | `cp` the captured bytes back — never `jj restore --from @-`, which also discards pre-existing uncommitted edits |
+| never run | `git reset` | `jj abandon`, `jj op restore` |
+
 ## Flow
 
 1. Input → 2. Read & analyze handoff → 3. Synthesize & present → 4. Create action plan → 5. Begin implementation
@@ -84,7 +108,7 @@ When this command is invoked:
 4. **Verify current state**:
    - Read files from "Learnings" section completely to validate patterns still apply
    - Read files from "Recent changes" to verify modifications are still present
-   - Use git log or git diff if needed to check commit history since handoff
+   - Use `git log` or `git diff` (`jj`: `jj log -r '::@-' --no-graph -T 'commit_id.short() ++ " " ++ description.first_line() ++ "\n"'`, `jj diff --git`) if needed to check commit history since handoff
    - Re-read implementation files mentioned to confirm current state matches handoff expectations
    - Read any new related files discovered during research
 
@@ -177,9 +201,9 @@ When this command is invoked:
 5. **Validate Before Acting**:
    - Never assume handoff state matches current state
    - Verify all file references still exist by reading them
-   - Check for breaking changes since handoff using git log/diff or by reading modified files
+   - Check for breaking changes since handoff using `git log`/`git diff` (`jj`: `jj log`/`jj diff`) or by reading modified files
    - Confirm patterns mentioned in "Learnings" are still valid by examining current code
-   - Compare handoff timestamps with current git commits to assess how much has changed
+   - Compare handoff timestamps with current `git` commits (`jj`: `jj log -T 'committer.timestamp() ++ " " ++ commit_id.short() ++ "\n"'`) to assess how much has changed
 
 ## Common Scenarios
 

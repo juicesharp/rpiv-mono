@@ -3,18 +3,18 @@
 // Prints:
 //   in_repo: yes|no
 //   ---status---
-//   <git status --short>            (capped at 200 lines + footer)
+//   <version-control status --short>  (capped at 200 lines + footer)
 //   ---diffstat---
-//   <git diff HEAD --stat --ignore-submodules=all>  | fallback for no-HEAD
+//   <diff --stat against the parent>  | fallback for no-HEAD / jj
 //
-// Full `git diff` is deliberately NOT included — large diffs would push the
+// Full diffs are deliberately NOT included — large diffs would push the
 // 50KB / 2000-line tail-truncation budget. The commit skill issues
 // `git diff <file>` via the Bash tool when it needs per-file detail.
 //
 // Always exits 0 — non-repo cwd or no-HEAD initial repo collapses to safe
 // fallback strings so the skill body never receives a `[Shell error: ...]`.
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { detect, read, statusEntries } from "./vcs.mjs";
 
 const LINE_CAP = 200;
 
@@ -28,15 +28,6 @@ const LINE_CAP = 200;
 const baselineFlagIdx = process.argv.indexOf("--baseline");
 const BASELINE_PATH = baselineFlagIdx >= 0 ? process.argv[baselineFlagIdx + 1] : undefined;
 
-// The path a `git status --short` line refers to. Columns 0-2 are the XY status
-// code + space; a rename/copy renders `old -> new`, whose committed path is the
-// `new` side.
-const statusPath = (line) => {
-	const rest = line.slice(3).trim();
-	const arrow = rest.indexOf(" -> ");
-	return arrow >= 0 ? rest.slice(arrow + 4).trim() : rest;
-};
-
 // Pre-existing-dirty paths recorded at run start (empty when no --baseline flag /
 // unreadable / malformed — the script then behaves exactly as a baseline-less run).
 const readBaseline = () => {
@@ -46,17 +37,6 @@ const readBaseline = () => {
 		return new Set(Array.isArray(parsed?.paths) ? parsed.paths.filter((p) => typeof p === "string") : []);
 	} catch {
 		return new Set();
-	}
-};
-
-const safe = (args, fb) => {
-	try {
-		return execFileSync("git", args, {
-			encoding: "utf-8",
-			stdio: ["ignore", "pipe", "ignore"],
-		}).trim();
-	} catch {
-		return fb;
 	}
 };
 
@@ -78,23 +58,19 @@ const emitCapped = (raw, emptyLabel) => {
 	}
 };
 
-const root = safe(["rev-parse", "--show-toplevel"], "");
-const inRepo = root ? "yes" : "no";
+const { backend, root } = detect();
 
-process.stdout.write(`in_repo: ${inRepo}\n`);
+process.stdout.write(`in_repo: ${root ? "yes" : "no"}\n`);
 
 if (!root) {
 	process.exit(0);
 }
 
 const baseline = readBaseline();
-const statusLines = safe(["status", "--short"], "")
-	.split("\n")
-	.filter((l) => l.trim() !== "");
 const inScope = [];
 const preExisting = [];
-for (const line of statusLines) {
-	(baseline.has(statusPath(line)) ? preExisting : inScope).push(line);
+for (const entry of statusEntries(root, backend)) {
+	(baseline.has(entry.path) ? preExisting : inScope).push(`${entry.xy} ${entry.path}`);
 }
 
 process.stdout.write("---status---\n");
@@ -109,13 +85,16 @@ if (preExisting.length > 0) {
 	emitCapped(preExisting.join("\n"), "(none)");
 }
 
-// `git diff HEAD --stat` errors on a fresh repo with no commits — substitute
-// a fallback marker so the LLM knows the status block above already covers
-// what would land in the initial commit.
-const hasHead = safe(["rev-parse", "--verify", "--quiet", "HEAD"], "") !== "";
+// jj has no HEAD and no index: `jj diff` compares the working copy against its
+// parent commit, so the "no HEAD yet" branch does not exist there.
 process.stdout.write("---diffstat---\n");
-if (!hasHead) {
-	process.stdout.write("(no HEAD yet — initial commit; status above lists all files to be added)\n");
+if (backend === "jj") {
+	emitCapped(read("jj", ["--no-pager", "diff", "--stat"], "", root), "(no changes against @-)");
 } else {
-	emitCapped(safe(["diff", "HEAD", "--stat", "--ignore-submodules=all"], ""), "(no changes against HEAD)");
+	const hasHead = read("git", ["rev-parse", "--verify", "--quiet", "HEAD"], "", root) !== "";
+	if (!hasHead) {
+		process.stdout.write("(no HEAD yet — initial commit; status above lists all files to be added)\n");
+	} else {
+		emitCapped(read("git", ["diff", "HEAD", "--stat", "--ignore-submodules=all"], "", root), "(no changes against HEAD)");
+	}
 }

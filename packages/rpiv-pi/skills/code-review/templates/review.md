@@ -7,7 +7,7 @@ branch: {Current branch name}
 commit: {Current commit hash}
 review_type: {commit | pr | staged | working}
 scope: "{What was reviewed}"
-scope_strategy: {first-parent | explicit-range | working-tree}
+scope_strategy: {first-parent | net-endpoint | explicit-range | working-tree | tree}
 in_scope_files_count: {N}
 status: ready
 severity: { critical: {C}, important: {I}, suggestion: {S} }

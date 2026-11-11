@@ -2,7 +2,7 @@
 //
 // Usage: node stitch-elaborations.mjs <plan-path>
 //   <plan-path> — a plan under .rpiv/artifacts/plans/ (relative paths resolve
-//                 against the git root, then cwd).
+//                 against the VCS root (`jj root`, else the git toplevel), then cwd).
 //
 // The fan-in barrier of the elaborate fanout. Each `## Phase N:` section in the
 // plan is replaced, one-for-one, by the matching elaboration doc's body. This is
@@ -34,9 +34,9 @@
 // Always exits 0 on a normal run (a plan phase with no elaboration is left as-is
 // and reported — partial runs are allowed). Exits 1 on a refused elaboration or a wiring/path error:
 // missing argument, missing plan, or zero elaboration docs found.
-import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { detect } from "./vcs.mjs";
 
 const [rawPlan] = process.argv.slice(2);
 if (!rawPlan) {
@@ -44,18 +44,12 @@ if (!rawPlan) {
 	process.exit(1);
 }
 
-const gitRoot = (() => {
-	try {
-		return execFileSync("git", ["rev-parse", "--show-toplevel"], {
-			encoding: "utf-8",
-			stdio: ["ignore", "pipe", "ignore"],
-		}).trim();
-	} catch {
-		return "";
-	}
-})();
+// The root probe lives in `vcs.mjs`: a jj workspace answers with its workspace
+// root (`jj root`) and a git checkout with its toplevel, so a jj workspace with
+// no `.git` above it still resolves relative paths.
+const { root: repoRoot } = detect();
 
-const planPath = isAbsolute(rawPlan) ? rawPlan : resolve(gitRoot || process.cwd(), rawPlan);
+const planPath = isAbsolute(rawPlan) ? rawPlan : resolve(repoRoot || process.cwd(), rawPlan);
 if (!existsSync(planPath)) {
 	console.error(`stitch-elaborations: plan not found: ${planPath}`);
 	process.exit(1);
