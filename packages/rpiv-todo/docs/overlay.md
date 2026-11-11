@@ -78,7 +78,10 @@ session resets that tracking, so a fresh session shows the full list again.
 ## Collapsing
 
 Press `ctrl+shift+t` to collapse the panel to two lines — the heading plus a dim
-`└─ ctrl+shift+t to expand` hint — and again to expand it. The hint always shows
+`└─ ctrl+shift+t to expand` hint — and again to expand it. Set
+`collapsedLines: 1` to fold the hint onto the heading row and drop the trailing
+spacer, leaving a single row; see
+[configuration.md](./configuration.md#collapsedlines). The hint always shows
 the currently configured key.
 
 Rebind or disable the shortcut with the `collapseKey` option; see

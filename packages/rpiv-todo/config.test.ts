@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	COLLAPSE_KEY_OFF,
 	DEFAULT_COLLAPSE_KEY,
+	DEFAULT_COLLAPSED_LINES,
 	DEFAULT_MAX_WIDGET_LINES,
+	getCollapsedLines,
 	getMaxWidgetLines,
 	isValidCollapseKeySpec,
 	loadConfig,
@@ -23,6 +25,30 @@ function removeConfigFile(): void {
 
 beforeEach(removeConfigFile);
 afterEach(removeConfigFile);
+
+describe("getCollapsedLines", () => {
+	it("returns the default when no config is present", () => {
+		expect(getCollapsedLines()).toBe(DEFAULT_COLLAPSED_LINES);
+	});
+	it("accepts the two documented shapes", () => {
+		writeConfigFile(JSON.stringify({ collapsedLines: 1 }));
+		expect(getCollapsedLines()).toBe(1);
+		writeConfigFile(JSON.stringify({ collapsedLines: 2 }));
+		expect(getCollapsedLines()).toBe(2);
+	});
+	it("returns the default for integers outside 1..2", () => {
+		for (const value of [0, 3, -1, 99]) {
+			writeConfigFile(JSON.stringify({ collapsedLines: value }));
+			expect(getCollapsedLines()).toBe(DEFAULT_COLLAPSED_LINES);
+		}
+	});
+	it("returns the default for non-number and fractional values", () => {
+		for (const value of ["one", true, null, 1.5]) {
+			writeConfigFile(JSON.stringify({ collapsedLines: value }));
+			expect(getCollapsedLines()).toBe(DEFAULT_COLLAPSED_LINES);
+		}
+	});
+});
 
 describe("getMaxWidgetLines", () => {
 	it("returns the default when no config is present", () => {
