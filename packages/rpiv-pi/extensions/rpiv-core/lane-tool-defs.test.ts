@@ -4,7 +4,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { __resetLaneToolDefs, getCachedToolDef, harvestToolDefs } from "./lane-tool-defs.js";
+import { __resetLaneToolDefs, getCachedToolDef, harvestToolDefs } from "./lane-tool-defs.ts";
 
 beforeEach(() => {
 	__resetLaneToolDefs();

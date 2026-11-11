@@ -1,9 +1,9 @@
 import type { Component } from "@earendil-works/pi-tui";
-import type { EqualizerViewProps } from "./components/equalizer-view.js";
-import type { SettingsFormViewProps } from "./components/settings-form-view.js";
-import type { StatusBarViewProps } from "./components/status-bar-view.js";
-import type { TranscriptViewProps } from "./components/transcript-view.js";
-import type { StatefulView } from "./stateful-view.js";
+import type { EqualizerViewProps } from "./components/equalizer-view.ts";
+import type { SettingsFormViewProps } from "./components/settings-form-view.ts";
+import type { StatusBarViewProps } from "./components/status-bar-view.ts";
+import type { TranscriptViewProps } from "./components/transcript-view.ts";
+import type { StatefulView } from "./stateful-view.ts";
 
 /**
  * Per-screen layout. Returns the ordered list of pi-tui Components that the

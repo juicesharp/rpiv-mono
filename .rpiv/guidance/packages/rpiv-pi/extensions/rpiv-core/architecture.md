@@ -60,7 +60,7 @@ agents-*.ts (family)    — Bundled-agent sync subsystem in five acyclic layers 
                           (injectModelFrontmatter pure transform), agents-sync.ts (syncBundledAgents /
                           cleanupPerCwdAgents / isSafeDestructiveOp engine). agents.ts is the ~36-line
                           public barrel: col-0 re-exports of exactly the pre-split 14-symbol surface,
-                          so ./agents.js consumers and their vi.mock sites stay byte-identical;
+                          so ./agents.ts consumers and their vi.mock sites stay byte-identical;
                           internal layer symbols are not re-exported.
 rpiv-models/            — Nested subdir for the /rpiv-models cascade picker: command.ts, index.ts, items.ts,
                           overrides.ts (+ units tests).
@@ -89,7 +89,7 @@ Pattern: each capability is a source module + co-located `<feature>.test.ts`.
 ## Adding a New Tool
 New tools do not belong in rpiv-core. Add the tool to a sibling plugin instead:
 1. Add it to an existing sibling or create a new sibling plugin (see `.rpiv/guidance/architecture.md`)
-2. Add one entry to `SIBLINGS` in `siblings.ts` — presence detection, missing-plugin warning, and `/rpiv-setup` all pick it up automatically (a sibling with no tool or extension command must also set a `marker` slot on load and name it in its entry, as rpiv-args does)
+2. Add one entry to `SIBLINGS` in `siblings.ts` — presence detection, missing-plugin warning, and `/rpiv-setup` all pick it up automatically (a sibling with no tool or extension command must also set a `marker` slot on load and name it in its entry, as rpiv-args does). Set `optional: true` when nothing in rpiv-pi needs the sibling to work (rpiv-advisor, #167): it then raises no missing-plugin warning and `/rpiv-setup` names its install command instead of installing it
 3. Pin the package in `rpiv-pi/package.json` `peerDependencies` as `"*"`
 </important>
 

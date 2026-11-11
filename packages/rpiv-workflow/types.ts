@@ -23,15 +23,15 @@
  * module are cycle-free).
  */
 
-import type { ProgressValue, StageDef, Workflow } from "./api.js";
-import type { LifecycleDispatcher, LifecycleListeners } from "./events.js";
-import type { Artifact } from "./handle.js";
-import type { ModelSelection, WorkflowHost, WorkflowHostContext } from "./host.js";
-import type { Output } from "./output.js";
-import type { SkillContractMap } from "./skill-contract.js";
-import type { SessionRef } from "./state/index.js";
-import type { BranchEntry } from "./transcript.js";
-import type { RunTrigger } from "./triggers.js";
+import type { ProgressValue, StageDef, Workflow } from "./api.ts";
+import type { LifecycleDispatcher, LifecycleListeners } from "./events.ts";
+import type { Artifact } from "./handle.ts";
+import type { ModelSelection, WorkflowHost, WorkflowHostContext } from "./host.ts";
+import type { Output } from "./output.ts";
+import type { SkillContractMap } from "./skill-contract.ts";
+import type { SessionRef } from "./state/index.ts";
+import type { BranchEntry } from "./transcript.ts";
+import type { RunTrigger } from "./triggers.ts";
 
 // Re-export the host port so runtime layers can pull `RunContext`,
 // `RunState`, and the threaded ctx + model type from this single
@@ -40,7 +40,7 @@ export type {
 	ModelSelection,
 	WorkflowHostContext,
 	WorkflowSessionContext,
-} from "./host.js";
+} from "./host.ts";
 
 /** Mutable per-run bookkeeping threaded through the chain by reference. */
 export interface RunState {
@@ -522,7 +522,7 @@ export interface SessionContext {
  */
 export interface UnitRef {
 	parent: string;
-	role: import("./api.js").UnitRole;
+	role: import("./api.ts").UnitRole;
 	/** 0-based generation cursor (== the round index for assess loops). */
 	index: number;
 	/** Stable audit identity (`unit.id ?? unit.label` for fanout/iterate; undefined for assess). */

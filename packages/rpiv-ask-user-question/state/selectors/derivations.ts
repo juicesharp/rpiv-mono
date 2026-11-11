@@ -1,5 +1,5 @@
-import type { QuestionAnswer, QuestionData } from "../../tool/types.js";
-import type { WrappingSelectItem } from "../../view/components/wrapping-select.js";
+import type { QuestionAnswer, QuestionData } from "../../tool/types.ts";
+import type { WrappingSelectItem } from "../../view/components/wrapping-select.ts";
 
 /**
  * Which row in the active tab should be marked as "previously confirmed"? Drives the

@@ -1,5 +1,5 @@
-import type { AskUserAnswerRejectCode } from "../events.js";
-import type { QuestionAnswer, QuestionData, QuestionnaireResult } from "./types.js";
+import type { AskUserAnswerRejectCode } from "../events.ts";
+import type { QuestionAnswer, QuestionData, QuestionnaireResult } from "./types.ts";
 
 export type ExternalAnswerOutcome =
 	| { ok: true; result: QuestionnaireResult }

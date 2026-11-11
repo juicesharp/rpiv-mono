@@ -13,8 +13,8 @@
  */
 
 import type { OutcomeDeriverFn } from "@juicesharp/rpiv-workflow/registration";
-import { rpivBucketOutcome } from "./artifact-collector.js";
-import { isModuleNotFound } from "./utils.js";
+import { rpivBucketOutcome } from "./artifact-collector.ts";
+import { isModuleNotFound } from "./utils.ts";
 
 /**
  * Canonical mapping from a skill's `produces.meta.artifactKind` to the bucket

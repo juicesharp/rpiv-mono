@@ -9,7 +9,7 @@
  */
 import type { Output } from "@juicesharp/rpiv-workflow/registration";
 import { describe, expect, it } from "vitest";
-import { freshVerdicts, latestVerdictPerDimension, type VerdictRecord, verdictBlocks } from "./verdict-core.js";
+import { freshVerdicts, latestVerdictPerDimension, type VerdictRecord, verdictBlocks } from "./verdict-core.ts";
 
 /** An anchor-drift nit — matches `isAnchorNitDetail`'s drift phrasing. */
 const NIT = "the anchor citation drifted 3 lines";

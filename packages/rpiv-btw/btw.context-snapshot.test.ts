@@ -30,7 +30,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
-import { buildBtwMessages, registerMessageEndSnapshot } from "./btw.js";
+import { buildBtwMessages, registerMessageEndSnapshot } from "./btw.ts";
 
 const WINDOW = 200_000;
 const MAX_OUTPUT = 32_000;

@@ -1,12 +1,12 @@
 import { createMockCommandCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { acts, defineWorkflow, produces } from "./api.js";
-import { registerBuiltInsProvider } from "./built-ins.js";
+import { acts, defineWorkflow, produces } from "./api.ts";
+import { registerBuiltInsProvider } from "./built-ins.ts";
 
 // Mock runner to avoid needing the full Pi session runtime. The resume path
 // delegates to resumeWorkflowByRunId (which owns resolve → load-gate → find →
 // resumeWorkflow); its internals are covered in runner/by-run-id.test.ts.
-vi.mock("./runner/index.js", () => ({
+vi.mock("./runner/index.ts", () => ({
 	runWorkflow: vi.fn(async () => ({ stagesCompleted: 2, success: true })),
 	resumeWorkflowByRunId: vi.fn(async () => ({ runId: "r", stagesCompleted: 1, success: true })),
 }));
@@ -36,7 +36,7 @@ const reviewWorkflow = defineWorkflow({
 	edges: { "code-review": "commit", commit: "stop" },
 });
 
-vi.mock("./load/index.js", () => ({
+vi.mock("./load/index.ts", () => ({
 	loadWorkflows: vi.fn(async () => ({
 		workflows: [tinyWorkflow, midWorkflow, reviewWorkflow],
 		default: "mid",
@@ -62,9 +62,9 @@ import {
 	PREWARM_DELAY_MS,
 	parseArgs,
 	registerWorkflowCommand,
-} from "./command.js";
-import { loadWorkflows } from "./load/index.js";
-import { resumeWorkflowByRunId, runWorkflow } from "./runner/index.js";
+} from "./command.ts";
+import { loadWorkflows } from "./load/index.ts";
+import { resumeWorkflowByRunId, runWorkflow } from "./runner/index.ts";
 
 beforeEach(() => {
 	vi.mocked(runWorkflow).mockReset();
@@ -802,7 +802,7 @@ describe("/wf — --name flag", () => {
 
 describe("/wf — command-run import memoization", () => {
 	it("runs the importer once across invocations", async () => {
-		const importer = vi.fn(() => import("./command-run.js"));
+		const importer = vi.fn(() => import("./command-run.ts"));
 		const { pi } = createMockPi();
 		const handler = makeWfHandler(pi, importer);
 		await handler("mid first", createMockCommandCtx({ hasUI: true }));
@@ -832,9 +832,9 @@ describe("/wf — command-run import memoization", () => {
 
 	it("clears the memo on import rejection so the next /wf retries", async () => {
 		const importer = vi
-			.fn<() => Promise<typeof import("./command-run.js")>>()
+			.fn<() => Promise<typeof import("./command-run.ts")>>()
 			.mockRejectedValueOnce(new Error("transient import failure"))
-			.mockImplementation(() => import("./command-run.js"));
+			.mockImplementation(() => import("./command-run.ts"));
 		const { pi } = createMockPi();
 		const handler = makeWfHandler(pi, importer);
 		await expect(handler("mid go", createMockCommandCtx({ hasUI: true }))).rejects.toThrow(
@@ -854,7 +854,7 @@ describe("/wf — command-run import memoization", () => {
 
 describe("/wf — pre-warm", () => {
 	it("prewarm() shares the memo: a later /wf shows no toast and reuses the import", async () => {
-		const importer = vi.fn(() => import("./command-run.js"));
+		const importer = vi.fn(() => import("./command-run.ts"));
 		const { pi } = createMockPi();
 		const handler = makeWfHandler(pi, importer);
 		await handler.prewarm();
@@ -866,8 +866,8 @@ describe("/wf — pre-warm", () => {
 	});
 
 	it("shows the toast when /wf arrives while the pre-warm is still in flight", async () => {
-		let release!: (mod: typeof import("./command-run.js")) => void;
-		const gate = new Promise<typeof import("./command-run.js")>((resolve) => {
+		let release!: (mod: typeof import("./command-run.ts")) => void;
+		const gate = new Promise<typeof import("./command-run.ts")>((resolve) => {
 			release = resolve;
 		});
 		const importer = vi.fn(() => gate);
@@ -877,7 +877,7 @@ describe("/wf — pre-warm", () => {
 		const ctx = createMockCommandCtx({ hasUI: true });
 		const invocation = handler("mid go", ctx);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(MSG_RUNTIME_LOADING, "info");
-		release(await import("./command-run.js"));
+		release(await import("./command-run.ts"));
 		await Promise.all([warming, invocation]);
 		expect(importer).toHaveBeenCalledTimes(1);
 		expect(runWorkflow).toHaveBeenCalledTimes(1);
@@ -885,9 +885,9 @@ describe("/wf — pre-warm", () => {
 
 	it("a failed prewarm() clears the memo — the next /wf retries the import", async () => {
 		const importer = vi
-			.fn<() => Promise<typeof import("./command-run.js")>>()
+			.fn<() => Promise<typeof import("./command-run.ts")>>()
 			.mockRejectedValueOnce(new Error("prewarm boom"))
-			.mockImplementation(() => import("./command-run.js"));
+			.mockImplementation(() => import("./command-run.ts"));
 		const { pi } = createMockPi();
 		const handler = makeWfHandler(pi, importer);
 		await expect(handler.prewarm()).rejects.toThrow("prewarm boom");

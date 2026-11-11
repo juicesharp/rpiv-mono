@@ -3,15 +3,15 @@ import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadModelsConfig } from "./models-config.js";
-import { bundledAgentNames } from "./models-config-sources.js";
-import { applyOverride, registerRpivModelsCommand, removeOverride } from "./rpiv-models/index.js";
+import { loadModelsConfig } from "./models-config.ts";
+import { bundledAgentNames } from "./models-config-sources.ts";
+import { applyOverride, registerRpivModelsCommand, removeOverride } from "./rpiv-models/index.ts";
 
-vi.mock("./models-picker.js", () => ({
+vi.mock("./models-picker.ts", () => ({
 	showFilterablePicker: vi.fn(),
 }));
 
-const { showFilterablePicker } = await import("./models-picker.js");
+const { showFilterablePicker } = await import("./models-picker.ts");
 
 function makePi() {
 	let cmdHandler: ((args: string, ctx: ExtensionContext) => Promise<void>) | undefined;
@@ -562,7 +562,7 @@ describe("applyOverride", () => {
 
 describe("/rpiv-models — loadWorkflowMap error handling", () => {
 	it("notifies error when loadWorkflowMap throws for stages scope", async () => {
-		const sources = await import("./models-config-sources.js");
+		const sources = await import("./models-config-sources.ts");
 		vi.spyOn(sources, "loadWorkflowMap").mockRejectedValueOnce(new Error("load failed"));
 		vi.mocked(showFilterablePicker).mockResolvedValueOnce("stages");
 		const { pi, handler } = makePi();
@@ -573,7 +573,7 @@ describe("/rpiv-models — loadWorkflowMap error handling", () => {
 	});
 
 	it("notifies error when loadWorkflowMap throws for presets scope", async () => {
-		const sources = await import("./models-config-sources.js");
+		const sources = await import("./models-config-sources.ts");
 		vi.spyOn(sources, "loadWorkflowMap").mockRejectedValueOnce(new Error("load failed"));
 		vi.mocked(showFilterablePicker).mockResolvedValueOnce("presets");
 		const { pi, handler } = makePi();
@@ -585,7 +585,7 @@ describe("/rpiv-models — loadWorkflowMap error handling", () => {
 
 	it("exits cleanly when the presets STAGE step's loadWorkflowMap rejects (second call)", async () => {
 		rmSync(CONFIG_PATH, { force: true });
-		const sources = await import("./models-config-sources.js");
+		const sources = await import("./models-config-sources.ts");
 		// Workflow step succeeds; the stage step's second load rejects (e.g. the
 		// workflow was deleted between picks).
 		vi.spyOn(sources, "loadWorkflowMap")
@@ -648,7 +648,7 @@ describe("/rpiv-models — ESC navigates one level up", () => {
 
 	it("ESC at the model picker for presets returns to the STAGE picker (one level), not the workflow", async () => {
 		rmSync(CONFIG_PATH, { force: true });
-		const sources = await import("./models-config-sources.js");
+		const sources = await import("./models-config-sources.ts");
 		vi.spyOn(sources, "loadWorkflowMap").mockResolvedValue({ build: ["plan", "research"] });
 
 		// presets → build → plan → ESC at model (back to STAGE) → research → model → save.

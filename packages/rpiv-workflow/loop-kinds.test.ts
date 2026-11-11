@@ -9,9 +9,9 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { AssessLoop, LoopDef, StageDef } from "./api.js";
-import { fs as fsHandle } from "./handle.js";
-import { pendingFanoutIndices } from "./loop.js";
+import type { AssessLoop, LoopDef, StageDef } from "./api.ts";
+import { fs as fsHandle } from "./handle.ts";
+import { pendingFanoutIndices } from "./loop.ts";
 import {
 	buildUnitSession,
 	foldFanoutCompletion,
@@ -20,10 +20,10 @@ import {
 	type LoopEntry,
 	type NextStep,
 	sequentialStrategyOf,
-} from "./loop-kinds.js";
-import { failedOutput, type Output } from "./output.js";
-import { StagePreflightError } from "./stage-errors.js";
-import type { RunContext, RunState } from "./types.js";
+} from "./loop-kinds.ts";
+import { failedOutput, type Output } from "./output.ts";
+import { StagePreflightError } from "./stage-errors.ts";
+import type { RunContext, RunState } from "./types.ts";
 
 const output = (artifacts: Output["artifacts"] = [{ handle: fsHandle("a.md"), role: "primary" }]): Output => ({
 	kind: "artifacts",

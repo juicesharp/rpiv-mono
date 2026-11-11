@@ -17,10 +17,10 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { type Artifact, handleToString } from "../handle.js";
-import { formatError } from "../internal-utils.js";
-import { stateFilePath } from "./paths.js";
-import { enumerateRunIds, readFirstJsonlLine } from "./raw.js";
+import { type Artifact, handleToString } from "../handle.ts";
+import { formatError } from "../internal-utils.ts";
+import { stateFilePath } from "./paths.ts";
+import { enumerateRunIds, readFirstJsonlLine } from "./raw.ts";
 import type {
 	LoopCapRow,
 	RoutingDecision,
@@ -29,7 +29,7 @@ import type {
 	StageStatus,
 	WorkflowHeader,
 	WorkflowStage,
-} from "./state.js";
+} from "./state.ts";
 
 /**
  * Reads every line, filters by shape (not position). Header has no

@@ -13,8 +13,8 @@ import {
 	BTW_NO_ANCHOR_SAFETY_FACTOR,
 	type BtwTurn,
 	branchToContextMessages,
-} from "./btw.js";
-import { BTW_STUB_TEXT, type CappedHistory, capHistory, fitBranch } from "./btw-budget.js";
+} from "./btw.ts";
+import { BTW_STUB_TEXT, type CappedHistory, capHistory, fitBranch } from "./btw-budget.ts";
 
 // toks(n) → a string whose estimateTokens is exactly n (chars/4, length a multiple of 4).
 const toks = (n: number): string => "x".repeat(n * 4);

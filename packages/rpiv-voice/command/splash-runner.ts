@@ -4,7 +4,7 @@ import {
 	SPLASH_FRAMES,
 	type SplashPhase,
 	SplashView,
-} from "../view/components/splash-view.js";
+} from "../view/components/splash-view.ts";
 
 export interface SplashController {
 	setPhase(phase: SplashPhase): void;

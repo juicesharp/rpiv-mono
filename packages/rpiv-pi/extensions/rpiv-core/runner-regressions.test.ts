@@ -23,7 +23,7 @@ import {
 } from "@juicesharp/rpiv-workflow";
 import { type RunState, runsDir, stateFilePath } from "@juicesharp/rpiv-workflow/internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { rpivArtifactMdOutcome } from "./artifact-collector.js";
+import { rpivArtifactMdOutcome } from "./artifact-collector.ts";
 
 describe("readers must not silently drop the first row when no header is on disk", () => {
 	let tmpDir: string;

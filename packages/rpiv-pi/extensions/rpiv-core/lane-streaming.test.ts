@@ -1,7 +1,7 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { createLaneSessionView } from "./lane-streaming.js";
-import type { ViewerMessage } from "./lane-transcript.js";
+import { createLaneSessionView } from "./lane-streaming.ts";
+import type { ViewerMessage } from "./lane-transcript.ts";
 
 type AnyEvent = { type: string; message?: { role: string; content?: unknown[] } };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderBanner } from "./banner.js";
+import { renderBanner } from "./banner.ts";
 
 describe("renderBanner", () => {
 	it("renders title, body, spacer, and CTA inside a rounded box", () => {

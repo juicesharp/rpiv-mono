@@ -4,14 +4,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { acts, defineWorkflow, fanin, gate, produces, type StageDef, type Workflow } from "./api.js";
-import { judge } from "./judge.js";
-import type { LoadedWorkflows } from "./load/index.js";
-import { assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.js";
-import { gitCommitOutcome } from "./outcomes/index.js";
-import { eq, gt } from "./predicates.js";
-import { CMD_USAGE_PREVIEW, formatWorkflowDetails, formatWorkflowList } from "./preview.js";
-import type { SkillContract } from "./skill-contract.js";
+import { acts, defineWorkflow, fanin, gate, produces, type StageDef, type Workflow } from "./api.ts";
+import { judge } from "./judge.ts";
+import type { LoadedWorkflows } from "./load/index.ts";
+import { assess, fanout, iterate, majority, panel, verify } from "./loop-constructors.ts";
+import { gitCommitOutcome } from "./outcomes/index.ts";
+import { eq, gt } from "./predicates.ts";
+import { CMD_USAGE_PREVIEW, formatWorkflowDetails, formatWorkflowList } from "./preview.ts";
+import type { SkillContract } from "./skill-contract.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures

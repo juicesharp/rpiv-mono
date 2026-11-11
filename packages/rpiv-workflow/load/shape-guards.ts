@@ -6,7 +6,7 @@
  * lives in `../internal-utils.ts` — it's package-wide, not loader-specific.)
  */
 
-import type { Workflow } from "../api.js";
+import type { Workflow } from "../api.ts";
 
 export interface Envelope {
 	workflows?: Workflow[];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { RecordingStatus } from "./state.js";
-import { STATUS_META } from "./status-intent.js";
+import type { RecordingStatus } from "./state.ts";
+import { STATUS_META } from "./status-intent.ts";
 
 describe("STATUS_META", () => {
 	it("has an entry for every RecordingStatus", () => {

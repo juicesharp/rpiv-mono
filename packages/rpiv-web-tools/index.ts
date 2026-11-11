@@ -9,10 +9,10 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { buildInterceptors } from "./providers/interceptors/index.js";
-import { registerWebFetchTool, registerWebSearchConfigCommand, registerWebSearchTool } from "./web-tools.js";
+import { buildInterceptors } from "./providers/interceptors/index.ts";
+import { registerWebFetchTool, registerWebSearchConfigCommand, registerWebSearchTool } from "./web-tools.ts";
 
-export { createSearchProvider } from "./providers/factory.js";
+export { createSearchProvider } from "./providers/factory.ts";
 export {
 	GITHUB_TOKEN_ENV_VAR,
 	GitHubInterceptor,
@@ -21,7 +21,7 @@ export {
 	parseGitHubUrl,
 	resolveGitHubOptions,
 	type UrlInterceptor,
-} from "./providers/interceptors/index.js";
+} from "./providers/interceptors/index.ts";
 
 export type {
 	FetchProvider,
@@ -30,7 +30,7 @@ export type {
 	SearchProvider,
 	SearchResponse,
 	SearchResult,
-} from "./providers/types.js";
+} from "./providers/types.ts";
 export {
 	DEFAULT_WEB_FETCH_GUIDELINES,
 	DEFAULT_WEB_FETCH_SNIPPET,
@@ -39,7 +39,7 @@ export {
 	registerWebFetchTool,
 	registerWebSearchConfigCommand,
 	registerWebSearchTool,
-} from "./web-tools.js";
+} from "./web-tools.ts";
 
 // Programmatic consumer-side opt-in for URL interceptors. Tier 2 in the
 // resolution model: end-user config (Tier 1) still wins. Default OFF —

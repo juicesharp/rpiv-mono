@@ -15,9 +15,9 @@
  * `chain-state.ts` re-exports them so its own runtime callers keep one import.
  */
 
-import type { SkillStage, StageDef, StageSchema } from "./api.js";
-import { isJsonSchemaObject, jsonSchemaToStandard } from "./json-schema.js";
-import type { SkillContractMap } from "./skill-contract.js";
+import type { SkillStage, StageDef, StageSchema } from "./api.ts";
+import { isJsonSchemaObject, jsonSchemaToStandard } from "./json-schema.ts";
+import type { SkillContractMap } from "./skill-contract.ts";
 
 /**
  * Resolve the `state.named` key a produces stage appends its `Output`

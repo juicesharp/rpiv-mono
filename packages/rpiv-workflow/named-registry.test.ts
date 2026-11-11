@@ -23,13 +23,13 @@ import {
 	produces,
 	type StageDef,
 	type Workflow,
-} from "./api.js";
-import { fs as fsHandle, opaque } from "./handle.js";
-import type { Outcome } from "./output-spec.js";
-import { eq, gt } from "./predicates.js";
-import { runWorkflow } from "./runner/index.js";
-import { typeboxSchema } from "./typebox-adapter.js";
-import { validateWorkflow } from "./validate-workflow.js";
+} from "./api.ts";
+import { fs as fsHandle, opaque } from "./handle.ts";
+import type { Outcome } from "./output-spec.ts";
+import { eq, gt } from "./predicates.ts";
+import { runWorkflow } from "./runner/index.ts";
+import { typeboxSchema } from "./typebox-adapter.ts";
+import { validateWorkflow } from "./validate-workflow.ts";
 
 // ---------------------------------------------------------------------------
 // Local fixtures

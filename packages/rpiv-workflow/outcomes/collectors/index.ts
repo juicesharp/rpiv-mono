@@ -9,14 +9,14 @@
  * (`rpiv-pi` ships `rpivArtifactCollector` / `rpivBucketCollector`).
  */
 
-export { type DirectoryPathCollectorOpts, directoryPathCollector } from "./directory-path.js";
-export { type TextScanCollectorOpts, textScanCollector } from "./text-scan.js";
-export { type ToolCall, type ToolCallCollectorOpts, toolCallCollector } from "./tool-call.js";
-export { type TranscriptPathCollectorOpts, transcriptPathCollector } from "./transcript-path.js";
-export { unionCollectors } from "./union.js";
-export { type UrlCollectorOpts, urlCollector } from "./url.js";
+export { type DirectoryPathCollectorOpts, directoryPathCollector } from "./directory-path.ts";
+export { type TextScanCollectorOpts, textScanCollector } from "./text-scan.ts";
+export { type ToolCall, type ToolCallCollectorOpts, toolCallCollector } from "./tool-call.ts";
+export { type TranscriptPathCollectorOpts, transcriptPathCollector } from "./transcript-path.ts";
+export { unionCollectors } from "./union.ts";
+export { type UrlCollectorOpts, urlCollector } from "./url.ts";
 export {
 	type WorkspaceDiffCollectorOpts,
 	type WorkspaceDiffSnapshot,
 	workspaceDiffCollector,
-} from "./workspace-diff.js";
+} from "./workspace-diff.ts";

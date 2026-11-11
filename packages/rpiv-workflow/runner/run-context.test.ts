@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { defineWorkflow, produces } from "../api.js";
-import { MSG_BUDGET_INVALID } from "../messages.js";
+import { defineWorkflow, produces } from "../api.ts";
+import { MSG_BUDGET_INVALID } from "../messages.ts";
 import {
 	buildRunContext,
 	freshRunState,
@@ -8,7 +8,7 @@ import {
 	MAX_ITERATIONS,
 	MAX_LAPS,
 	validateRunBudgets,
-} from "./run-context.js";
+} from "./run-context.ts";
 
 const workflow = defineWorkflow({
 	name: "budgets",

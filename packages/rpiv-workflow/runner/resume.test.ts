@@ -39,15 +39,15 @@ import {
 	produces,
 	setRouteNote,
 	type Workflow,
-} from "../api.js";
-import { stageEntryArgs } from "../chain-state.js";
-import type { Artifact } from "../handle.js";
-import { fs as fsHandle, handleToString, opaque } from "../handle.js";
-import { judge } from "../judge.js";
-import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.js";
-import { advanceCursor, foldFanoutCompletion, freshCursor } from "../loop-kinds.js";
-import { FAIL_GATE_STOP } from "../messages.js";
-import type { Output } from "../output.js";
+} from "../api.ts";
+import { stageEntryArgs } from "../chain-state.ts";
+import type { Artifact } from "../handle.ts";
+import { fs as fsHandle, handleToString, opaque } from "../handle.ts";
+import { judge } from "../judge.ts";
+import { assess, fanout, iterate, majority, panel, verify } from "../loop-constructors.ts";
+import { advanceCursor, foldFanoutCompletion, freshCursor } from "../loop-kinds.ts";
+import { FAIL_GATE_STOP } from "../messages.ts";
+import type { Output } from "../output.ts";
 import {
 	appendHeader,
 	appendRoutingDecision,
@@ -59,10 +59,10 @@ import {
 	stateFilePath,
 	type WorkflowHeader,
 	type WorkflowStage,
-} from "../state/index.js";
-import type { RunState } from "../types.js";
-import { reconstructState } from "./resume.js";
-import { resumeWorkflow, runWorkflow } from "./runner.js";
+} from "../state/index.ts";
+import type { RunState } from "../types.ts";
+import { reconstructState } from "./resume.ts";
+import { resumeWorkflow, runWorkflow } from "./runner.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -84,7 +84,7 @@ const fakeOutput = (artifacts: readonly Artifact[] = []): Output => ({
  */
 const makeOutcome = (
 	name: string,
-): import("../output-spec.js").Outcome<unknown, "artifact-md", Record<string, unknown>> & { name: string } => ({
+): import("../output-spec.ts").Outcome<unknown, "artifact-md", Record<string, unknown>> & { name: string } => ({
 	name,
 	collector: { collect: () => ({ kind: "ok", artifacts: [] }) },
 });
@@ -1282,7 +1282,7 @@ describe("reconstructState", () => {
 const RPIV_ARTIFACT_PATTERN = /\.rpiv\/artifacts\/(?:(?!\.\.)[\w.-])+\/(?:(?!\.\.)[\w.-])+\.md/g;
 
 /** Minimal outcome that scans assistant text for .rpiv/artifacts paths. */
-const artifactOutcome: import("../output-spec.js").Outcome<unknown, "artifact-md", Record<string, unknown>> = {
+const artifactOutcome: import("../output-spec.ts").Outcome<unknown, "artifact-md", Record<string, unknown>> = {
 	collector: {
 		collect: (ctx) => {
 			let lastMatch: string | undefined;
@@ -2217,7 +2217,7 @@ describe("resumeWorkflow — fresh re-entry budgets (revisits + laps)", () => {
 		},
 	];
 
-	const loopWf = (pick: () => "a" | "stop", progress?: import("../api.js").StageDef["progress"]): Workflow => ({
+	const loopWf = (pick: () => "a" | "stop", progress?: import("../api.ts").StageDef["progress"]): Workflow => ({
 		name: "resume-wf",
 		start: "a",
 		stages: {
@@ -2668,7 +2668,7 @@ describe("resumeWorkflow — gate-stop halts (the re-measure)", () => {
 		// the gate folds it and stops with a note, chain-advance writes the
 		// [stop row, FAIL_GATE_STOP row] pair — and the resume entry then takes
 		// the side-effect arm, dispatching `verify` instead of replaying `fix`.
-		const digestOutcome: import("../output-spec.js").Outcome<unknown, "digest", { changed: boolean }> = {
+		const digestOutcome: import("../output-spec.ts").Outcome<unknown, "digest", { changed: boolean }> = {
 			name: "digest",
 			collector: {
 				collect: () => ({ kind: "ok", artifacts: [{ handle: opaque("digest-unchanged"), role: "digest" }] }),

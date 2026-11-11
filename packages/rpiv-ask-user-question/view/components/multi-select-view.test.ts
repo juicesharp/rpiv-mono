@@ -2,9 +2,9 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
-import { makeMultiSelectViewProps as makeProps } from "../../test-fixtures.js";
-import type { QuestionData } from "../../tool/types.js";
-import { MultiSelectView, type MultiSelectViewProps } from "./multi-select-view.js";
+import { makeMultiSelectViewProps as makeProps } from "../../test-fixtures.ts";
+import type { QuestionData } from "../../tool/types.ts";
+import { MultiSelectView, type MultiSelectViewProps } from "./multi-select-view.ts";
 
 const theme = makeTheme() as unknown as Theme;
 

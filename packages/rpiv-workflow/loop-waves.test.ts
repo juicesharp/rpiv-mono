@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Unit } from "./loop-def.js";
-import { computeWaveLevels, ensureUnitDeps, unitIdIndex } from "./loop-waves.js";
-import { StagePreflightError } from "./stage-errors.js";
+import type { Unit } from "./loop-def.ts";
+import { computeWaveLevels, ensureUnitDeps, unitIdIndex } from "./loop-waves.ts";
+import { StagePreflightError } from "./stage-errors.ts";
 
 const u = (id: string, deps?: string[]): Unit => ({ prompt: id, label: id, id, ...(deps ? { deps } : {}) });
 

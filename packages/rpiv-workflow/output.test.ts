@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { fs } from "./handle.js";
-import { FAILED_OUTPUT_KIND, failedOutput, finalizeOutput, isFailedOutput, outputMeta } from "./output.js";
+import { fs } from "./handle.ts";
+import { FAILED_OUTPUT_KIND, failedOutput, finalizeOutput, isFailedOutput, outputMeta } from "./output.ts";
 
 const baseCtx = {
 	stage: "research",

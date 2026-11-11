@@ -1,7 +1,7 @@
 import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import { normalizeLineTerminators, normalizeQuestionParams, prepareQuestionArguments } from "./normalize-params.js";
-import { type QuestionParams, QuestionParamsSchema } from "./types.js";
+import { normalizeLineTerminators, normalizeQuestionParams, prepareQuestionArguments } from "./normalize-params.ts";
+import { type QuestionParams, QuestionParamsSchema } from "./types.ts";
 
 describe("normalizeLineTerminators", () => {
 	it("deletes a lone CR without introducing a phantom space (#192 sample 1)", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLEANUP_SKIP_REASON, summarizeCleanupSkips } from "./agents-types.js";
+import { CLEANUP_SKIP_REASON, summarizeCleanupSkips } from "./agents-types.ts";
 
 // De-nested from the cleanupPerCwdAgents describe of the pre-split
 // agents.test.ts: summarizeCleanupSkips is a pure formatter owned by

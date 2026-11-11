@@ -2,8 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerSessionCapture } from "./session-capture.js";
-import { parseSkillInvocation, registerSkillBracket } from "./skill-bracket.js";
+import { registerSessionCapture } from "./session-capture.ts";
+import { parseSkillInvocation, registerSkillBracket } from "./skill-bracket.ts";
 
 const BASELINE_MODEL = { provider: "anthropic", id: "baseline" };
 

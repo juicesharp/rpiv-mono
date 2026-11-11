@@ -14,12 +14,12 @@ import type { EdgeFn } from "@juicesharp/rpiv-workflow";
 import { takeRouteNote } from "@juicesharp/rpiv-workflow/internal";
 import { fs as fsHandle, type Output, type RunView } from "@juicesharp/rpiv-workflow/registration";
 import { describe, expect, it } from "vitest";
-import { builtInWorkflows, shipGatePasses } from "../built-in-workflows.js";
-import { deriveAndValidate, findWorkflow } from "../workflow-test-harness.js";
-import { confirmDue, panelProgress, progressFromRoundCounts } from "./gate-passes.js";
-import { codeGatePasses, planGatePasses, sliceGatePasses, unitFailedDimensions } from "./gates.js";
-import { seedOnlyFindings } from "./index.js";
-import { PLAN_DIMENSIONS, SLICE_DIMENSIONS, verdictBlocks } from "./verdict-core.js";
+import { builtInWorkflows, shipGatePasses } from "../built-in-workflows.ts";
+import { deriveAndValidate, findWorkflow } from "../workflow-test-harness.ts";
+import { confirmDue, panelProgress, progressFromRoundCounts } from "./gate-passes.ts";
+import { codeGatePasses, planGatePasses, sliceGatePasses, unitFailedDimensions } from "./gates.ts";
+import { seedOnlyFindings } from "./index.ts";
+import { PLAN_DIMENSIONS, SLICE_DIMENSIONS, verdictBlocks } from "./verdict-core.ts";
 
 describe("progressFromRoundCounts (whole-lap rule core)", () => {
 	it("maps count trajectories to the four verdicts — counts only, never scores", () => {

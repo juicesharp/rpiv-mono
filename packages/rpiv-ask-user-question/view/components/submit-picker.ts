@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { t } from "../../state/i18n-bridge.js";
-import type { StatefulView } from "../stateful-view.js";
+import { t } from "../../state/i18n-bridge.ts";
+import type { StatefulView } from "../stateful-view.ts";
 
 const ACTIVE_POINTER = "❯ ";
 const INACTIVE_POINTER = "  ";

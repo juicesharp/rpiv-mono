@@ -9,8 +9,8 @@ import { join } from "node:path";
 import type { RunView } from "@juicesharp/rpiv-workflow";
 import { fanin, fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findWorkflow } from "../workflow-test-harness.js";
-import { designOutcome } from "./index.js";
+import { findWorkflow } from "../workflow-test-harness.ts";
+import { designOutcome } from "./index.ts";
 
 describe("SLICE_DESIGN_FANOUT (build design — deps + --upstream)", () => {
 	let tmpDir: string;

@@ -4,7 +4,7 @@
  */
 
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { GradedEffort } from "./messages.js";
+import type { GradedEffort } from "./messages.ts";
 
 let selectedAdvisor: Model<Api> | undefined;
 let selectedAdvisorEffort: GradedEffort | undefined;

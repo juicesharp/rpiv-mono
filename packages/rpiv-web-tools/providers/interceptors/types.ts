@@ -1,4 +1,4 @@
-import type { FetchResponse } from "../types.js";
+import type { FetchResponse } from "../types.ts";
 
 // Generic URL specialist contract. A UrlInterceptor inspects a fetch target
 // before the active search provider's fetch() runs; if it owns the URL it

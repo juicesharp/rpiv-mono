@@ -22,7 +22,7 @@ Claude-Code-parity task management for Pi. Registers a single multiplexed `todo`
 .                — Composer (index.ts) + tool/command registrars (todo.ts) + overlay widget class
                    (todo-overlay.ts) + config.ts. Each capability gets a single file at the package
                    root; the composer is pure wiring; todo.ts re-exports the reducer/store/graph/types
-                   surface so existing consumers keep importing from "./todo.js".
+                   surface so existing consumers keep importing from "./todo.ts".
 state/           — Reducer + store cell + replay (compaction-survival) + task-graph + invariants
                    + selectors + i18n-bridge. No Pi imports below the bridge — testable in isolation.
                    Detailed shape: `.rpiv/guidance/packages/rpiv-todo/state/architecture.md`.
@@ -88,7 +88,7 @@ pi.on("session_start", async (_e, ctx) => {
 
 ## Architectural Boundaries
 - **Status transitions are a single declarative table** — `Record<TaskStatus, ReadonlySet<TaskStatus>>` in `state/invariants.ts`, never an `if/switch` ladder; adding a status is a one-line edit and mistakes surface as data
-- **NO replay from `tool_execution_end`** — `message_end` runs after, so the branch is stale; the widget reads live state via `getRenderState()` (the ctx-less foreground slot — `import { getRenderState } from "./state/store.js"`) instead
+- **NO replay from `tool_execution_end`** — `message_end` runs after, so the branch is stale; the widget reads live state via `getRenderState()` (the ctx-less foreground slot — `import { getRenderState } from "./state/store.ts"`) instead
 - **`TOOL_NAME`, `STATE_ENTRY_TYPE` and `WIDGET_KEY` are preserved verbatim** — renaming breaks session-history replay and persisted UI state
 - **Delete is a tombstone** (`status: "deleted"`, terminal) — preserves ids so historic `blockedBy` references still resolve
 - **NO disk persistence** — state derives entirely from the session branch via the `details` envelope: `todo.ts` `execute()` also appends it as a `rpiv-todo-state` custom entry (`pi.appendEntry`) for every state change (`changesState(op)`), because a call made through another tool (`ctx.executeTool`, e.g. codemode) never lands as a standalone `toolResult` — Pi's codemode persists its `store()` the same way

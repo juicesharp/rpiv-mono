@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readLoadedSiblingSources } from "./loaded-siblings.js";
+import { readLoadedSiblingSources } from "./loaded-siblings.ts";
 
 const ARGS_MARKER = "@juicesharp/rpiv-args:loaded";
 const slots = globalThis as Record<symbol, unknown>;

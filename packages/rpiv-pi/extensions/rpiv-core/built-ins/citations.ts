@@ -6,8 +6,8 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, sep } from "node:path";
-import { fencedSpans } from "./markdown-fence.js";
-import { containedPath, FILE_LINE_CITATION_RE, type StructureFinding } from "./shared.js";
+import { fencedSpans } from "./markdown-fence.ts";
+import { containedPath, FILE_LINE_CITATION_RE, type StructureFinding } from "./shared.ts";
 
 /**
  * Verify every `file:line` citation in `body` resolves against the working tree:

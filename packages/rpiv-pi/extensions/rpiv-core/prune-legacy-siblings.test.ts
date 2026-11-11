@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findLegacySiblings, pruneLegacySiblings } from "./prune-legacy-siblings.js";
-import { getPiAgentSettingsPath } from "./utils.js";
+import { findLegacySiblings, pruneLegacySiblings } from "./prune-legacy-siblings.ts";
+import { getPiAgentSettingsPath } from "./utils.ts";
 
 function writeSettingsRaw(raw: string): void {
 	const settingsPath = getPiAgentSettingsPath();

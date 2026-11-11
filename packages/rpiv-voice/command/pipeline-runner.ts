@@ -1,11 +1,11 @@
-import { appendDiagnosticLog, appendErrorLog } from "../audio/error-log.js";
-import { isHallucination } from "../audio/hallucination-filter.js";
-import type { DecibriLike } from "../audio/mic-source.js";
-import { TARGET_SAMPLE_RATE } from "../audio/mic-source.js";
-import { bufferToFloat32, computeRmsFloat32, computeRmsInt16, samplesInInt16Chunk } from "../audio/pcm.js";
-import type { SttEngine } from "../audio/stt-engine.js";
-import { isHallucinationFilterEnabled } from "../config/voice-config.js";
-import type { VoiceSession } from "../state/voice-session.js";
+import { appendDiagnosticLog, appendErrorLog } from "../audio/error-log.ts";
+import { isHallucination } from "../audio/hallucination-filter.ts";
+import type { DecibriLike } from "../audio/mic-source.ts";
+import { TARGET_SAMPLE_RATE } from "../audio/mic-source.ts";
+import { bufferToFloat32, computeRmsFloat32, computeRmsInt16, samplesInInt16Chunk } from "../audio/pcm.ts";
+import type { SttEngine } from "../audio/stt-engine.ts";
+import { isHallucinationFilterEnabled } from "../config/voice-config.ts";
+import type { VoiceSession } from "../state/voice-session.ts";
 
 // 12 s soft cap: Whisper trains on 30 s windows and degrades on very short
 // inputs; 5 s force-flushes routinely bisect a clause mid-word. 12 s is the

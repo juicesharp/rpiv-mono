@@ -16,10 +16,10 @@
 
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { StageDef } from "./api.js";
-import { applyCompletedStage, resolveSkill } from "./chain-state.js";
-import type { Artifact } from "./handle.js";
-import { fs as fsHandle } from "./handle.js";
+import type { StageDef } from "./api.ts";
+import { applyCompletedStage, resolveSkill } from "./chain-state.ts";
+import type { Artifact } from "./handle.ts";
+import { fs as fsHandle } from "./handle.ts";
 import {
 	deepEqual,
 	globalSlot,
@@ -28,10 +28,10 @@ import {
 	readSymbol,
 	resolveUnderCwd,
 	withTimeout,
-} from "./internal-utils.js";
-import type { Output } from "./output.js";
-import type { RunState } from "./types.js";
-import { SchemaTimeoutError } from "./validate-output.js";
+} from "./internal-utils.ts";
+import type { Output } from "./output.ts";
+import type { RunState } from "./types.ts";
+import { SchemaTimeoutError } from "./validate-output.ts";
 
 // NOTE: test/setup.ts runs beforeEach and clears globalThis Symbol.for slots via
 // __resetSkillContracts. globalSlot tests below use dedicated Symbol.for keys

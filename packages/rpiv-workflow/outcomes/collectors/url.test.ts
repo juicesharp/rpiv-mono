@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { BranchEntry } from "../../transcript.js";
-import { urlCollector } from "./url.js";
+import type { BranchEntry } from "../../transcript.ts";
+import { urlCollector } from "./url.ts";
 
 const asst = (text: string): BranchEntry => ({
 	type: "message",

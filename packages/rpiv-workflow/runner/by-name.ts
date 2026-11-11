@@ -19,10 +19,10 @@
  * loader's "never throws" guarantee. Callers branch on `result.success`.
  */
 
-import type { WorkflowHostContext } from "../host.js";
-import { findWorkflow, loadWorkflows } from "../load/index.js";
-import type { RunWorkflowOptions, RunWorkflowResult } from "../types.js";
-import { runWorkflow } from "./runner.js";
+import type { WorkflowHostContext } from "../host.ts";
+import { findWorkflow, loadWorkflows } from "../load/index.ts";
+import type { RunWorkflowOptions, RunWorkflowResult } from "../types.ts";
+import { runWorkflow } from "./runner.ts";
 
 /**
  * Options for `runWorkflowByName` — the full `RunWorkflowOptions` surface

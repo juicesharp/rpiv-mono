@@ -5,7 +5,7 @@ import {
 	mergeCsvAdditions,
 	mergeFlowSeqAdditions,
 	resolveAgentEnablement,
-} from "./agent-enablement.js";
+} from "./agent-enablement.ts";
 
 describe("mergeCsvAdditions", () => {
 	it("returns additions alone when existing is undefined", () => {

@@ -12,9 +12,9 @@ import { type Component, getKeybindings, type TUI } from "@earendil-works/pi-tui
 import askUserQuestionExtension from "@juicesharp/rpiv-ask-user-question";
 import { createMockPi, makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cappedTui, LaneConsole, showLaneConsole } from "./lane-console.js";
-import { renderLaneList } from "./lane-list.js";
-import type { ViewerMessage } from "./lane-transcript.js";
+import { cappedTui, LaneConsole, showLaneConsole } from "./lane-console.ts";
+import { renderLaneList } from "./lane-list.ts";
+import type { ViewerMessage } from "./lane-transcript.ts";
 import {
 	__resetRunLaneRegistry,
 	captureFinalSnapshot,
@@ -30,7 +30,7 @@ import {
 	setLaneSessionFile,
 	setRecap,
 	setUnitStarted,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 const identityTheme = {
 	fg: (_c: string, s: string) => s,

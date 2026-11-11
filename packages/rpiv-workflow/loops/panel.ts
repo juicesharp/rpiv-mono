@@ -6,7 +6,7 @@
  */
 
 import { type Static, Type } from "typebox";
-import type { StageDef } from "../api.js";
+import type { StageDef } from "../api.ts";
 import {
 	assertShape,
 	brandCanonicalFold,
@@ -16,9 +16,9 @@ import {
 	marksCanonicalFold,
 	type NamedOutcome,
 	type PanelJudge,
-} from "../judge.js";
-import { noopCollector } from "../outcomes/index.js";
-import type { Output } from "../output.js";
+} from "../judge.ts";
+import { noopCollector } from "../outcomes/index.ts";
+import type { Output } from "../output.ts";
 
 /**
  * The canonical fold output shape — what `majority`/`all`/`any` emit and what

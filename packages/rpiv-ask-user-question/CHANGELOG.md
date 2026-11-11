@@ -7,6 +7,50 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Terminals show that Pi is waiting for your answer while a questionnaire is open.** Terminals and dashboards that read OSC 7501 program status (iTerm2, Rex) kept showing Pi as working while a questionnaire waited, so their attention cues never fired. The questionnaire now asks Pi to report `blocked` with kind `question`: inline questionnaires on Pi 1.5.0+, overlay fallbacks on Pi 1.5.1+, and an overlay stays blocked while collapsed or covered by another one. The status says only "Waiting for your answer", in your language, never the question or your answers. Older Pi versions ignore it, and `rpiv:ask-user:blocked` is unchanged. Thanks @derrik-fleming ([#345](https://github.com/juicesharp/rpiv-mono/issues/345)).
+- **Herdr marks the pane blocked while a questionnaire waits.** Herdr's Pi integration reads only `herdr:blocked` events, not OSC 7501 or the screen, so its pane stayed working. The questionnaire now emits `herdr:blocked` beside `rpiv:ask-user:blocked`, set before the dialog and cleared exactly once however it ends, labelled with the same translated "Waiting for your answer". Thanks @ac8318740 ([#300](https://github.com/juicesharp/rpiv-mono/pull/300)).
+
+## [2.15.0] - 2026-10-24
+
+### Added
+
+- **Digit keys pick a row.** Pressing `1`–`9` acts on the row with that number: on a single-select question it answers with that row, exactly like Enter on it (in a one-question dialog that closes the dialog); on a multi-select question it toggles the row; on the `Type something.` row it moves there so you can type. Digits are still text inside `Type something.` and the notes editor, `Next` has no digit, and a digit you bound to a Pi keybinding or set as `notesKey` keeps that meaning. A digit that used to do nothing now answers a single-select question. Thanks @hank-warren ([#163](https://github.com/juicesharp/rpiv-mono/issues/163)).
+- **The notes key is configurable (`notesKey`), so notes work on non-Latin keyboard layouts.** The `n` shortcut never fired on, for example, a Cyrillic layout, where that key types `т`, and Pi's key parser only recognises Latin keys. Set `notesKey` to the character your keyboard types (`"т"`), or to a key spec such as `"ctrl+n"`. A single character matches as typed, in any script; invalid values and keys the dialog already uses (space, Enter, Tab, Esc, arrows) fall back to `n`. The notes hints in all 9 languages name the configured key. The default stays `n`. Thanks @Robert322-ai ([#294](https://github.com/juicesharp/rpiv-mono/issues/294)).
+
+## [2.14.2] - 2026-10-23
+
+### Added
+
+- **A compact receipt in the conversation history.** A finished `ask_user_question` call showed a JSON dump of its arguments and the full text written for the model. It now shows `Ask` with the question headers, then `✓ answer` for a single question or one aligned row per question for several, with skipped questions marked `not answered` and notes on `✎` lines. Typed answers are quoted, and `(Recommended)` is dropped from option labels. Ctrl+O adds each question's text and the chosen preview. A declined questionnaire shows `✗ no answer`; an error shows `✗` with its first line. Only the display changes; what the model receives is unchanged. Thanks @samuhlo and @OliverFGBKB ([#231](https://github.com/juicesharp/rpiv-mono/pull/231), [#292](https://github.com/juicesharp/rpiv-mono/issues/292)).
+
+### Fixed
+
+- **Going back to an answered question puts the cursor on your answer.** The cursor always returned to the first option, so a habitual Enter replaced the saved answer with option 1. It now lands on the chosen option, or on Next for a multi-select question, so Enter keeps the answer. A question answered with typed text still starts at the first option, so Tab and the arrows keep switching questions instead of editing the text. Thanks @xz-dev ([#281](https://github.com/juicesharp/rpiv-mono/pull/281)).
+- **Space and `n` work in terminals that send CSI-u keys (Kitty keyboard protocol).** There, Space did not toggle a multi-select checkbox and `n` did not open notes, on question tabs or on the Submit tab. Both now match the key however the terminal encodes it; Shift+N, Alt and Ctrl variants are still ignored. Thanks @bumaociyuan ([#287](https://github.com/juicesharp/rpiv-mono/pull/287)).
+
+## [2.14.1] - 2026-10-23
+
+## [2.14.0] - 2026-10-23
+
+### Fixed
+
+- `ask_user_question` stays available to the model when Pi's codemode runs in `"only"` mode. That mode hides every regular tool behind `codemode` scripts, so the model stopped asking structured questions. The tool is now registered with `exposure: "model-only"`: the model always calls it directly, and codemode scripts can no longer call it, since a question needs the user and does not belong mid-script. Thanks @cucumber20260226. (#310)
+
+## [2.13.10] - 2026-10-23
+
+### Fixed
+
+- The transcript keeps scrolling while a question is open even when another extension shows a status panel or other overlay that never takes the keys. Such an overlay used to push the question into an overlay of its own, and in fullscreen Pi a focused overlay takes `PageUp`/`PageDown` (and, on Pi 1.1, the mouse wheel) until the question is answered. The question now opens in the editor area unless an overlay that takes the keys, such as `/btw`, is open (#313).
+- The notes editor stays visible while you type when the question is taller than the terminal. Pressing `n` on a long question used to show only the `Notes:` header, with the editor scrolled out of view under a `↓` arrow and an IME composition window drawn elsewhere on screen. The dialog now scrolls to the open editor, following the cursor line when the editor is taller than the space left; the Submit tab's global note gets the same fix. Thanks @hoonysis. (#317)
+
+## [2.13.9] - 2026-10-17
+
+### Changed
+
+- Faster extension startup: eager relative imports now name the published `.ts` files directly instead of making Jiti resolve nonexistent `.js` targets. The questionnaire UI remains lazy-loaded; registration and runtime behavior are unchanged. See [startup measurements and reproduction](docs/startup-performance.md).
+
 ### Added
 
 - `rpiv:ask-user:answer` — an inbound event that answers or cancels an open questionnaire without synthesizing keystrokes, for programs driving Pi from outside (pane supervisors, phone or web bridges, test harnesses). It names the questionnaire by `toolCallId`, now carried on the prompt and blocked events, so parallel questionnaires are never confused. It is accepted from the moment the prompt is emitted, the first answer wins (terminal or event), validation is strict and all-or-nothing, and every attempt gets one verdict with a machine-readable `code` on `rpiv:ask-user:answer-result`. Terminal dialog only. Thanks @yingzhi0808, and @catlain for #180. (#207)

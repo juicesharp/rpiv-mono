@@ -22,14 +22,14 @@ import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding
 import { createMockCommandCtx, createMockModelRegistry } from "@juicesharp/rpiv-test-utils";
 import { registerWorkflowExecutionHost } from "@juicesharp/rpiv-workflow/startup";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetRunLaneRegistry, getLane, recordRun, setFocusedRun } from "./run-lane-registry.js";
-import { __resetSessionCaptureState, registerSessionCapture } from "./session-capture.js";
+import { __resetRunLaneRegistry, getLane, recordRun, setFocusedRun } from "./run-lane-registry.ts";
+import { __resetSessionCaptureState, registerSessionCapture } from "./session-capture.ts";
 import {
 	createWorkflowExecution,
 	DEFAULT_MAX_CONCURRENCY,
 	registerWorkflowExecutionHostProvider,
 	toModelSelection,
-} from "./workflow-execution-host.js";
+} from "./workflow-execution-host.ts";
 
 // Capture the provider rpiv-core registers with the /startup seam without
 // pulling in the whole runner graph — the only symbol the registrar reaches for.

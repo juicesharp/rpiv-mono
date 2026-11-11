@@ -2,8 +2,8 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme, makeTui } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
 
-import type { VoiceConfig } from "../config/voice-config.js";
-import { VoiceSession, type VoiceSessionConfig, type VoiceSessionDeps } from "./voice-session.js";
+import type { VoiceConfig } from "../config/voice-config.ts";
+import { VoiceSession, type VoiceSessionConfig, type VoiceSessionDeps } from "./voice-session.ts";
 
 // Mock getKeybindings so the runtime() method doesn't need real pi-tui context.
 vi.mock("@earendil-works/pi-tui", async (importOriginal) => {
@@ -16,8 +16,8 @@ vi.mock("@earendil-works/pi-tui", async (importOriginal) => {
 // the save-failure notify branch. loadVoiceConfig is mocked too: the shell
 // re-reads it at save time, so tests control "the file as it is
 // now" through this mock rather than the constructor snapshot.
-vi.mock("../config/voice-config.js", async (importOriginal) => {
-	const orig = await importOriginal<typeof import("../config/voice-config.js")>();
+vi.mock("../config/voice-config.ts", async (importOriginal) => {
+	const orig = await importOriginal<typeof import("../config/voice-config.ts")>();
 	return { ...orig, saveVoiceConfig: vi.fn(() => true), loadVoiceConfig: vi.fn(() => ({})) };
 });
 
@@ -173,7 +173,7 @@ describe("VoiceSession", () => {
 		});
 
 		it("settings_save on success: persists then emits success notify", async () => {
-			const { saveVoiceConfig } = await import("../config/voice-config.js");
+			const { saveVoiceConfig } = await import("../config/voice-config.ts");
 			const deps = makeDeps();
 			const config = makeSessionConfig(deps);
 			const session = new VoiceSession(config);
@@ -185,7 +185,7 @@ describe("VoiceSession", () => {
 		});
 
 		it("settings_save on save failure: emits ONLY error notify, no contradictory success notify (review I1)", async () => {
-			const { saveVoiceConfig } = await import("../config/voice-config.js");
+			const { saveVoiceConfig } = await import("../config/voice-config.ts");
 			(saveVoiceConfig as ReturnType<typeof vi.fn>).mockReturnValueOnce(false);
 			const deps = makeDeps();
 			const config = makeSessionConfig(deps);
@@ -245,7 +245,7 @@ describe("VoiceSession", () => {
 
 	describe("config round-trip durability", () => {
 		it("settings_save keeps numThreads from the on-disk config (Ctrl-S path)", async () => {
-			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.js");
+			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.ts");
 			vi.mocked(saveVoiceConfig).mockClear();
 			vi.mocked(loadVoiceConfig).mockReturnValue({ numThreads: 8, equalizerEnabled: true } as VoiceConfig);
 			const deps = makeDeps();
@@ -258,7 +258,7 @@ describe("VoiceSession", () => {
 		});
 
 		it("close_settings keeps numThreads from the on-disk config (silent Esc path)", async () => {
-			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.js");
+			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.ts");
 			vi.mocked(saveVoiceConfig).mockClear();
 			vi.mocked(loadVoiceConfig).mockReturnValue({ numThreads: 8, equalizerEnabled: true } as VoiceConfig);
 			const deps = makeDeps();
@@ -271,7 +271,7 @@ describe("VoiceSession", () => {
 		});
 
 		it("a mid-session hand edit of a JSON-only key survives a save — merge reads disk, not the session-start snapshot (review I4)", async () => {
-			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.js");
+			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.ts");
 			vi.mocked(saveVoiceConfig).mockClear();
 			// Session started with no numThreads on disk…
 			vi.mocked(loadVoiceConfig).mockReturnValue({});
@@ -287,7 +287,7 @@ describe("VoiceSession", () => {
 		});
 
 		it("default draft over an empty persisted config still saves {} (voice.json stays minimal)", async () => {
-			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.js");
+			const { loadVoiceConfig, saveVoiceConfig } = await import("../config/voice-config.ts");
 			vi.mocked(saveVoiceConfig).mockClear();
 			vi.mocked(loadVoiceConfig).mockReturnValue({});
 			const deps = makeDeps();

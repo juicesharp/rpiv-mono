@@ -19,8 +19,8 @@ import {
 	summarizeSkillBlock,
 	TRUNCATE_LIMIT,
 	truncate,
-} from "./payload.js";
-import { PLUGIN_MAX_PROTOCOL_VERSION } from "./protocol.js";
+} from "./payload.ts";
+import { PLUGIN_MAX_PROTOCOL_VERSION } from "./protocol.ts";
 
 beforeEach(() => {
 	process.env.WARP_CLI_AGENT_PROTOCOL_VERSION = "1";

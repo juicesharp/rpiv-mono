@@ -11,7 +11,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import { handleToString, type Output, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
-import { phaseFiles, planPhaseRecords, withTestTwins } from "./plan-phases.js";
+import { phaseFiles, planPhaseRecords, withTestTwins } from "./plan-phases.ts";
 import { classifyApplication, type ReconciliationDirective, reconciliationRecords } from "./reconcile-directives.mjs";
 import {
 	containedPath,
@@ -21,7 +21,7 @@ import {
 	VERDICT_DIR,
 	VERDICT_FAIL_SCORE,
 	VERDICT_PASS_SCORE,
-} from "./shared.js";
+} from "./shared.ts";
 
 /**
  * Apply each `#### Reconciliation` directive, write-restricted to the plan's

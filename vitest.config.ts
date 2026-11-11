@@ -1,9 +1,17 @@
 import { availableParallelism } from "node:os";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
+
+// Tests that load packages by path through Pi's real extension loader. That
+// copy runs outside Vite and its coverage merges badly with the tested
+// modules, so the coverage run leaves them out and `test:outside-coverage`
+// runs them on their own (pre-push and CI run both).
+const OUTSIDE_COVERAGE_TESTS = ["packages/rpiv-pi/extensions/rpiv-core/loaded-siblings.real-session.test.ts"];
+const coverageRun = process.argv.includes("--coverage");
 
 export default defineConfig({
 	test: {
 		include: ["packages/*/**/*.test.ts"],
+		exclude: coverageRun ? [...configDefaults.exclude, ...OUTSIDE_COVERAGE_TESTS] : configDefaults.exclude,
 		setupFiles: ["./test/setup.ts"],
 		// setup.ts performs ~9 dynamic `await import(...)` calls inside beforeEach
 		// (deliberately — see header comment in test/setup.ts). Cold-cache

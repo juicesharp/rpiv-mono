@@ -6,7 +6,7 @@ Render-only sub-system that turns a `QuestionData.options[i].preview` markdown s
 ## Dependencies
 - **`@earendil-works/pi-tui`**: `Markdown`, `MarkdownTheme`, `Component`, `visibleWidth`, `truncateToWidth` (no `wrapTextWithAnsi` — `Markdown.render(width)` wraps)
 - **`@earendil-works/pi-coding-agent`**: `Theme` (`theme.fg("accent"|"dim"|"muted", ...)`)
-- **Internal**: `../../../state/i18n-bridge.js` (`t`), `../../../tool/types.js` (`QuestionData`), `../wrapping-select.js` (`WrappingSelectItem`), `../option-list-view.js` (`OptionListView`), `../../stateful-view.js` (`StatefulView`)
+- **Internal**: `../../../state/i18n-bridge.ts` (`t`), `../../../tool/types.ts` (`QuestionData`), `../wrapping-select.ts` (`WrappingSelectItem`), `../option-list-view.ts` (`OptionListView`), `../../stateful-view.ts` (`StatefulView`)
 
 ## Module Structure
 ```

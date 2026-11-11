@@ -22,11 +22,11 @@
  * (validated there, at construction, by delegation).
  */
 
-import { fs } from "../../handle.js";
-import type { ArtifactCollector } from "../../output-spec.js";
-import { requireOpt } from "./require-opt.js";
-import { textScanCollector } from "./text-scan.js";
-import type { ToolCall } from "./tool-call.js";
+import { fs } from "../../handle.ts";
+import type { ArtifactCollector } from "../../output-spec.ts";
+import { requireOpt } from "./require-opt.ts";
+import { textScanCollector } from "./text-scan.ts";
+import type { ToolCall } from "./tool-call.ts";
 
 export interface TranscriptPathCollectorOpts {
 	/**

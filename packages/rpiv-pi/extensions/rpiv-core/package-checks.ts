@@ -12,8 +12,8 @@
  * settings-only rule.
  */
 
-import { SIBLINGS, type SiblingPlugin } from "./siblings.js";
-import { readPiAgentSettings } from "./utils.js";
+import { SIBLINGS, type SiblingPlugin } from "./siblings.ts";
+import { readPiAgentSettings } from "./utils.ts";
 
 /**
  * What is loaded in this process, read once per pass by `readLoadedSiblingSources`

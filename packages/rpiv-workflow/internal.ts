@@ -30,16 +30,16 @@
  * in a follow-up minor, not the pre-release window.
  */
 
-export { recordStage } from "./audit.js";
-export { __resetBuiltIns, flushBuiltInProviders, getBuiltIns } from "./built-ins.js";
-export { __resetLifecycleRegistry } from "./events.js";
-export { __resetWorkflowExecutionHost } from "./execution-host.js";
-export { __resetLoadCache } from "./load/cache.js";
+export { recordStage } from "./audit.ts";
+export { __resetBuiltIns, flushBuiltInProviders, getBuiltIns } from "./built-ins.ts";
+export { __resetLifecycleRegistry } from "./events.ts";
+export { __resetWorkflowExecutionHost } from "./execution-host.ts";
+export { __resetLoadCache } from "./load/cache.ts";
 // Read-and-clear a gate's stop-pick note — test fixtures assert the reason a
 // bespoke `defineRoute` gate attached via `setRouteNote`; production consumption
 // stays inside the runner's routing audit.
-export { takeRouteNote } from "./routing-dsl.js";
-export { __resetStrikeBudgets } from "./sessions/bash-strikes.js";
+export { takeRouteNote } from "./routing-dsl.ts";
+export { __resetStrikeBudgets } from "./sessions/bash-strikes.ts";
 export {
 	__resetSkillContracts,
 	buildEffectiveContracts,
@@ -51,10 +51,10 @@ export {
 	getSkillContracts,
 	harvestStageContracts,
 	registerBucketKindMapping,
-} from "./skill-contracts/index.js";
+} from "./skill-contracts/index.ts";
 // Layout-coupled path helpers — test fixtures that WRITE synthetic run files
 // need them; production consumers use the opaque `runFileFor` instead.
-export { runsDir, stateFilePath } from "./state/index.js";
+export { runsDir, stateFilePath } from "./state/index.ts";
 // Type-only: lets external test fixtures construct the full mutable run state
 // for direct `recordStage` calls. Production consumers read `RunView` instead.
-export type { RunState } from "./types.js";
+export type { RunState } from "./types.ts";

@@ -25,7 +25,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { childModelServices, getRegistryRuntime } from "./pi-compat.js";
+import { childModelServices, getRegistryRuntime } from "./pi-compat.ts";
 
 describe("getRegistryRuntime", () => {
 	it("returns the runtime slot when it carries streamSimple", () => {

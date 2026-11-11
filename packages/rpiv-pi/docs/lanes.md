@@ -21,10 +21,10 @@ From an **empty** prompt (no text typed, no autocomplete open, at least one lane
 | Trigger | Notes |
 | --- | --- |
 | `/lanes` | Always available |
-| `ctrl+q` | Global hotkey; requires a UI, at least one lane, and that you are not already focused into a run |
+| `ctrl+q` (`alt+l` on Windows and WSL) | Global hotkey; requires a UI, at least one lane, and that you are not already focused into a run |
 | `↓` on an empty prompt | See above |
 
-With no runs in flight, `/lanes` notifies `No in-flight runs.`; `ctrl+q` silently does
+With no runs in flight, `/lanes` notifies `No in-flight runs.`; the hotkey silently does
 nothing.
 
 ## Inside the browser
@@ -72,7 +72,7 @@ opt-in; without it nothing changes.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `RPIV_LANES_HOTKEY` | `ctrl+q` | Rebind the browser hotkey to any Pi key id. Set it to `off`, `none`, `false`, `disabled`, or empty to register no hotkey at all — `/lanes` still works. An unrecognized key id registers but never fires |
+| `RPIV_LANES_HOTKEY` | `ctrl+q` (`alt+l` on Windows and WSL, where Pi reserves `ctrl+q`) | Rebind the browser hotkey to any Pi key id. Set it to `off`, `none`, `false`, `disabled`, or empty to register no hotkey at all — `/lanes` still works. An unrecognized key id registers but never fires |
 | `RPIV_BASH_TIMEOUT_MS` | `180000` (3 min) | Per-command watchdog on bash calls inside detached child sessions. Clamped to 5 000–1 800 000 ms; a non-numeric or non-positive value falls back to the default. Read once at load, so export it before starting Pi |
 
 When a bash call exceeds the watchdog the child session aborts that command and the

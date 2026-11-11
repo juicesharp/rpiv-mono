@@ -11,8 +11,8 @@
  * any config file.
  */
 
-import { formatError } from "../internal-utils.js";
-import type { SkillContractMap } from "../skill-contract.js";
+import { formatError } from "../internal-utils.ts";
+import type { SkillContractMap } from "../skill-contract.ts";
 import {
 	buildEffectiveContracts,
 	drainSkillContractCollisions,
@@ -20,8 +20,8 @@ import {
 	flushSkillContractProviders,
 	getBucketKindMappings,
 	getOutcomeDerivers,
-} from "../skill-contracts/index.js";
-import type { LoadAccumulator } from "./merge.js";
+} from "../skill-contracts/index.ts";
+import type { LoadAccumulator } from "./merge.ts";
 
 /**
  * Run the phase against the merged accumulator. Mutates `acc` (issues +

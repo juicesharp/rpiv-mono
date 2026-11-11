@@ -1,8 +1,8 @@
 import { SpanStatusCode, SpanType, startSpan } from "@mlflow/core";
-import type { ToolExecutionEndEvent, ToolExecutionStartEvent } from "../../types/events.js";
-import { msToNs } from "./keys.js";
-import { AGENT_TOOL_NAME, extractAgentToolDetails } from "./pi-subagents-tool-bridge.js";
-import type { MlflowSpanRegistry } from "./span-registry.js";
+import type { ToolExecutionEndEvent, ToolExecutionStartEvent } from "../../types/events.ts";
+import { msToNs } from "./keys.ts";
+import { AGENT_TOOL_NAME, extractAgentToolDetails } from "./pi-subagents-tool-bridge.ts";
+import type { MlflowSpanRegistry } from "./span-registry.ts";
 
 export function onToolExecutionStart(registry: MlflowSpanRegistry, event: ToolExecutionStartEvent): void {
 	const parentSpan = registry.getTurnSpan(event.sessionId);

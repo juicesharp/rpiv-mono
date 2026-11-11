@@ -1,5 +1,5 @@
-import type { StatefulView } from "../stateful-view.js";
-import type { SettingsFieldView } from "./settings-field-view.js";
+import type { StatefulView } from "../stateful-view.ts";
+import type { SettingsFieldView } from "./settings-field-view.ts";
 
 // The settings screen is a flat stack of rows: a read-only mic line and a
 // hallucination-filter toggle. No tabs — too few rows to justify chrome.

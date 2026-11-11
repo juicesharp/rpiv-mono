@@ -2,8 +2,8 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import { makeTui } from "@juicesharp/rpiv-test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { BtwTurn } from "./btw.js";
-import { BtwOverlayController, showBtwOverlay } from "./btw-ui.js";
+import type { BtwTurn } from "./btw.ts";
+import { BtwOverlayController, showBtwOverlay } from "./btw-ui.ts";
 
 const identityTheme = {
 	fg: (_c: string, s: string) => s,

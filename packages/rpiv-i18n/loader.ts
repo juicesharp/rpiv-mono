@@ -21,7 +21,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { registerStrings, SUPPORTED_LOCALES, type TranslationMap } from "./i18n.js";
+import { registerStrings, SUPPORTED_LOCALES, type TranslationMap } from "./i18n.ts";
 
 export interface RegisterLocalesFromDirOptions {
 	/**

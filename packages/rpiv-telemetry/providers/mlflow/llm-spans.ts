@@ -1,7 +1,7 @@
 import { SpanStatusCode, SpanType, startSpan } from "@mlflow/core";
-import type { LlmRequestEndEvent, LlmRequestStartEvent, MessageEndEvent } from "../../types/events.js";
-import { msToNs } from "./keys.js";
-import type { MlflowSpanRegistry } from "./span-registry.js";
+import type { LlmRequestEndEvent, LlmRequestStartEvent, MessageEndEvent } from "../../types/events.ts";
+import { msToNs } from "./keys.ts";
+import type { MlflowSpanRegistry } from "./span-registry.ts";
 
 export function onLlmRequestStart(registry: MlflowSpanRegistry, event: LlmRequestStartEvent): void {
 	const parent = registry.getTurnSpan(event.sessionId);

@@ -35,7 +35,7 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { type BtwTurn, userMessageText } from "./btw-messages.js";
+import { type BtwTurn, userMessageText } from "./btw-messages.ts";
 
 const BTW_MAX_HEIGHT_RATIO = 0.85;
 

@@ -7,7 +7,7 @@ import {
 	DEFAULT_PROMPT_SNIPPET,
 	DEFAULT_TOOL_DESCRIPTION,
 	registerAskUserQuestionTool,
-} from "./ask-user-question.js";
+} from "./ask-user-question.ts";
 
 const TOOL_NAME = "ask_user_question";
 const CONFIG_PATH = join(process.env.HOME!, ".config", "rpiv-ask-user-question", "config.json");

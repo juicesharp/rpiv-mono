@@ -1,7 +1,7 @@
 import { createMockCtx, createMockPi, mockStdout } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { BEL, registerAskUserQuestionTool } from "./ask-user-question.js";
-import { MAX_QUESTIONS, type QuestionnaireResult } from "./tool/types.js";
+import { BEL, registerAskUserQuestionTool } from "./ask-user-question.ts";
+import { MAX_QUESTIONS, type QuestionnaireResult } from "./tool/types.ts";
 
 type CustomFn = (...args: unknown[]) => Promise<unknown>;
 
@@ -100,8 +100,14 @@ describe("ask_user_question.execute — terminal attention", () => {
 			expect(stdout.stdoutWrite).toHaveBeenCalledTimes(1);
 			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
 			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
-			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", {
+				active: true,
+				label: "Waiting for your answer",
+			});
+			expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
+			expect(mockEmit).toHaveBeenNthCalledWith(5, "herdr:blocked", { active: false, label: undefined });
 			expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
+			expect(mockEmit.mock.invocationCallOrder[2]).toBeLessThan(stdout.stdoutWrite.mock.invocationCallOrder[0]);
 			expect(stdout.stdoutWrite.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
 		} finally {
 			stdout.restore();
@@ -170,7 +176,12 @@ describe("ask_user_question.execute — terminal attention", () => {
 			expect(result?.details).toMatchObject({ cancelled: false });
 			expect(stdout.stdoutWrite).toHaveBeenCalledWith(BEL);
 			expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
-			expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
+			expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", {
+				active: true,
+				label: "Waiting for your answer",
+			});
+			expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
+			expect(mockEmit).toHaveBeenNthCalledWith(5, "herdr:blocked", { active: false, label: undefined });
 		} finally {
 			stdout.restore();
 		}
@@ -400,12 +411,16 @@ describe("ask_user_question.execute — event emission", () => {
 		});
 
 		expect(mockEmit).toHaveBeenNthCalledWith(2, "rpiv:ask-user:blocked", { active: true, toolCallId: "tc" });
-		expect(mockEmit).toHaveBeenNthCalledWith(3, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
+		expect(mockEmit).toHaveBeenNthCalledWith(3, "herdr:blocked", { active: true, label: "Waiting for your answer" });
+		expect(mockEmit).toHaveBeenNthCalledWith(4, "rpiv:ask-user:blocked", { active: false, toolCallId: "tc" });
+		expect(mockEmit).toHaveBeenNthCalledWith(5, "herdr:blocked", { active: false, label: undefined });
 
-		// Both start events are emitted before the dialog; the clear follows it.
+		// All start events are emitted before the dialog; the clears follow it.
 		expect(mockEmit.mock.invocationCallOrder[0]).toBeLessThan(custom.mock.invocationCallOrder[0]);
 		expect(mockEmit.mock.invocationCallOrder[1]).toBeLessThan(custom.mock.invocationCallOrder[0]);
-		expect(mockEmit.mock.invocationCallOrder[2]).toBeGreaterThan(custom.mock.invocationCallOrder[0]);
+		expect(mockEmit.mock.invocationCallOrder[2]).toBeLessThan(custom.mock.invocationCallOrder[0]);
+		expect(mockEmit.mock.invocationCallOrder[3]).toBeGreaterThan(custom.mock.invocationCallOrder[0]);
+		expect(mockEmit.mock.invocationCallOrder[4]).toBeGreaterThan(custom.mock.invocationCallOrder[0]);
 	});
 
 	it("clears ask-user blocked lifecycle after cancellation and UI rejection", async () => {

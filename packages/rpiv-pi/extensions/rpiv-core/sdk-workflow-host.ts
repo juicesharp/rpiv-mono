@@ -54,19 +54,19 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { parseModelKey } from "@juicesharp/rpiv-config";
 import type { ModelSelection, WorkflowHostContext, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
-import { armBashWatchdog, type BashWatchdog } from "./bash-timeout.js";
-import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { createLaneSessionView } from "./lane-streaming.js";
-import { harvestToolDefs } from "./lane-tool-defs.js";
-import { childModelServices } from "./pi-compat.js";
+import { armBashWatchdog, type BashWatchdog } from "./bash-timeout.ts";
+import { createLaneRelayUiContext } from "./lane-relay-ui.ts";
+import { createLaneSessionView } from "./lane-streaming.ts";
+import { harvestToolDefs } from "./lane-tool-defs.ts";
+import { childModelServices } from "./pi-compat.ts";
 import {
 	captureFinalSnapshot,
 	getLane,
 	SINGLE_UNIT_KEY,
 	setCurrentSession,
 	setLaneSessionFile,
-} from "./run-lane-registry.js";
-import { recordSubagentCompletion } from "./subagent-usage.js";
+} from "./run-lane-registry.ts";
+import { recordSubagentCompletion } from "./subagent-usage.ts";
 
 /**
  * Launcher-only "ambient observer" extensions: they register session-lifecycle

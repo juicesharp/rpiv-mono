@@ -16,7 +16,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { FLAG_DEBUG, MSG_TYPE_PIPELINE_INDEX } from "./constants.js";
+import { FLAG_DEBUG, MSG_TYPE_PIPELINE_INDEX } from "./constants.ts";
 
 /**
  * Keep this in sync with the `disable-model-invocation: true` skill set under

@@ -14,8 +14,8 @@ import {
 	type PromptFn,
 	produces,
 } from "@juicesharp/rpiv-workflow/registration";
-import { IMPLEMENT_PLANS_FANOUT, latestPlans, REVIEW_PHASE_ITERATE } from "../built-ins/index.js";
-import { codeReviewGate } from "./shared.js";
+import { IMPLEMENT_PLANS_FANOUT, latestPlans, REVIEW_PHASE_ITERATE } from "../built-ins/index.ts";
+import { codeReviewGate } from "./shared.ts";
 
 /**
  * Hand the single validate session EVERY plan from the latest blueprint pass

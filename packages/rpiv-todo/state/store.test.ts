@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Task } from "../tool/types.js";
-import { EMPTY_STATE, type TaskState } from "./state.js";
+import type { Task } from "../tool/types.ts";
+import { EMPTY_STATE, type TaskState } from "./state.ts";
 import {
 	__resetState,
 	clearActiveRenderSession,
@@ -14,7 +14,7 @@ import {
 	replaceState,
 	setActiveRenderSession,
 	sid,
-} from "./store.js";
+} from "./store.ts";
 
 const SID = "s1";
 

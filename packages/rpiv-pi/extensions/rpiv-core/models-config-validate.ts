@@ -15,8 +15,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { findUnknownModelKeys, type KnownModelKeys, loadModelsConfig } from "./models-config.js";
-import { bundledAgentNames, loadWorkflowMap, skillCommandNames } from "./models-config-sources.js";
+import { findUnknownModelKeys, type KnownModelKeys, loadModelsConfig } from "./models-config.ts";
+import { bundledAgentNames, loadWorkflowMap, skillCommandNames } from "./models-config-sources.ts";
 
 /** Warn once per process — sub-session spawns re-fire session_start, but the
  * config is process-cached and the typo set is identical, so repeat warnings

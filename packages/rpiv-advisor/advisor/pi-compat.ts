@@ -16,7 +16,11 @@
  * migration); when that lands, this module is the single place to migrate.
  */
 
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { type ExtensionAPI, SettingsManager } from "@earendil-works/pi-coding-agent";
+
 type CompleteSimpleFn = typeof import("@earendil-works/pi-ai/compat").completeSimple;
+type RetryAssistantCallFn = typeof import("@earendil-works/pi-ai").retryAssistantCall;
 
 /**
  * Resolve Pi's auth-aware completion facade when the host exposes one.
@@ -87,4 +91,24 @@ export async function loadCompleteSimple(): Promise<CompleteSimpleFn> {
 		);
 	}
 	return completeSimple;
+}
+
+/**
+ * Run an advisor call under pi-ai's bounded retry for transient provider errors
+ * (overloaded, rate-limited, network), using the user's Pi `retry` settings —
+ * the policy Pi applies to its own side calls such as compaction. Hosts below
+ * Pi 1.0 have neither `retryAssistantCall` nor `pi.getSettings()`, so the call
+ * runs once.
+ */
+export async function withHostRetry(
+	pi: ExtensionAPI,
+	call: () => Promise<AssistantMessage>,
+	signal: AbortSignal | undefined,
+): Promise<AssistantMessage> {
+	const { retryAssistantCall } = (await import("@earendil-works/pi-ai")) as {
+		retryAssistantCall?: RetryAssistantCallFn;
+	};
+	const settings = (pi as Partial<Pick<ExtensionAPI, "getSettings">>).getSettings?.call(pi);
+	if (typeof retryAssistantCall !== "function" || settings === undefined) return call();
+	return retryAssistantCall(call, SettingsManager.inMemory(settings).getRetrySettings(), signal);
 }

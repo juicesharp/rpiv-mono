@@ -4,7 +4,7 @@
 Canonical state for the voice extension: `VoiceState` shape, pure `reduce(state, action, ctx) → { state, Effect[] }`, key-router (keystroke → action), the `VoiceSession` imperative shell that runs effects against real IO, plus the i18n bridge. Overlay-scoped — no replay/reconstruction layer.
 
 ## Dependencies
-- **`../config/voice-config.js`** (`VoiceConfig`, `isHallucinationFilterEnabled`, `isEqualizerEnabled`, `saveVoiceConfig`)
+- **`../config/voice-config.ts`** (`VoiceConfig`, `isHallucinationFilterEnabled`, `isEqualizerEnabled`, `saveVoiceConfig`)
 - **`@juicesharp/rpiv-i18n`** (optional, dynamic-imported in `i18n-bridge.ts`)
 - **`@earendil-works/pi-tui`** (`Key`, `matchesKey`, `getKeybindings`)
 - **`@earendil-works/pi-coding-agent`** (`Theme`, `DynamicBorder`)

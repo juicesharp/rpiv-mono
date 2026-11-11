@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { createMockPi, createMockUI } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { showLaneConsole } from "./lane-console.js";
-import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { __resetLaneSwitcher, registerLaneSwitcher, switchIntoLane } from "./lane-switcher.js";
+import { showLaneConsole } from "./lane-console.ts";
+import { createLaneRelayUiContext } from "./lane-relay-ui.ts";
+import { __resetLaneSwitcher, registerLaneSwitcher, switchIntoLane } from "./lane-switcher.ts";
 import {
 	__resetRunLaneRegistry,
 	enqueueInput,
@@ -14,16 +14,16 @@ import {
 	setFocusedRun,
 	setUnitStarted,
 	subscribeLanes,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 // Mock the console so we can assert the switch flow without driving the real
 // ctx.ui.custom machinery. The read-only viewer is gone — the unified
 // console is now the sole transcript surface, so mocking it covers the full switch path.
-vi.mock("./lane-console.js", () => ({ showLaneConsole: vi.fn() }));
+vi.mock("./lane-console.ts", () => ({ showLaneConsole: vi.fn() }));
 // Keep the registry REAL (the dock + switcher both depend on its live behavior) but
 // wrap subscribeLanes so we can count subscriptions and capture the returned unsub.
-vi.mock("./run-lane-registry.js", async (importActual) => {
-	const actual = await importActual<typeof import("./run-lane-registry.js")>();
+vi.mock("./run-lane-registry.ts", async (importActual) => {
+	const actual = await importActual<typeof import("./run-lane-registry.ts")>();
 	return {
 		...actual,
 		subscribeLanes: vi.fn((listener: () => void) => vi.fn(actual.subscribeLanes(listener))),
@@ -240,6 +240,45 @@ describe("lane-switcher — hotkey resolution", () => {
 		delete process.env[ENV];
 		const { shortcutKey } = register();
 		expect(shortcutKey).toBe("ctrl+q");
+	});
+
+	describe("Windows and WSL default (#252)", () => {
+		// Pi binds ctrl+q to its reserved follow-up action under Windows keybindings, so the
+		// default must move off it there — and only there.
+		const orig = Object.getOwnPropertyDescriptor(process, "platform");
+		const setPlatform = (platform: NodeJS.Platform) =>
+			Object.defineProperty(process, "platform", { value: platform, configurable: true });
+		beforeEach(() => {
+			delete process.env[ENV];
+			vi.stubEnv("WSL_DISTRO_NAME", undefined);
+			vi.stubEnv("WSL_INTEROP", undefined);
+		});
+		afterEach(() => {
+			if (orig) Object.defineProperty(process, "platform", orig);
+			vi.unstubAllEnvs();
+		});
+
+		it("defaults to alt+l on Windows", () => {
+			setPlatform("win32");
+			expect(register().shortcutKey).toBe("alt+l");
+		});
+
+		it.each(["WSL_DISTRO_NAME", "WSL_INTEROP"])("defaults to alt+l under WSL (%s set)", (wslVar) => {
+			setPlatform("linux");
+			vi.stubEnv(wslVar, "1");
+			expect(register().shortcutKey).toBe("alt+l");
+		});
+
+		it.each(["darwin", "linux"] as const)("keeps ctrl+q on %s", (platform) => {
+			setPlatform(platform);
+			expect(register().shortcutKey).toBe("ctrl+q");
+		});
+
+		it("still honours RPIV_LANES_HOTKEY on Windows", () => {
+			setPlatform("win32");
+			process.env[ENV] = "ctrl+l";
+			expect(register().shortcutKey).toBe("ctrl+l");
+		});
 	});
 
 	it("registers NO shortcut when disabled (RPIV_LANES_HOTKEY=off) — /lanes still works", () => {

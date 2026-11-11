@@ -5,7 +5,7 @@ import {
 	emitQuestionResolved,
 	type QuestionLifecycleEvent,
 	subscribeQuestionLifecycle,
-} from "./question-lifecycle.js";
+} from "./question-lifecycle.ts";
 import {
 	__resetRunLaneRegistry,
 	clearUnitLanes,
@@ -19,7 +19,7 @@ import {
 	retireRun,
 	SINGLE_UNIT_KEY,
 	setUnitStarted,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 /** A PendingInput whose resolver is observable. */
 function makePending(): PendingInput & { resolve: ReturnType<typeof vi.fn> } {

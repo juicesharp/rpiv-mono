@@ -5,7 +5,7 @@
  * delegate their `fetch()` method to.
  */
 
-import type { FetchResponse } from "./types.js";
+import type { FetchResponse } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Constants

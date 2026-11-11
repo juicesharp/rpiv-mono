@@ -11,7 +11,7 @@
  * gate-rosters.test.ts.
  */
 import { describe, expect, it } from "vitest";
-import * as gates from "./gates.js";
+import * as gates from "./gates.ts";
 
 describe("gates facade key set", () => {
 	it("re-exports exactly the pre-split 33 runtime symbols", () => {

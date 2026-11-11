@@ -6,10 +6,10 @@ const overlayMock = vi.hoisted(() => ({
 	moduleLoads: 0,
 }));
 
-vi.mock("./todo-overlay.js", async (importOriginal) => {
+vi.mock("./todo-overlay.ts", async (importOriginal) => {
 	overlayMock.moduleLoads++;
 	await overlayMock.importGate;
-	return importOriginal<typeof import("./todo-overlay.js")>();
+	return importOriginal<typeof import("./todo-overlay.ts")>();
 });
 
 function resumedBranch(subject: string) {
@@ -23,8 +23,8 @@ function resumedBranch(subject: string) {
 	]);
 }
 
-async function setup(importOverlay?: () => Promise<typeof import("./todo-overlay.js")>) {
-	const { default: registerTodo } = await import("./index.js");
+async function setup(importOverlay?: () => Promise<typeof import("./todo-overlay.ts")>) {
+	const { default: registerTodo } = await import("./index.ts");
 	const { pi, captured } = createMockPi();
 	registerTodo(pi, importOverlay);
 	const start = captured.events.get("session_start")?.[0];
@@ -112,8 +112,8 @@ it("keeps overlay construction task-gated and ignores stale imports", async () =
 });
 
 it("drops a rejected overlay import memo so the next load retries", async () => {
-	const { makeTodoOverlayLoader } = await import("./index.js");
-	const healthyModule = { TodoOverlay: class {} } as unknown as typeof import("./todo-overlay.js");
+	const { makeTodoOverlayLoader } = await import("./index.ts");
+	const healthyModule = { TodoOverlay: class {} } as unknown as typeof import("./todo-overlay.ts");
 	let shouldFail = true;
 	const importer = vi.fn(async () => {
 		if (shouldFail) {
@@ -130,8 +130,8 @@ it("drops a rejected overlay import memo so the next load retries", async () => 
 });
 
 it("reports jiti's poisoned namespace shape instead of constructing undefined", async () => {
-	const { makeTodoOverlayLoader } = await import("./index.js");
-	const staleModule = { TodoOverlay: undefined } as unknown as typeof import("./todo-overlay.js");
+	const { makeTodoOverlayLoader } = await import("./index.ts");
+	const staleModule = { TodoOverlay: undefined } as unknown as typeof import("./todo-overlay.ts");
 	const load = makeTodoOverlayLoader(async () => staleModule);
 
 	await expect(load()).rejects.toThrow("module cache is stale; restart Pi");
@@ -139,8 +139,8 @@ it("reports jiti's poisoned namespace shape instead of constructing undefined", 
 
 it("schedules the overlay pre-warm after startup", async () => {
 	vi.useFakeTimers();
-	const { PREWARM_DELAY_MS } = await import("./index.js");
-	const healthyModule = { TodoOverlay: class {} } as unknown as typeof import("./todo-overlay.js");
+	const { PREWARM_DELAY_MS } = await import("./index.ts");
+	const healthyModule = { TodoOverlay: class {} } as unknown as typeof import("./todo-overlay.ts");
 	const importer = vi.fn(async () => healthyModule);
 	const lifecycle = await setup(importer);
 
@@ -157,7 +157,7 @@ it("schedules the overlay pre-warm after startup", async () => {
 
 it("swallows a failed pre-warm, then retries on the first real update", async () => {
 	vi.useFakeTimers();
-	const { PREWARM_DELAY_MS } = await import("./index.js");
+	const { PREWARM_DELAY_MS } = await import("./index.ts");
 	let shouldFail = true;
 	const overlayUpdate = vi.fn();
 	const healthyModule = {
@@ -168,8 +168,8 @@ it("swallows a failed pre-warm, then retries on the first real update", async ()
 				overlayUpdate();
 			}
 		},
-	} as unknown as typeof import("./todo-overlay.js");
-	const importer = vi.fn(async (): Promise<typeof import("./todo-overlay.js")> => {
+	} as unknown as typeof import("./todo-overlay.ts");
+	const importer = vi.fn(async (): Promise<typeof import("./todo-overlay.ts")> => {
 		if (shouldFail) {
 			shouldFail = false;
 			throw new Error("pre-warm load failure");
@@ -197,8 +197,8 @@ it("swallows a failed pre-warm, then retries on the first real update", async ()
 });
 
 it("concurrent awaiters of one rejected import share a single retry", async () => {
-	const { makeTodoOverlayLoader } = await import("./index.js");
-	const healthyModule = { TodoOverlay: class {} } as unknown as typeof import("./todo-overlay.js");
+	const { makeTodoOverlayLoader } = await import("./index.ts");
+	const healthyModule = { TodoOverlay: class {} } as unknown as typeof import("./todo-overlay.ts");
 	let shouldFail = true;
 	const importer = vi.fn(async () => {
 		if (shouldFail) {
@@ -232,8 +232,8 @@ it("tool_execution_end swallows a transient load failure and heals on the next e
 				overlayUpdate();
 			}
 		},
-	} as unknown as typeof import("./todo-overlay.js");
-	const importer = vi.fn(async (): Promise<typeof import("./todo-overlay.js")> => {
+	} as unknown as typeof import("./todo-overlay.ts");
+	const importer = vi.fn(async (): Promise<typeof import("./todo-overlay.ts")> => {
 		if (shouldFail) {
 			shouldFail = false;
 			throw new Error("transient overlay load failure");
@@ -268,7 +268,7 @@ it("tool_execution_end swallows a transient load failure and heals on the next e
 });
 
 it("tool_execution_end still propagates the latched stale-namespace restart error", async () => {
-	const staleModule = { TodoOverlay: undefined } as unknown as typeof import("./todo-overlay.js");
+	const staleModule = { TodoOverlay: undefined } as unknown as typeof import("./todo-overlay.ts");
 	const lifecycle = await setup(async () => staleModule);
 	const ctx = createMockCtx({ hasUI: true, sessionId: "stale-latch" });
 	await lifecycle.start({} as never, ctx as never);

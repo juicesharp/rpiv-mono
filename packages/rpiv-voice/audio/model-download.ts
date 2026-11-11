@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
-import { t } from "../state/i18n-bridge.js";
+import { t } from "../state/i18n-bridge.ts";
 
 const execFileAsync = promisify(execFile);
 

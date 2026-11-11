@@ -1,6 +1,6 @@
 import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, describe, expect, it } from "vitest";
-import registerArgs, { LOADED_MARKER } from "./index.js";
+import registerArgs, { LOADED_MARKER } from "./index.ts";
 
 const slots = globalThis as Record<symbol, unknown>;
 

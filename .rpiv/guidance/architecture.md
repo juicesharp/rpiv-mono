@@ -42,13 +42,14 @@ rpiv-mono/
 | `npm run check:files -- <paths...>` | Path-scoped Biome (`--write --error-on-warnings`) — rewrites ONLY the paths it is given; **the path-scoped auto-fix lint form** a phase's `#### Automated Verification:` uses to stay write-scoped to its own `files:` set |
 | `npm test` | Vitest at root (single runner; `include: ['packages/*/**/*.test.ts']` walks every package) |
 | `npm run build:site` | Build the Astro marketing site (`packages/rpiv-site`) — separate from publish |
-| `npm run coverage` | Vitest with V8 coverage |
+| `npm run coverage` | Vitest with V8 coverage (skips `OUTSIDE_COVERAGE_TESTS` in `vitest.config.ts`) |
+| `npm run test:outside-coverage` | Tests that load packages by path through Pi's real loader; kept out of coverage |
 | `node scripts/release.mjs <patch\|minor\|major\|x.y.z>` | Cut a lockstep release — see `.rpiv/guidance/scripts/architecture.md` |
 | `node scripts/sync-versions.js` | Verify lockstep + rewrite intra-monorepo deps to `^<version>` |
 
 Husky hooks (local-only):
 - `pre-commit` — runs `npm run check:decision-codes` (fail-fast contamination guard) then `npm run check:file-sizes` (fail-fast size-growth ratchet), then `npm run check` (format + typecheck); restages files biome may have rewritten
-- `pre-push` — runs `npm run coverage` (full test + coverage thresholds gate)
+- `pre-push` — runs `npm run coverage` (full test + coverage thresholds gate), then `npm run test:outside-coverage`
 
 # Conventions
 
@@ -56,7 +57,7 @@ Husky hooks (local-only):
 - **Sibling deps as `peerDependencies: "*"`** — `rpiv-pi` peer-pins every registered sibling and `pi-*` runtime; bundlers never include them.
 - **Host-provided packages as `peerDependencies: "*"`, never `dependencies`** — Pi ships `typebox` and the `@earendil-works/pi-{ai,agent-core,coding-agent,tui}` trio (plus the legacy `@mariozechner/*` spellings) itself and aliases the bare specifier to its own copy at load time. An installed copy bypasses that alias and puts two live copies of the same module in one process (schemas built by one, validated by the other) — Pi warns about every such manifest at startup. Enforced by `scripts/check-host-provided-deps.mjs` (`npm run check:host-provided-deps`, the first stage of `npm run check`) across the root manifest and all `packages/*`. `devDependencies` are exempt (root dev-time pins resolve for `tsc`/Vitest only) and `jiti` is **not** host-provided — the extension loader does not alias it, so it stays a real `dependencies` entry. The same script also scans `packages/**/*.ts` for `typebox` import specifiers and rejects any subpath outside the host's six aliases (`typebox`, `typebox/compile`, `typebox/value` + the `@sinclair/typebox` spellings) — the manifest half alone would only move an unaliased import from a warning to `ERR_MODULE_NOT_FOUND`.
 - **`files` arrays** explicitly list `.ts` source + asset directories (e.g., `prompts/`); `.rpiv/` is never shipped; directory entries need a `!**/*.test.ts` negation (as in rpiv-pi/rpiv-web-tools/rpiv-workflow/rpiv-advisor) to keep co-located tests out of the tarball; dev-only fixture trees are excluded the same way (rpiv-pi's `built-ins/__fixtures__/`).
-- **`type: "module"` everywhere** with Node16 resolution; relative imports use `.js` extensions from `.ts` source. Test files co-locate as `*.test.ts` next to production sources.
+- **`type: "module"` everywhere** with Node16 resolution; relative imports name the actual `.ts` file (`./foo.ts`, never `./foo.js`) — Pi loads the published `.ts` through jiti with no module cache, and every nonexistent `.js` target costs a fallback resolution on each startup (~1.84 s → ~0.16 s across the eight extensions). `allowImportingTsExtensions` is enabled alongside `noEmit`; enforced by `scripts/check-ts-import-specifiers.mjs` (`npm run check:ts-specifiers`, chained into `npm run check`). Real `.js`/`.mjs` files are imported by their own name. Test files co-locate as `*.test.ts` next to production sources.
 - **No decision-code citations in committed `.ts`** — comments state the contract in place, never cite parenthesized plan/phase codes; enforced by `scripts/check-no-decision-codes.mjs` (`npm run check:decision-codes`, the first pre-commit stage).
 
 <important if="you are cutting or planning a release">

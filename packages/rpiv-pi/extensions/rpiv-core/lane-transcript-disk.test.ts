@@ -13,8 +13,8 @@ import { join } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { makeAssistantMessage, makeUserMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { __resetLaneToolDefs, harvestToolDefs } from "./lane-tool-defs.js";
-import { loadBranchFromDisk } from "./lane-transcript-disk.js";
+import { __resetLaneToolDefs, harvestToolDefs } from "./lane-tool-defs.ts";
+import { loadBranchFromDisk } from "./lane-transcript-disk.ts";
 
 let tmp: string;
 

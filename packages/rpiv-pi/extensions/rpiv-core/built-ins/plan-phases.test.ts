@@ -11,7 +11,7 @@ import { join } from "node:path";
 import type { Output, RunView } from "@juicesharp/rpiv-workflow";
 import { fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findWorkflow } from "../workflow-test-harness.js";
+import { findWorkflow } from "../workflow-test-harness.ts";
 
 describe("FRONTMATTER_PHASE_FANOUT", () => {
 	let tmpDir: string;

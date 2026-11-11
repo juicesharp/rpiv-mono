@@ -1,9 +1,9 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { displayLabel } from "../../state/i18n-bridge.js";
-import type { QuestionData } from "../../tool/types.js";
-import type { StatefulView } from "../stateful-view.js";
-import { renderInlineInputRow } from "./inline-input.js";
+import { displayLabel } from "../../state/i18n-bridge.ts";
+import type { QuestionData } from "../../tool/types.ts";
+import type { StatefulView } from "../stateful-view.ts";
+import { renderInlineInputRow } from "./inline-input.ts";
 
 const ACTIVE_POINTER = "❯ ";
 const INACTIVE_POINTER = "  ";

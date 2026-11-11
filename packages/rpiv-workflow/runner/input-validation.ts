@@ -16,10 +16,10 @@
  * halting only on timeouts.
  */
 
-import { formatError, withTimeout } from "../internal-utils.js";
-import { isJsonSchemaObject, jsonSchemaToStandard } from "../json-schema.js";
-import { ERR_SCHEMA_TIMEOUT, FAIL_INPUT_VALIDATION } from "../messages.js";
-import type { RunContext } from "../types.js";
+import { formatError, withTimeout } from "../internal-utils.ts";
+import { isJsonSchemaObject, jsonSchemaToStandard } from "../json-schema.ts";
+import { ERR_SCHEMA_TIMEOUT, FAIL_INPUT_VALIDATION } from "../messages.ts";
+import type { RunContext } from "../types.ts";
 import {
 	DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
 	describeFailure,
@@ -28,10 +28,10 @@ import {
 	SchemaTimeoutError,
 	type ValidationResult,
 	validateOutputData,
-} from "../validate-output.js";
-import { clampRange } from "../validation-bounds.js";
-import { haltPreflight } from "./errors.js";
-import type { ResolvedStage } from "./resolve-stage.js";
+} from "../validate-output.ts";
+import { clampRange } from "../validation-bounds.ts";
+import { haltPreflight } from "./errors.ts";
+import type { ResolvedStage } from "./resolve-stage.ts";
 
 // ---------------------------------------------------------------------------
 // Shared helper

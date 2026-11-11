@@ -11,8 +11,8 @@ no slash commands, no widgets, and no keyboard shortcuts.
 | Pi event | Emits | Side effects |
 | --- | --- | --- |
 | `session_start` | `session_start` — only when `reason === "startup"` | none |
-| `before_agent_start` | nothing | captures the prompt for `prompt_submit` and the heartbeat |
-| `agent_start` | a stale-reason `tool_complete` if a block reason outlived a missed `agent_end`, then `session_start` (defensive re-announce), then `prompt_submit` | marks the turn active, starts the tab-title spinner, cancels the pending idle timer, starts the heartbeat |
+| `before_agent_start` | nothing | captures the user prompt for `prompt_submit` and the heartbeat; a custom (`triggerTurn`) run captures nothing |
+| `agent_start` | a stale-reason `tool_complete` if a block reason outlived a missed `agent_end`; then, for a user run, `session_start` (defensive re-announce) and `prompt_submit` — for a custom (`triggerTurn`) run, nothing more | marks the turn active, starts the tab-title spinner, cancels the pending idle timer, starts the heartbeat |
 | `agent_end` | the drain's `tool_complete` (see below), then `stop` | clears every block reason and marks the turn inactive, stops the spinner, stops the heartbeat, arms the 300 ms idle timer |
 | `tool_call` | `question_asked` — only for a tool in `blockingTools`, and only on the 0→1 block-reason transition | records the call's input; on that transition, stops the spinner and pauses the heartbeat |
 | `tool_execution_end` | `tool_complete` — only for a tool in `blockingTools`, and only on the 1→0 block-reason transition | restarts the spinner, resumes the heartbeat |
@@ -60,6 +60,16 @@ correct:
 turns never lights the badge. `ui_prompt_end` no-ops whenever its `prompt` reason
 is absent — which is what makes the late end that arrives after `agent_end`
 drained the reason emit nothing.
+
+### User runs vs custom (`triggerTurn`) runs
+
+Pi 1.2.0 fires `before_agent_start` for both a submitted prompt (`messageType: "user"`,
+carrying `prompt`) and a run started by `pi.sendMessage(..., { triggerTurn: true })`
+(`messageType: "custom"`, no `prompt`). Only a user run carries the query Warp shows, so for
+a custom run the extension leaves the captured query untouched and skips the defensive
+`session_start` and the `prompt_submit` at `agent_start`. The spinner, heartbeat, and the
+`stop` at `agent_end` still fire, so a background turn shows activity without blanking or
+re-announcing the tab's query.
 
 ### Why `agent_end` drains blocked state
 

@@ -37,7 +37,7 @@
  * `test/setup.ts` invokes it in `beforeEach`.
  */
 
-import { popTitleStack, pushTitleStack, writeOSC0 } from "./warp-notify.js";
+import { popTitleStack, pushTitleStack, writeOSC0 } from "./warp-notify.ts";
 
 // ---------------------------------------------------------------------------
 // Constants — tunable at one site

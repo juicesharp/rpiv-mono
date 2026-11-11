@@ -10,8 +10,8 @@
  * `/wf` usage strings live in command.ts / preview.ts.
  */
 
-import type { ProgressValue } from "./api.js";
-import { MAX_NAME_LENGTH } from "./state/index.js";
+import type { ProgressValue } from "./api.ts";
+import { MAX_NAME_LENGTH } from "./state/index.ts";
 
 /**
  * One structured descriptor per terminal-failure kind — the `toast` (the

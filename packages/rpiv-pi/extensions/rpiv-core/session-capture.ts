@@ -19,9 +19,9 @@
 
 import type { ExtensionAPI, ExtensionUIContext, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { parseModelKey } from "@juicesharp/rpiv-config";
-import { isLaneRelayUiContext } from "./lane-relay-ui.js";
-import type { ModelThinkingLevelValue } from "./models-config.js";
-import { isStaleCtxError } from "./utils.js";
+import { isLaneRelayUiContext } from "./lane-relay-ui.ts";
+import type { ModelThinkingLevelValue } from "./models-config.ts";
+import { isStaleCtxError } from "./utils.ts";
 
 /** First parameter type of pi.setModel() — avoids importing Pi's Model<Api> generic. */
 export type CapturedModel = Parameters<ExtensionAPI["setModel"]>[0];

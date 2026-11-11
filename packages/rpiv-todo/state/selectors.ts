@@ -1,5 +1,5 @@
-import type { Task, TaskStatus } from "../tool/types.js";
-import type { TaskState } from "./state.js";
+import type { Task, TaskStatus } from "../tool/types.ts";
+import type { TaskState } from "./state.ts";
 
 /** Tasks excluding deleted tombstones — the canonical "what's visible". */
 export function selectVisibleTasks(state: TaskState): readonly Task[] {

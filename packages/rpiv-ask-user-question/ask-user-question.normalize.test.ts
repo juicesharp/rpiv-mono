@@ -1,6 +1,6 @@
 import { createMockCtx, createMockPi, makeTheme, makeTui } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { registerAskUserQuestionTool } from "./ask-user-question.js";
+import { registerAskUserQuestionTool } from "./ask-user-question.ts";
 
 type CustomFn = (...args: unknown[]) => Promise<unknown>;
 

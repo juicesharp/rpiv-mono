@@ -5,11 +5,11 @@
  * string that `command.ts` hands straight to `ctx.ui.notify(..., "info")`.
  */
 
-import { STOP, type StageDef } from "./api.js";
-import { type ConfigLayer, renderConfigLayer } from "./layers.js";
-import type { LoadedWorkflows } from "./load/index.js";
-import { type AnyJudgeSpec, describeFlow, type StageShape } from "./loop-constructors.js";
-import type { SkillContractMap } from "./skill-contract.js";
+import { STOP, type StageDef } from "./api.ts";
+import { type ConfigLayer, renderConfigLayer } from "./layers.ts";
+import type { LoadedWorkflows } from "./load/index.ts";
+import { type AnyJudgeSpec, describeFlow, type StageShape } from "./loop-constructors.ts";
+import type { SkillContractMap } from "./skill-contract.ts";
 
 // ===========================================================================
 // Layout constants — module-local; every column width, gap, and ellipsis the

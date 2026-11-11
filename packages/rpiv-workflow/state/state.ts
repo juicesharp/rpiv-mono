@@ -21,9 +21,9 @@
  * else lives in a focused module.
  */
 
-import type { UnitRole } from "../api.js";
-import type { Output } from "../output.js";
-import type { RunTrigger } from "../triggers.js";
+import type { UnitRole } from "../api.ts";
+import type { Output } from "../output.ts";
+import type { RunTrigger } from "../triggers.ts";
 
 // ---------------------------------------------------------------------------
 // Row shapes
@@ -339,8 +339,8 @@ export {
 	rebuildIndex,
 	releaseName,
 	VALID_NAME,
-} from "./names.js";
-export { generateRunId, namesFilePath, runFileFor, runsDir, stateFilePath } from "./paths.js";
+} from "./names.ts";
+export { generateRunId, namesFilePath, runFileFor, runsDir, stateFilePath } from "./paths.ts";
 export {
 	listArtifacts,
 	listRuns,
@@ -351,6 +351,6 @@ export {
 	readLoopCaps,
 	readRoutingDecisions,
 	summarizeRun,
-} from "./reads.js";
-export { resolveRun } from "./resolve.js";
-export { appendHeader, appendLoopCap, appendRoutingDecision, appendStage } from "./writes.js";
+} from "./reads.ts";
+export { resolveRun } from "./resolve.ts";
+export { appendHeader, appendLoopCap, appendRoutingDecision, appendStage } from "./writes.ts";

@@ -6,7 +6,7 @@ import {
 	refreshGitContextForInjection,
 	resetInjectedMarker,
 	takeGitContextIfChanged,
-} from "./git-context.js";
+} from "./git-context.ts";
 
 beforeEach(() => {
 	clearGitContextCache();

@@ -1,6 +1,6 @@
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { showLanguagePicker } from "./i18n-ui.js";
+import { showLanguagePicker } from "./i18n-ui.ts";
 
 const ESC = String.fromCharCode(27);
 const KEY_DOWN = `${ESC}[B`;

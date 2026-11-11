@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { StageSessionContext } from "../types.js";
+import type { StageSessionContext } from "../types.ts";
 import {
 	BASH_TIMEOUT_STRIKES,
 	bashStrikesRemaining,
@@ -12,7 +12,7 @@ import {
 	bashTimeoutStrikeHistory,
 	consumeBashStrike,
 	resolveBashTimeoutStrikes,
-} from "./bash-strikes.js";
+} from "./bash-strikes.ts";
 
 /** A bare StageSessionContext carrying only the strike-accounting surface the helpers touch. */
 const strikeSession = (overrides: Partial<StageSessionContext> = {}): StageSessionContext =>

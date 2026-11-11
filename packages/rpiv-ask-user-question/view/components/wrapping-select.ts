@@ -1,6 +1,6 @@
 import type { Component } from "@earendil-works/pi-tui";
 import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { renderInlineInputRow } from "./inline-input.js";
+import { renderInlineInputRow } from "./inline-input.ts";
 
 /**
  * Row-intent discriminated union. `kind` is the single discriminator —

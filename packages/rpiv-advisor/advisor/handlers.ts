@@ -7,9 +7,9 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { modelKey } from "@juicesharp/rpiv-config";
-import { ADVISOR_TOOL_NAME, MSG_ADVISOR_DISABLED, msgAdvisorRestored } from "./messages.js";
-import { isExecutorBlocked, isModelBlocked } from "./policy.js";
-import { getAdvisorEffort, getAdvisorModel } from "./state.js";
+import { ADVISOR_TOOL_NAME, MSG_ADVISOR_DISABLED, msgAdvisorRestored } from "./messages.ts";
+import { isExecutorBlocked, isModelBlocked } from "./policy.ts";
+import { getAdvisorEffort, getAdvisorModel } from "./state.ts";
 
 interface ReconcileNotify {
 	/** Shown when the tool is stripped (executor became blocked). */

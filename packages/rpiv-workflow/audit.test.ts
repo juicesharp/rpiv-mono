@@ -10,11 +10,11 @@ import {
 	recordFatalFailure,
 	recordUnitHalt,
 	unitRowFields,
-} from "./audit.js";
-import { LifecycleDispatcher } from "./events.js";
-import { MSG_FAILURE_ROW_DROPPED, MSG_WORKFLOW_CANCELLED } from "./messages.js";
-import { readAllStages } from "./state/index.js";
-import type { RunState, UnitRef, WorkflowHostContext } from "./types.js";
+} from "./audit.ts";
+import { LifecycleDispatcher } from "./events.ts";
+import { MSG_FAILURE_ROW_DROPPED, MSG_WORKFLOW_CANCELLED } from "./messages.ts";
+import { readAllStages } from "./state/index.ts";
+import type { RunState, UnitRef, WorkflowHostContext } from "./types.ts";
 
 describe("decorateStage", () => {
 	it("renders a fanout/iterate unit tag as `parent (tag)`", () => {

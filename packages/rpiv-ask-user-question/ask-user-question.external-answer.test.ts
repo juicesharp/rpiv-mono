@@ -1,7 +1,7 @@
 import { createEventBus } from "@earendil-works/pi-coding-agent";
 import { createMockCtx, createMockPi, makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { registerAskUserQuestionTool } from "./ask-user-question.js";
+import { registerAskUserQuestionTool } from "./ask-user-question.ts";
 import {
 	ASK_USER_ANSWER_EVENT,
 	ASK_USER_ANSWER_RESULT_EVENT,
@@ -9,7 +9,7 @@ import {
 	ASK_USER_PROMPT_EVENT,
 	type AskUserAnswerResultEventPayload,
 	type AskUserPromptEventPayload,
-} from "./events.js";
+} from "./events.ts";
 
 /**
  * The inbound `rpiv:ask-user:answer` event end to end, on Pi's real event bus

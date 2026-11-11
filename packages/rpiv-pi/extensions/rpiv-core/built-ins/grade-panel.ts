@@ -16,10 +16,10 @@ import {
 	SHIP_DIMENSIONS,
 	SLICE_DIMENSIONS,
 	shipRoster,
-} from "./gates.js";
-import { isSurgicalFix, priorArtifact } from "./priors.js";
-import { haltPreflight, latestFsArtifact } from "./shared.js";
-import { verdictOutcome } from "./verdict-outcome.js";
+} from "./gates.ts";
+import { isSurgicalFix, priorArtifact } from "./priors.ts";
+import { haltPreflight, latestFsArtifact } from "./shared.ts";
+import { verdictOutcome } from "./verdict-outcome.ts";
 
 /**
  * The dimension-scoped artifact flags every panel body composes — ONE

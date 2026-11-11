@@ -8,7 +8,7 @@ import {
 	type ProviderMeta,
 	type SearchResponse,
 	type SearchResult,
-} from "./types.js";
+} from "./types.ts";
 
 export const OLLAMA_API_KEY_ENV_VAR = "OLLAMA_API_KEY";
 export const OLLAMA_HOST_ENV_VAR = "OLLAMA_HOST";

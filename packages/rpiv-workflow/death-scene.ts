@@ -25,10 +25,10 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { AuditContext } from "./audit-ctx.js";
-import type { WorkflowHostContext } from "./host.js";
-import { locateSessionFile } from "./sessions/locate.js";
-import { type BranchEntry, iterToolUses, lastAssistantText } from "./transcript.js";
+import type { AuditContext } from "./audit-ctx.ts";
+import type { WorkflowHostContext } from "./host.ts";
+import { locateSessionFile } from "./sessions/locate.ts";
+import { type BranchEntry, iterToolUses, lastAssistantText } from "./transcript.ts";
 
 /** How many trailing tool calls the artifact carries (most-recent first wins via slice). */
 export const DEATH_SCENE_MAX_TOOL_CALLS = 5;

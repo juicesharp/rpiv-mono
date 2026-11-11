@@ -62,8 +62,8 @@ import {
 	renderStageBreakdown,
 	SPIN_INTERVAL_MS,
 	SPINNER_FRAMES,
-} from "./lane-list.js";
-import { LaneTranscriptView } from "./lane-transcript-view.js";
+} from "./lane-list.ts";
+import { LaneTranscriptView } from "./lane-transcript-view.ts";
 import {
 	type DisplayRow,
 	dequeueInput,
@@ -79,7 +79,7 @@ import {
 	SINGLE_UNIT_KEY,
 	subscribeLanes,
 	unitNeedsInput,
-} from "./run-lane-registry.js";
+} from "./run-lane-registry.ts";
 
 /** The console renders IN-FLOW, so 0.9 leaves the bottom ~10% of the terminal for the primary
  *  footer that keeps rendering below it (a full-screen ratio would push the footer off-screen). */

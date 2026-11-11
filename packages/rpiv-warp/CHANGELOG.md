@@ -10,6 +10,26 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - Extension UI prompts (e.g. a `@gotgenes/pi-permission-system` "allow this bash command?" prompt) now raise Warp's **Blocked** badge and fire the OS toast, and the heartbeat pauses instead of re-announcing `prompt_submit` every 15 s while the agent is actually waiting on the user. `ui_prompt_start` / `ui_prompt_end` join the same reason set that drives the blocking-tool badge, so `ask_user_question` — which fires both `tool_call` and `ui_prompt_start` — still raises exactly once and clears exactly once, in either event order. A stale reason surviving a missed `agent_end` is reset (and the badge cleared) at the next `agent_start`.
 
+## [2.15.0] - 2026-10-24
+
+## [2.14.2] - 2026-10-23
+
+## [2.14.1] - 2026-10-23
+
+### Fixed
+
+- **Works with Pi 1.2 and later.** Pi 1.2 also fires `before_agent_start` for runs an extension starts with `pi.sendMessage(..., { triggerTurn: true })`, and those runs carry no prompt. rpiv-warp read the prompt anyway, so such a run blanked the Warp tab's query and announced a new turn with an empty prompt. A run started that way now keeps the last user query and sends no `session_start` or `prompt_submit`; the spinner, heartbeat and `stop` still fire. Older Pi versions behave as before. Thanks @jagaliano. ([#305](https://github.com/juicesharp/rpiv-mono/pull/305))
+
+## [2.14.0] - 2026-10-23
+
+## [2.13.10] - 2026-10-23
+
+## [2.13.9] - 2026-10-17
+
+### Changed
+
+- Faster extension startup: relative imports now name the published `.ts` files instead of nonexistent `.js` targets, so Pi's loader (jiti) no longer runs fallback resolution for each of them on every launch. Runtime behavior is unchanged. Thanks @ry4nyu for #306, and @szastupov for #304.
+
 ## [2.13.8] - 2026-10-12
 
 ## [2.13.7] - 2026-10-12

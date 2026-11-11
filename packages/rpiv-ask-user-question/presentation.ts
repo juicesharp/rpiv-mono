@@ -1,4 +1,4 @@
-import type { QuestionnaireResult } from "./tool/types.js";
+import type { QuestionnaireResult } from "./tool/types.ts";
 
 /**
  * Inline row budget. A component in Pi's editor slot only receives a width, and the
@@ -51,9 +51,19 @@ export const YIELD_TO_OVERLAY: QuestionnaireResult = Object.freeze({
  * the user cannot see. Stacking as an overlay instead keeps the question visible and
  * focused, and pi-tui returns focus to the other overlay when it closes. A host that
  * allocates the rows itself (rpiv-pi lane console) owns its geometry and is left alone.
+ *
+ * Only a capturing overlay counts. A `nonCapturing` one (a HUD or status panel) never
+ * takes keyboard focus, so the inline question stays focused and keeps the transcript
+ * scrollable; yielding to it would mount a focused overlay, which in fullscreen Pi takes
+ * the viewport's PageUp/PageDown (and, before Pi 1.2, the wheel) until answered (#313).
+ * pi-tui's `getTopmostVisibleOverlay()` applies that rule but is private in its typings,
+ * so it is duck-typed, with `hasOverlay()` as the fallback for hosts without it.
  */
 export function mustYieldInlineSlot(tui: { terminal: object; hasOverlay?: () => boolean }): boolean {
-	return !hostAllocatesRows(tui.terminal) && typeof tui.hasOverlay === "function" && tui.hasOverlay();
+	if (hostAllocatesRows(tui.terminal)) return false;
+	const { getTopmostVisibleOverlay } = tui as { getTopmostVisibleOverlay?: () => unknown };
+	if (typeof getTopmostVisibleOverlay === "function") return getTopmostVisibleOverlay.call(tui) !== undefined;
+	return typeof tui.hasOverlay === "function" && tui.hasOverlay();
 }
 
 export const inlineRowBudget: RowBudget = (terminalRows) =>

@@ -19,8 +19,8 @@
  * any other halt site.
  */
 
-import { type EdgeContext, type EdgeFn, STOP, type Workflow } from "./api.js";
-import { formatError } from "./internal-utils.js";
+import { type EdgeContext, type EdgeFn, STOP, type Workflow } from "./api.ts";
+import { formatError } from "./internal-utils.ts";
 
 /**
  * Three-way return from `nextStage`. Matches the convention established by

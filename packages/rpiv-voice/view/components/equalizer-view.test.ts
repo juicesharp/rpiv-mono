@@ -2,7 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 
-import { EqualizerView } from "./equalizer-view.js";
+import { EqualizerView } from "./equalizer-view.ts";
 
 const WIDTH = 60;
 const ROW_COUNT = 7;

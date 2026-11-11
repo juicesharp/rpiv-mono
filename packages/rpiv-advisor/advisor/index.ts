@@ -6,7 +6,7 @@
  *
  * The implementation is one concern per file under this directory; this barrel
  * re-exports the package's public surface (consumed by ../index.ts, the repo-
- * root test/setup.ts, and the advisor.*.test.ts suite via "./advisor/index.js").
+ * root test/setup.ts, and the advisor.*.test.ts suite via "./advisor/index.ts").
  *
  * Module map:
  *   messages   — tool identity, sentinels, effort vocabulary, all strings
@@ -23,17 +23,17 @@
  *   command    — /advisor slash command
  */
 
-export { registerAdvisorCommand } from "./command.js";
-export { loadAdvisorConfig, saveAdvisorConfig } from "./config.js";
-export { ensureUserTailForAdvisor, stripInflightAdvisorCall, stripToolDeclarations } from "./context.js";
+export { registerAdvisorCommand } from "./command.ts";
+export { loadAdvisorConfig, saveAdvisorConfig } from "./config.ts";
+export { ensureUserTailForAdvisor, stripInflightAdvisorCall, stripToolDeclarations } from "./context.ts";
 export {
 	registerAdvisorBeforeAgentStart,
 	registerModelSelectHandler,
 	registerThinkingLevelSelectHandler,
-} from "./handlers.js";
-export { getInventoryMessage, stableStringify } from "./inventory.js";
-export { ADVISOR_TOOL_NAME } from "./messages.js";
-export { setDisabledForModels } from "./policy.js";
-export { DEFAULT_PROMPT_GUIDELINES, DEFAULT_PROMPT_SNIPPET, registerAdvisorTool } from "./register.js";
-export { __resetAdvisorAnnounced, registerAdvisorSessionStart, restoreAdvisorState } from "./restore.js";
-export { getAdvisorEffort, getAdvisorModel, setAdvisorEffort, setAdvisorModel } from "./state.js";
+} from "./handlers.ts";
+export { getInventoryMessage, stableStringify } from "./inventory.ts";
+export { ADVISOR_TOOL_NAME } from "./messages.ts";
+export { setDisabledForModels } from "./policy.ts";
+export { DEFAULT_PROMPT_GUIDELINES, DEFAULT_PROMPT_SNIPPET, registerAdvisorTool } from "./register.ts";
+export { __resetAdvisorAnnounced, registerAdvisorSessionStart, restoreAdvisorState } from "./restore.ts";
+export { getAdvisorEffort, getAdvisorModel, setAdvisorEffort, setAdvisorModel } from "./state.ts";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFrontmatterBounds } from "./frontmatter.js";
+import { parseFrontmatterBounds } from "./frontmatter.ts";
 
 describe("parseFrontmatterBounds", () => {
 	it("returns bounds for well-formed frontmatter", () => {

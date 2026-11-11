@@ -7,9 +7,9 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { defineParser, type Outcome, type ParseContext } from "@juicesharp/rpiv-workflow/registration";
-import { frontmatterParser, rpivBucketOutcome } from "../artifact-collector.js";
-import { countHeadingsOutsideFences, openFenceLine } from "./markdown-fence.js";
-import { PLAN_PHASE_RE } from "./plan-phases.js";
+import { frontmatterParser, rpivBucketOutcome } from "../artifact-collector.ts";
+import { countHeadingsOutsideFences, openFenceLine } from "./markdown-fence.ts";
+import { PLAN_PHASE_RE } from "./plan-phases.ts";
 
 interface ElaborationStructure {
 	/** `"balanced"`, or the diagnosis the contract's enum failure surfaces verbatim. */

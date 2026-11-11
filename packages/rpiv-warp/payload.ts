@@ -9,7 +9,7 @@
 import { basename } from "node:path";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { type ExtensionContext, parseSkillBlock, type SessionEntry } from "@earendil-works/pi-coding-agent";
-import { negotiateProtocolVersion, type WarpEvent } from "./protocol.js";
+import { negotiateProtocolVersion, type WarpEvent } from "./protocol.ts";
 
 // ---------------------------------------------------------------------------
 // Constants — single definition site for tunables

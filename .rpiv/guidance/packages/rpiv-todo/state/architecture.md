@@ -11,9 +11,9 @@ Pure state layer for the `todo` tool — owns the canonical shape, the reducer, 
 ## Consumers
 - **`../index.ts`** (composer): wires `replayFromBranch` into `session_start`/`session_compact`/`session_tree`, committing each replay snapshot via `replaceState`; `evictSession` + render-pointer teardown on `session_shutdown`
 - **`../todo.ts`** (tool registrar): `execute()` runs the reducer and `commitState`s the result
-- **`../todo-overlay.ts`** (widget): reads live state via `getRenderState()` (the ctx-less foreground slot — `./state/store.js`) between renders
-- **`../todo.ts`** re-exports the reducer/store/graph/types symbols so existing consumers keep importing from `./todo.js`
-- **`test/setup.ts`** (repo root): dynamically imports `../packages/rpiv-todo/todo.js` inside `beforeEach` and calls `__resetState()` (plus deletes the persisted config file)
+- **`../todo-overlay.ts`** (widget): reads live state via `getRenderState()` (the ctx-less foreground slot — `./state/store.ts`) between renders
+- **`../todo.ts`** re-exports the reducer/store/graph/types symbols so existing consumers keep importing from `./todo.ts`
+- **`test/setup.ts`** (repo root): dynamically imports `../packages/rpiv-todo/todo.ts` inside `beforeEach` and calls `__resetState()` (plus deletes the persisted config file)
 
 ## Module Structure
 ```

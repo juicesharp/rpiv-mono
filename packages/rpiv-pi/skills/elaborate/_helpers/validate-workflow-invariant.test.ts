@@ -10,9 +10,9 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { acts, defineRoute, defineWorkflow, validateWorkflow, type Workflow } from "@juicesharp/rpiv-workflow";
 import { describe, expect, it } from "vitest";
-import { deriveOutcomes } from "../../../extensions/rpiv-core/outcome-derivation.js";
-import { BUNDLED_SKILLS_DIR } from "../../../extensions/rpiv-core/paths.js";
-import { buildSkillContractsFromFrontmatter } from "../../../extensions/rpiv-core/skill-contracts-source.js";
+import { deriveOutcomes } from "../../../extensions/rpiv-core/outcome-derivation.ts";
+import { BUNDLED_SKILLS_DIR } from "../../../extensions/rpiv-core/paths.ts";
+import { buildSkillContractsFromFrontmatter } from "../../../extensions/rpiv-core/skill-contracts-source.ts";
 
 const HELPER_MJS = fileURLToPath(new URL("./validate-workflow-invariant.mjs", import.meta.url));
 

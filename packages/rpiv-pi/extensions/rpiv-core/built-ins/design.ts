@@ -9,8 +9,8 @@
  */
 import { basename } from "node:path";
 import { defineParser, type Outcome, type ParseContext } from "@juicesharp/rpiv-workflow/registration";
-import { frontmatterParser, rpivBucketOutcome } from "../artifact-collector.js";
-import { DESIGN_SLICE_RE } from "./slices.js";
+import { frontmatterParser, rpivBucketOutcome } from "../artifact-collector.ts";
+import { DESIGN_SLICE_RE } from "./slices.ts";
 
 interface DesignStructure {
 	/** `"matches"`, or the diagnosis the contract's enum failure surfaces verbatim. */

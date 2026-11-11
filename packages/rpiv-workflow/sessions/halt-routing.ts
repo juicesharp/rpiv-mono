@@ -17,16 +17,16 @@
  *     lifecycle signal borrows `unitEventOf` from here).
  */
 
-import { type AuditContext, failedArgs, recordFatalFailure, recordStopFailure, recordUnitHalt } from "../audit.js";
-import { allocateStageNumber } from "../audit-rows.js";
-import { lifecycleCtxFromSession, skillStageRef } from "../events.js";
-import { nowIso } from "../internal-utils.js";
-import { FAIL_VALIDATION_EXHAUSTED, MSG_STAGE_FAILED } from "../messages.js";
-import { failedOutput, type OutputMeta, outputMeta } from "../output.js";
-import type { SessionRef } from "../state/index.js";
-import type { StopSignal } from "../transcript.js";
-import type { StageSessionContext, WorkflowHostContext } from "../types.js";
-import { unitEventOf } from "./success-persist.js";
+import { type AuditContext, failedArgs, recordFatalFailure, recordStopFailure, recordUnitHalt } from "../audit.ts";
+import { allocateStageNumber } from "../audit-rows.ts";
+import { lifecycleCtxFromSession, skillStageRef } from "../events.ts";
+import { nowIso } from "../internal-utils.ts";
+import { FAIL_VALIDATION_EXHAUSTED, MSG_STAGE_FAILED } from "../messages.ts";
+import { failedOutput, type OutputMeta, outputMeta } from "../output.ts";
+import type { SessionRef } from "../state/index.ts";
+import type { StopSignal } from "../transcript.ts";
+import type { StageSessionContext, WorkflowHostContext } from "../types.ts";
+import { unitEventOf } from "./success-persist.ts";
 
 /**
  * A stage's reason-to-halt, tagged by the post-processing arm that produced it.

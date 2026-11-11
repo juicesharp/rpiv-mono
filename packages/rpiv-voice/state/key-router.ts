@@ -1,5 +1,5 @@
 import { Key, matchesKey } from "@earendil-works/pi-tui";
-import type { VoiceRuntime, VoiceState } from "./state.js";
+import type { VoiceRuntime, VoiceState } from "./state.ts";
 
 const KEYBIND_CONFIRM = "tui.select.confirm";
 // Mirrors the rpiv-ask-user-question peer pattern — cancel goes through the

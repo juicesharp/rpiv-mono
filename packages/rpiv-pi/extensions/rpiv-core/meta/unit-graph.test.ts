@@ -5,10 +5,10 @@ import { join } from "node:path";
 import { type Output, type RunView, validateWorkflow } from "@juicesharp/rpiv-workflow";
 import type { EdgeFn, ProducesScriptFn } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { lessonsBlock, recordLessons } from "./lessons.js";
-import { metaWorkflow } from "./presets.js";
-import { type Check, defineUnitGraph } from "./unit-graph.js";
-import { captureGoalKeepingWip, wipIntact, wipNotice } from "./wip-guard.js";
+import { lessonsBlock, recordLessons } from "./lessons.ts";
+import { metaWorkflow } from "./presets.ts";
+import { type Check, defineUnitGraph } from "./unit-graph.ts";
+import { captureGoalKeepingWip, wipIntact, wipNotice } from "./wip-guard.ts";
 
 const out = (data: unknown, artifacts: Output["artifacts"] = []): Output =>
 	({ kind: "json", data, artifacts, meta: { stage: "x", stageNumber: 1, ts: "t", runId: "r" } }) as Output;

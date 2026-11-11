@@ -7,4 +7,4 @@
  * (`dispatchStageOrRecordFailure`, run-stage.ts) catches it as before.
  */
 
-export { haltPreflight, invariantPreflight, StagePreflightError } from "../stage-errors.js";
+export { haltPreflight, invariantPreflight, StagePreflightError } from "../stage-errors.ts";

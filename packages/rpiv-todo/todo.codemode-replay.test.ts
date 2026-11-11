@@ -5,16 +5,16 @@
  * Pi records it only as a bounded `nestedCalls` summary on the outer `codemode`
  * result, never as a standalone `toolResult`, so its `details` snapshot is not on
  * the branch. Each test drives a scripted (faux) model through a real
- * `AgentSession` with Pi's built-in codemode extension and rpiv-todo loaded from
- * source, persists the session to disk, reopens it (what `pi -c` / `/resume`
- * do — `session_start` replays the branch), and reads the restored list with a
- * direct `todo list`.
+ * `AgentSession` with Pi's built-in codemode extension and rpiv-todo's entry,
+ * persists the session to disk, reopens it (what `pi -c` / `/resume` do —
+ * `session_start` replays the branch), and reads the restored list with a
+ * direct `todo list`. The entry goes in as a factory, not a path: a path loads
+ * a second copy outside Vitest, whose coverage merges badly with this one.
  */
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall, type JsonObject } from "@earendil-works/pi-ai";
 import {
 	type AgentSession,
@@ -26,8 +26,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-const PACKAGE_DIR = fileURLToPath(new URL(".", import.meta.url));
+import todo from "./index.ts";
 
 describe("todo calls made through codemode survive session replay (#290)", () => {
 	let home: string;
@@ -72,8 +71,10 @@ describe("todo calls made through codemode survive session replay (#290)", () =>
 			cwd,
 			agentDir,
 			settingsManager,
-			additionalExtensionPaths: [PACKAGE_DIR],
-			extensionFactories: [{ name: "codemode", factory: createCodemodeExtension() }],
+			extensionFactories: [
+				{ name: "codemode", factory: createCodemodeExtension() },
+				{ name: "rpiv-todo", factory: (pi) => todo(pi) },
+			],
 		});
 		await resourceLoader.reload();
 		const { session } = await createAgentSession({

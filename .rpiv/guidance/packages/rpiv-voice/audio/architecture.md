@@ -9,7 +9,7 @@ The only ML/native-binding layer in the monorepo: owns mic capture, Int16↔Floa
 - **Node stdlib**: global `fetch` + `node:stream/promises.pipeline` for download, `execFile("tar", …)` for extraction (no JS tar dep)
 
 ## Inbound / Outbound
-- **Outbound**: `decibri`, `sherpa-onnx-node`, `node:*`, `../state/i18n-bridge.js` (only in `model-download.ts`, for splash strings)
+- **Outbound**: `decibri`, `sherpa-onnx-node`, `node:*`, `../state/i18n-bridge.ts` (only in `model-download.ts`, for splash strings)
 - **Inbound**: `command/voice-command.ts` and `command/pipeline-runner.ts` (+ tests). No reach-in from view/, state/, agents, or web packages.
 
 ## Module Structure

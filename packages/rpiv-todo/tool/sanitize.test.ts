@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeTerminalText } from "./sanitize.js";
+import { sanitizeTerminalText } from "./sanitize.ts";
 
 describe("sanitizeTerminalText", () => {
 	it("drops complete ANSI/C1 escape sequences without printable remnants", () => {

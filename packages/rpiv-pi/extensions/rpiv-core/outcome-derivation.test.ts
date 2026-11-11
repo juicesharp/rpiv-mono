@@ -14,8 +14,8 @@ import type { SkillContract, SkillContractMap, Workflow } from "@juicesharp/rpiv
 import { acts, defineWorkflow, produces } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { builtInWorkflows } from "./built-in-workflows.js";
-import { BUCKET_BY_KIND, deriveOutcomes } from "./outcome-derivation.js";
+import { builtInWorkflows } from "./built-in-workflows.ts";
+import { BUCKET_BY_KIND, deriveOutcomes } from "./outcome-derivation.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers

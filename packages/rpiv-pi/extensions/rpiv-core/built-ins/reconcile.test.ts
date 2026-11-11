@@ -11,7 +11,7 @@ import { basename, join } from "node:path";
 import { type EdgeFn, type Output, type RunView, validateWorkflow } from "@juicesharp/rpiv-workflow";
 import { fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DECLARED_CONTRACTS, deriveAndValidate, findWorkflow } from "../workflow-test-harness.js";
+import { DECLARED_CONTRACTS, deriveAndValidate, findWorkflow } from "../workflow-test-harness.ts";
 
 describe("reconcile lane stage", () => {
 	let tmpDir: string;

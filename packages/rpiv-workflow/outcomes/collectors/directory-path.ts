@@ -12,10 +12,10 @@
  * `transcriptPathCollector({ pattern })` and supply the regex directly.
  */
 
-import type { ArtifactCollector } from "../../output-spec.js";
-import { requireOpt } from "./require-opt.js";
-import type { ToolCall } from "./tool-call.js";
-import { transcriptPathCollector } from "./transcript-path.js";
+import type { ArtifactCollector } from "../../output-spec.ts";
+import { requireOpt } from "./require-opt.ts";
+import type { ToolCall } from "./tool-call.ts";
+import { transcriptPathCollector } from "./transcript-path.ts";
 
 export interface DirectoryPathCollectorOpts {
 	/** cwd-relative directory the agent's announced path must sit under (e.g. `"docs/adr"`). */

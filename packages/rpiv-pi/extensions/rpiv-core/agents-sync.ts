@@ -11,10 +11,10 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { installedExtensionNames } from "./agent-enablement.js";
-import { safeJoin } from "./agents-allowlist.js";
-import { type AgentInjectionContext, injectModelFrontmatter } from "./agents-inject.js";
-import { MANIFEST_FILE, type Manifest, readManifest, sha256, writeManifest } from "./agents-manifest.js";
+import { installedExtensionNames } from "./agent-enablement.ts";
+import { safeJoin } from "./agents-allowlist.ts";
+import { type AgentInjectionContext, injectModelFrontmatter } from "./agents-inject.ts";
+import { MANIFEST_FILE, type Manifest, readManifest, sha256, writeManifest } from "./agents-manifest.ts";
 import {
 	CLEANUP_SKIP_REASON,
 	type CleanupResult,
@@ -22,11 +22,11 @@ import {
 	emptySyncResult,
 	SYNC_OP,
 	type SyncResult,
-} from "./agents-types.js";
-import { loadModelsConfig } from "./models-config.js";
-import { findInstalledSiblings, type LoadedSiblingSources } from "./package-checks.js";
-import { BUNDLED_AGENTS_DIR } from "./paths.js";
-import { toErrorMessage } from "./utils.js";
+} from "./agents-types.ts";
+import { loadModelsConfig } from "./models-config.ts";
+import { findInstalledSiblings, type LoadedSiblingSources } from "./package-checks.ts";
+import { BUNDLED_AGENTS_DIR } from "./paths.ts";
+import { toErrorMessage } from "./utils.ts";
 
 // ---------------------------------------------------------------------------
 // Predicate consolidation

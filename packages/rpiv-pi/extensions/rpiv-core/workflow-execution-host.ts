@@ -20,12 +20,12 @@
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { BranchEntry, ModelSelection, WorkflowHostContext } from "@juicesharp/rpiv-workflow";
-import { isLaneRelayUiContext } from "./lane-relay-ui.js";
-import { loadModelsConfig, resolveMaxConcurrency, resolveStageModel } from "./models-config.js";
-import { getFocusedRun, getLane, recordRun, retireRun, setLaneAbort } from "./run-lane-registry.js";
-import { SdkWorkflowHost } from "./sdk-workflow-host.js";
-import { getCapturedModelRegistry, getCapturedUiContext } from "./session-capture.js";
-import { isModuleNotFound } from "./utils.js";
+import { isLaneRelayUiContext } from "./lane-relay-ui.ts";
+import { loadModelsConfig, resolveMaxConcurrency, resolveStageModel } from "./models-config.ts";
+import { getFocusedRun, getLane, recordRun, retireRun, setLaneAbort } from "./run-lane-registry.ts";
+import { SdkWorkflowHost } from "./sdk-workflow-host.ts";
+import { getCapturedModelRegistry, getCapturedUiContext } from "./session-capture.ts";
+import { isModuleNotFound } from "./utils.ts";
 
 /** Build the detached executor + abort tap from the live observer ctx + run identity. */
 type WorkflowExecution = {
@@ -40,7 +40,7 @@ type WorkflowExecution = {
  * preserve the tested public surface; the live cap is driven through
  * `resolveMaxConcurrency(loadModelsConfig())` at the consumer below.
  */
-export { DEFAULT_MAX_CONCURRENCY } from "./models-config.js";
+export { DEFAULT_MAX_CONCURRENCY } from "./models-config.ts";
 
 /**
  * Map the config layer's `ResolvedModelConfig` ({ model?, thinking? }) to the

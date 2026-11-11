@@ -18,21 +18,21 @@ import {
 	type SyncResult,
 	summarizeCleanupSkips,
 	syncBundledAgents,
-} from "./agents.js";
-import { renderBanner } from "./banner.js";
-import { FLAG_DEBUG, MSG_TYPE_GIT_CONTEXT, MSG_TYPE_POST_COMPACT_CONTEXT } from "./constants.js";
+} from "./agents.ts";
+import { renderBanner } from "./banner.ts";
+import { FLAG_DEBUG, MSG_TYPE_GIT_CONTEXT, MSG_TYPE_POST_COMPACT_CONTEXT } from "./constants.ts";
 import {
 	clearGitContextCache,
 	isGitMutatingCommand,
 	refreshGitContextForInjection,
 	resetInjectedMarker,
 	takeGitContextIfChanged,
-} from "./git-context.js";
-import { clearInjectionState, handleToolCallGuidance, injectRootGuidance, takeRootGuidance } from "./guidance.js";
-import { readLoadedSiblingSources } from "./loaded-siblings.js";
-import { findMissingSiblings, type LoadedSiblingSources } from "./package-checks.js";
-import { injectPipelinePointer, PIPELINE_POINTER } from "./pipeline-pointer.js";
-import { isStaleCtxError } from "./utils.js";
+} from "./git-context.ts";
+import { clearInjectionState, handleToolCallGuidance, injectRootGuidance, takeRootGuidance } from "./guidance.ts";
+import { readLoadedSiblingSources } from "./loaded-siblings.ts";
+import { findMissingSiblings, type LoadedSiblingSources } from "./package-checks.ts";
+import { injectPipelinePointer, PIPELINE_POINTER } from "./pipeline-pointer.ts";
+import { isStaleCtxError } from "./utils.ts";
 
 /**
  * Module-local latch for the startup-maintenance block (per-cwd agent cleanup,
@@ -268,7 +268,8 @@ function notifyCleanup(ui: UI, result: CleanupResult): void {
 }
 
 function warnMissingSiblings(ui: UI, loaded: LoadedSiblingSources): void {
-	const missing = findMissingSiblings(loaded);
+	// Optional siblings are left out — rpiv-pi works without them (#167).
+	const missing = findMissingSiblings(loaded).filter((s) => !s.optional);
 	if (missing.length === 0) return;
 	// Leading newline so Pi's "Warning: " severity prefix sits on its own
 	// line; every box row then gets Pi's 1-space continuation indent

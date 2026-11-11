@@ -11,11 +11,11 @@
  */
 
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import { requireNonEmptyString } from "./internal-utils.js";
-import type { AssessLoop, LoopDef, VerifySpec } from "./loop-def.js";
-import type { Output, RunView } from "./output.js";
-import type { Outcome } from "./output-spec.js";
-import type { EdgeTarget } from "./routing-dsl.js";
+import { requireNonEmptyString } from "./internal-utils.ts";
+import type { AssessLoop, LoopDef, VerifySpec } from "./loop-def.ts";
+import type { Output, RunView } from "./output.ts";
+import type { Outcome } from "./output-spec.ts";
+import type { EdgeTarget } from "./routing-dsl.ts";
 
 /**
  * Schema attached to a stage's `outputSchema` / `inputSchema`. Structurally

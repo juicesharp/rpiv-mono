@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createLaneRelayUiContext } from "./lane-relay-ui.js";
-import { __resetRunLaneRegistry, recordRun, SINGLE_UNIT_KEY } from "./run-lane-registry.js";
+import { createLaneRelayUiContext } from "./lane-relay-ui.ts";
+import { __resetRunLaneRegistry, recordRun, SINGLE_UNIT_KEY } from "./run-lane-registry.ts";
 import {
 	__resetSessionCaptureState,
 	getCapturedModel,
@@ -9,7 +9,7 @@ import {
 	getCapturedUiContext,
 	registerSessionCapture,
 	resolveModel,
-} from "./session-capture.js";
+} from "./session-capture.ts";
 
 // The workflow-path lifecycle latch is retired (the SDK executor resolves
 // per-child models at createAgentSession). What survives here is the live

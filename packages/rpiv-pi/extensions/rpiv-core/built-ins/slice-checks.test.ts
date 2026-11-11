@@ -11,7 +11,7 @@ import { basename, join } from "node:path";
 import type { EdgeFn, Output, RunView } from "@juicesharp/rpiv-workflow";
 import { fanin, fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findWorkflow } from "../workflow-test-harness.js";
+import { findWorkflow } from "../workflow-test-harness.ts";
 
 describe("build slice-check (deterministic floor)", () => {
 	let tmpDir: string;

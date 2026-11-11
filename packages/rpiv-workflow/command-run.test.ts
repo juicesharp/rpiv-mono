@@ -11,19 +11,19 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WorkflowHost, WorkflowHostContext } from "./host.js";
-import { formatError } from "./internal-utils.js";
+import type { WorkflowHost, WorkflowHostContext } from "./host.ts";
+import { formatError } from "./internal-utils.ts";
 import {
 	MSG_FLAG_REPEATED,
 	MSG_JUMP_CAP_ABOVE_LAP_CEILING,
 	MSG_NAME_IGNORED_ON_RESUME,
 	MSG_RESUME_USAGE,
 	MSG_WORKFLOW_THREW,
-} from "./messages.js";
+} from "./messages.ts";
 
 // Mock the loader to a single registered workflow — parseArgs sees "ship" as a
 // workflow name, so `/wf ship <input>` resolves a run without touching disk.
-vi.mock("./load/index.js", () => ({
+vi.mock("./load/index.ts", () => ({
 	loadWorkflows: vi.fn(async () => ({
 		workflows: [{ name: "ship" }],
 		issues: [],
@@ -35,16 +35,16 @@ vi.mock("./load/index.js", () => ({
 
 // Mock the float boundary — runWorkflow / resumeWorkflowByRunId are the two
 // promises `/wf` floats off the prompt.
-vi.mock("./runner/index.js", () => ({
+vi.mock("./runner/index.ts", () => ({
 	runWorkflow: vi.fn(),
 	resumeWorkflowByRunId: vi.fn(),
 }));
 
-import { handleWorkflowCommand } from "./command-run.js";
-import { resumeWorkflowByRunId, runWorkflow } from "./runner/index.js";
+import { handleWorkflowCommand } from "./command-run.ts";
+import { resumeWorkflowByRunId, runWorkflow } from "./runner/index.ts";
 // The REAL defaults — the handler reads them from run-context.ts directly,
 // past the barrel mock above, so these pins move with a constants bump.
-import { MAX_BACKWARD_JUMPS, MAX_LAPS } from "./runner/run-context.js";
+import { MAX_BACKWARD_JUMPS, MAX_LAPS } from "./runner/run-context.ts";
 
 const HOST = {} as unknown as WorkflowHost;
 

@@ -17,8 +17,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { loadWorkflows } from "./load/index.js";
-import { LEGACY_OVERLAY_NOTICE, LEGACY_RUNS_NOTICE } from "./load/legacy.js";
+import { loadWorkflows } from "./load/index.ts";
+import { LEGACY_OVERLAY_NOTICE, LEGACY_RUNS_NOTICE } from "./load/legacy.ts";
 import {
 	BACKWARD_JUMP_LIMIT_HEAD,
 	ERR_RESUME_LOOP_MISMATCH,
@@ -27,7 +27,7 @@ import {
 	MSG_LOOP_CAP_ADVANCE,
 	MSG_LOOP_ZERO_UNITS,
 	MSG_RESUME_LOOP_MISMATCH,
-} from "./messages.js";
+} from "./messages.ts";
 
 /** Extract the single backtick-delimited shell after `Move it:` from a notice. */
 const extractShell = (notice: string): string => {

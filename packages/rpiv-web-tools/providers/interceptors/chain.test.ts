@@ -10,7 +10,7 @@ import { dirname } from "node:path";
 import { configPath } from "@juicesharp/rpiv-config";
 import { createMockCtx, createMockPi, stubFetch } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it } from "vitest";
-import registerWebTools from "../../index.js";
+import registerWebTools from "../../index.ts";
 
 const CONFIG_PATH = configPath("rpiv-web-tools");
 

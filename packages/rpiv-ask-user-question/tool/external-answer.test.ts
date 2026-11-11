@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resolveExternalAnswer } from "./external-answer.js";
-import type { QuestionData } from "./types.js";
+import { resolveExternalAnswer } from "./external-answer.ts";
+import type { QuestionData } from "./types.ts";
 
 const single: QuestionData = {
 	question: "Which?",

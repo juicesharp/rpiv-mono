@@ -14,7 +14,7 @@
  * `parseArgs` stays here (pure, exported for tests).
  */
 
-import type { WorkflowHost, WorkflowHostContext, WorkflowLauncherContext } from "./host.js";
+import type { WorkflowHost, WorkflowHostContext, WorkflowLauncherContext } from "./host.ts";
 
 /** Pi command registry — displayed by Pi's `/?` / command list. */
 export const CMD_DESCRIPTION = "Run a skill workflow: /wf [workflow] [description]";
@@ -36,7 +36,7 @@ export const PREWARM_DELAY_MS = 2000;
 // Public entry
 // ---------------------------------------------------------------------------
 
-type CommandRunModule = typeof import("./command-run.js");
+type CommandRunModule = typeof import("./command-run.ts");
 
 export interface WfCommandHandler {
 	(args: string, ctx: WorkflowLauncherContext): Promise<void>;
@@ -54,7 +54,7 @@ export interface WfCommandHandler {
  */
 export function makeWfHandler(
 	host: WorkflowHost,
-	importRun: () => Promise<CommandRunModule> = () => import("./command-run.js"),
+	importRun: () => Promise<CommandRunModule> = () => import("./command-run.ts"),
 ): WfCommandHandler {
 	let memo: Promise<CommandRunModule> | undefined;
 	let ready = false;

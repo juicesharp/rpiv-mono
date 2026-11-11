@@ -2,7 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 
-import { SplashView } from "./splash-view.js";
+import { SplashView } from "./splash-view.ts";
 
 const tagged = makeTheme({
 	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,

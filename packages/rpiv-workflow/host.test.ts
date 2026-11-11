@@ -17,7 +17,7 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { it } from "vitest";
-import type { WorkflowHost, WorkflowHostContext } from "./host.js";
+import type { WorkflowHost, WorkflowHostContext } from "./host.ts";
 
 // The subset of WorkflowHostContext the launcher uses as an OBSERVER — it
 // notifies / sets status, reads hasUI, and may read the session transcript,

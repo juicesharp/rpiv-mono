@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { BranchEntry } from "../../transcript.js";
-import { transcriptPathCollector } from "./transcript-path.js";
+import type { BranchEntry } from "../../transcript.ts";
+import { transcriptPathCollector } from "./transcript-path.ts";
 
 const asst = (text: string): BranchEntry => ({
 	type: "message",

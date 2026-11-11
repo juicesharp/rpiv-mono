@@ -52,7 +52,7 @@ function makeGhAvailableApisFail() {
 // ---------------------------------------------------------------------------
 
 const { parseGitHubUrl, resolveGitHubOptions, GitHubInterceptor, GITHUB_TOKEN_ENV_VAR, DEFAULTS } = await import(
-	"./github.js"
+	"./github.ts"
 );
 
 // Default factory: returns a fresh enabled interceptor with default thresholds.

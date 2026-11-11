@@ -13,8 +13,8 @@
 
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { shortFailureReason } from "./lane-failure.js";
-import { addLaneUsage, formatTokens, type LaneUsage } from "./lane-usage.js";
+import { shortFailureReason } from "./lane-failure.ts";
+import { addLaneUsage, formatTokens, type LaneUsage } from "./lane-usage.ts";
 import {
 	type DisplayRow,
 	getLane,
@@ -27,8 +27,8 @@ import {
 	type UnitLane,
 	unitNeedsInput,
 	unitUsage,
-} from "./run-lane-registry.js";
-import { getSubagentUsageForRun, getSubagentUsageForStage } from "./subagent-usage.js";
+} from "./run-lane-registry.ts";
+import { getSubagentUsageForRun, getSubagentUsageForStage } from "./subagent-usage.ts";
 
 /** Per-row CAP on the lane region (the scroll-follow window + its +N above/below summaries).
  *  computeLaneLayout bounds laneCap at MAX_WIDGET_LINES - 1, so the list never grows unbounded. */

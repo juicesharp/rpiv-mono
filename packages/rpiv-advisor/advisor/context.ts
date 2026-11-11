@@ -7,7 +7,7 @@
  */
 
 import type { Message } from "@earendil-works/pi-ai";
-import { ADVISOR_TOOL_NAME, MSG_ADVISOR_NUDGE } from "./messages.js";
+import { ADVISOR_TOOL_NAME, MSG_ADVISOR_NUDGE } from "./messages.ts";
 
 // Strip the executor's in-flight advisor() toolCall from the tail assistant
 // message. That call is what invoked *us* — there is no matching toolResult

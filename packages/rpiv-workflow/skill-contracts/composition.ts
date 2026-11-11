@@ -7,17 +7,17 @@
  * (not provably incompatible).
  */
 
-import { formatError } from "../internal-utils.js";
-import type { JsonSchemaObject } from "../json-schema.js";
-import { isSchemaCompatible } from "../schema-compat.js";
+import { formatError } from "../internal-utils.ts";
+import type { JsonSchemaObject } from "../json-schema.ts";
+import { isSchemaCompatible } from "../schema-compat.ts";
 import type {
 	CompositionComparator,
 	ConsumesSpec,
 	ProducesSpec,
 	SchemaCompatResult,
 	SkillContractMap,
-} from "../skill-contract.js";
-import { getCompositionComparators } from "./extension-points.js";
+} from "../skill-contract.ts";
+import { getCompositionComparators } from "./extension-points.ts";
 
 /**
  * THE single data-channel comparison core — shared by `canCompose` and the

@@ -1,13 +1,13 @@
-import { createMockPi } from "@juicesharp/rpiv-test-utils";
+import { createMockPi, makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 import {
 	buildItemsForQuestion,
 	buildQuestionnaireResponse,
 	buildToolResult,
 	registerAskUserQuestionTool,
-} from "./ask-user-question.js";
-import { prepareQuestionArguments } from "./tool/normalize-params.js";
-import type { QuestionnaireResult, QuestionParams } from "./tool/types.js";
+} from "./ask-user-question.ts";
+import { prepareQuestionArguments } from "./tool/normalize-params.ts";
+import type { QuestionnaireResult, QuestionParams } from "./tool/types.ts";
 
 describe("buildItemsForQuestion", () => {
 	it("appends the Type-something sentinel", () => {
@@ -755,5 +755,40 @@ describe("tool registration", () => {
 		const { pi, captured } = createMockPi();
 		registerAskUserQuestionTool(pi);
 		expect(captured.tools.get("ask_user_question")?.prepareArguments).toBe(prepareQuestionArguments);
+	});
+
+	it("renders the transcript receipt from the call's args and Pi's error flag", () => {
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get("ask_user_question");
+		const args = {
+			questions: [{ question: "Which format?", header: "Format", options: [{ label: "TOML" }, { label: "YAML" }] }],
+		};
+		const answered = buildQuestionnaireResponse(
+			{
+				answers: [{ questionIndex: 0, question: "Which format?", kind: "option", answer: "TOML" }],
+				cancelled: false,
+			},
+			args as QuestionParams,
+		);
+		const call = tool?.renderCall?.(args as never, makeTheme() as never, {} as never);
+		const ok = tool?.renderResult?.(
+			answered as never,
+			{ expanded: false } as never,
+			makeTheme() as never,
+			{
+				args,
+				isError: false,
+			} as never,
+		);
+		const failed = tool?.renderResult?.(
+			{ content: [{ type: "text", text: "Validation failed" }] } as never,
+			{ expanded: false } as never,
+			makeTheme() as never,
+			{ args, isError: true } as never,
+		);
+		expect(call?.render(80)).toEqual(["Ask Format"]);
+		expect(ok?.render(80)).toEqual(["✓ TOML"]);
+		expect(failed?.render(80)).toEqual(["✗ Validation failed"]);
 	});
 });

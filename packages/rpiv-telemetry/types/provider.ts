@@ -1,4 +1,4 @@
-import type { TelemetryEvent } from "./events.js";
+import type { TelemetryEvent } from "./events.ts";
 
 // ---------------------------------------------------------------------------
 // Provider interface + metadata

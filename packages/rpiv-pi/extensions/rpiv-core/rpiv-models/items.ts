@@ -10,7 +10,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { loadJsonConfigWithLegacyFallback, modelKey } from "@juicesharp/rpiv-config";
-import { type ModelsConfigSchema, THINKING_LEVEL_VALUES, type ThinkingLevelValue } from "../models-config.js";
+import { type ModelsConfigSchema, THINKING_LEVEL_VALUES, type ThinkingLevelValue } from "../models-config.ts";
 import {
 	CHECK,
 	SCOPE_AGENTS,
@@ -21,7 +21,7 @@ import {
 	SCOPE_STAGES,
 	SCOPES,
 	withCheck,
-} from "./overrides.js";
+} from "./overrides.ts";
 
 // ---------------------------------------------------------------------------
 // Sentinel values

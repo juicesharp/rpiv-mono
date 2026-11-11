@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { locateSessionFile, pruneOrphanedChildSessions } from "./locate.js";
+import { locateSessionFile, pruneOrphanedChildSessions } from "./locate.ts";
 
 describe("locateSessionFile", () => {
 	let dir: string;

@@ -6,14 +6,14 @@
  * construction site without importing each other.
  */
 
-import type { Workflow } from "../api.js";
-import { LifecycleDispatcher, type LifecycleListeners } from "../events.js";
-import type { ModelSelection, WorkflowHost } from "../host.js";
-import { MSG_BUDGET_INVALID } from "../messages.js";
-import { getSkillContracts } from "../skill-contracts/index.js";
-import type { BranchEntry } from "../transcript.js";
-import type { RunTrigger } from "../triggers.js";
-import type { RunContext, RunState } from "../types.js";
+import type { Workflow } from "../api.ts";
+import { LifecycleDispatcher, type LifecycleListeners } from "../events.ts";
+import type { ModelSelection, WorkflowHost } from "../host.ts";
+import { MSG_BUDGET_INVALID } from "../messages.ts";
+import { getSkillContracts } from "../skill-contracts/index.ts";
+import type { BranchEntry } from "../transcript.ts";
+import type { RunTrigger } from "../triggers.ts";
+import type { RunContext, RunState } from "../types.ts";
 
 // ---------------------------------------------------------------------------
 // Policy constants

@@ -12,8 +12,9 @@ adapts to the size of your terminal.
 | `Shift+Enter` | Insert a newline. | `Type something.` input, notes editor |
 | `Esc` | Cancel the whole questionnaire. | Everywhere except the notes editor, where it closes notes |
 | `Tab` / `Shift+Tab` | Next / previous tab, wrapping. `→` / `←` do the same. | Multi-question dialogs only |
+| `1`–`9` | Act on the row with that number: answer with it on a single-select question, toggle it on a multi-select one, or move to `Type something.` (no digit reaches `Next`). Inside `Type something.` and the notes editor, digits are text. | Option list |
 | `Space` | Toggle the focused authored option. In `Type something.`, Space inserts text. | Multi-select questions |
-| `n` | Open the notes editor for the focused question — or, on the Submit tab, the global note for the whole questionnaire. | Every question tab; the Submit tab in multi-question dialogs |
+| `n` | Open the notes editor for the focused question — or, on the Submit tab, the global note for the whole questionnaire. Configurable via `notesKey`. | Every question tab; the Submit tab in multi-question dialogs |
 | `Ctrl+G` | Open Pi's configured external editor with the current custom-answer draft. | `Type something.` input |
 | `Ctrl+U` | Clear the current custom-answer draft. | `Type something.` input |
 | `Ctrl+]` | Collapse or expand the dialog. Configurable via `collapseKey`. | Everywhere, including while collapsed |
@@ -88,7 +89,8 @@ keeping the header, the question, the focused option and the key hints visible.
 
 Wheel and trackpad scrolling reach the transcript only when the terminal reports them as
 mouse events. A terminal with mouse reporting turned off (Warp, for one) converts them
-into ↑/↓ key presses instead, which move between the dialog's options. `PageUp`/`PageDown`
+into ↑/↓ key presses instead, which move between the dialog's options. tmux does the same
+unless mouse mode is on (`set -g mouse on` in `~/.tmux.conf`). `PageUp`/`PageDown`
 (`Fn+↑`/`Fn+↓` on a Mac keyboard) scroll the transcript either way.
 
 Two cases open the questionnaire as an overlay instead:
@@ -99,6 +101,11 @@ Two cases open the questionnaire as an overlay instead:
   stacks on top, so the question you see is the one your keys reach. `Ctrl+]` shrinks it to
   its one-line row so `/btw` is readable behind it; the question keeps the keys, so `Esc`
   cancels the question, and `/btw` closes after the question is answered or cancelled.
+  Overlays that never take the keys, such as an extension's status panel, don't count: the
+  question still opens in the editor area.
+
+While the questionnaire is an overlay, Pi gives it `PageUp`/`PageDown` (and, before Pi 1.2,
+the wheel), so the transcript doesn't scroll until the question is answered or cancelled.
 
 ## Collapse mode
 

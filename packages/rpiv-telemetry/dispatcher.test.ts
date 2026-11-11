@@ -1,22 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { TelemetryEvent } from "./types/events.js";
-import type { TelemetryProvider } from "./types/provider.js";
+import type { TelemetryEvent } from "./types/events.ts";
+import type { TelemetryProvider } from "./types/provider.ts";
 
-vi.mock("./config.js", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("./config.js")>();
+vi.mock("./config.ts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./config.ts")>();
 	return {
 		...actual,
 		loadTelemetryConfig: vi.fn(actual.loadTelemetryConfig),
 	};
 });
 
-import { loadTelemetryConfig } from "./config.js";
+import { loadTelemetryConfig } from "./config.ts";
 import {
 	dispatchTelemetryEvent,
 	registerTelemetryProvider,
 	resetTelemetryDispatcher,
 	shutdownTelemetryDispatcher,
-} from "./dispatcher.js";
+} from "./dispatcher.ts";
 
 function makeProvider(overrides: Partial<TelemetryProvider> & { name?: string } = {}): TelemetryProvider {
 	const { name = "test", ...rest } = overrides;

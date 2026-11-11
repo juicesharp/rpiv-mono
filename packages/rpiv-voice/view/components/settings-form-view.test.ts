@@ -2,8 +2,8 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 
-import { SettingsFieldView } from "./settings-field-view.js";
-import { SettingsFormView } from "./settings-form-view.js";
+import { SettingsFieldView } from "./settings-field-view.ts";
+import { SettingsFormView } from "./settings-form-view.ts";
 
 const plain = makeTheme() as unknown as Theme;
 const WIDTH = 80;

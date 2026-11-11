@@ -19,7 +19,7 @@ import {
 	type SessionEntry,
 	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
-import type { BtwTurn } from "./btw.js";
+import type { BtwTurn } from "./btw.ts";
 
 // ---------------------------------------------------------------------------
 // Budget constants — the engine's tuning surface. Defined in this leaf module so

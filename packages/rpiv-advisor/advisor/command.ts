@@ -11,9 +11,9 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { SelectItem } from "@earendil-works/pi-tui";
 import { modelKey } from "@juicesharp/rpiv-config";
-import { showAdvisorPicker, showEffortPicker } from "../advisor-ui.js";
-import { saveAdvisorConfig } from "./config.js";
-import { reconcileAdvisorTool } from "./handlers.js";
+import { showAdvisorPicker, showEffortPicker } from "../advisor-ui.ts";
+import { saveAdvisorConfig } from "./config.ts";
+import { reconcileAdvisorTool } from "./handlers.ts";
 import {
 	ADVISOR_TOOL_NAME,
 	CHECKMARK,
@@ -30,9 +30,9 @@ import {
 	NO_ADVISOR_VALUE,
 	OFF_VALUE,
 	RECOMMENDED_EFFORT_SUFFIX,
-} from "./messages.js";
-import { isExecutorBlocked } from "./policy.js";
-import { getAdvisorEffort, getAdvisorModel, setAdvisorEffort, setAdvisorModel } from "./state.js";
+} from "./messages.ts";
+import { isExecutorBlocked } from "./policy.ts";
+import { getAdvisorEffort, getAdvisorModel, setAdvisorEffort, setAdvisorModel } from "./state.ts";
 
 // Mirror: packages/rpiv-pi/extensions/rpiv-core/rpiv-models/items.ts
 // buildModelItems — structural twin kept in a separate package by the

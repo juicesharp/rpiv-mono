@@ -8,7 +8,7 @@
  */
 
 import { closeSync, openSync, readdirSync, readSync } from "node:fs";
-import { runsDir, stateFilePath } from "./paths.js";
+import { runsDir, stateFilePath } from "./paths.ts";
 
 /**
  * Shared one-shot prefix-read size for JSONL first lines — 8KB covers a header

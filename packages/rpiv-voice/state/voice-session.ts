@@ -1,18 +1,18 @@
 import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
-import type { VoiceConfig } from "../config/voice-config.js";
-import { loadVoiceConfig, resolveNumThreads, saveVoiceConfig } from "../config/voice-config.js";
-import { globalBinding } from "../view/component-binding.js";
-import { EqualizerView } from "../view/components/equalizer-view.js";
-import { SettingsFieldView } from "../view/components/settings-field-view.js";
-import { SettingsFormView } from "../view/components/settings-form-view.js";
-import { StatusBarView } from "../view/components/status-bar-view.js";
-import { TranscriptView } from "../view/components/transcript-view.js";
-import { OverlayView } from "../view/overlay-view.js";
-import { VoiceOverlayPropsAdapter } from "../view/props-adapter.js";
-import { DictationScreenStrategy, SettingsScreenStrategy } from "../view/screen-content-strategy.js";
-import { t } from "./i18n-bridge.js";
-import { routeKey, type VoiceAction } from "./key-router.js";
+import type { VoiceConfig } from "../config/voice-config.ts";
+import { loadVoiceConfig, resolveNumThreads, saveVoiceConfig } from "../config/voice-config.ts";
+import { globalBinding } from "../view/component-binding.ts";
+import { EqualizerView } from "../view/components/equalizer-view.ts";
+import { SettingsFieldView } from "../view/components/settings-field-view.ts";
+import { SettingsFormView } from "../view/components/settings-form-view.ts";
+import { StatusBarView } from "../view/components/status-bar-view.ts";
+import { TranscriptView } from "../view/components/transcript-view.ts";
+import { OverlayView } from "../view/overlay-view.ts";
+import { VoiceOverlayPropsAdapter } from "../view/props-adapter.ts";
+import { DictationScreenStrategy, SettingsScreenStrategy } from "../view/screen-content-strategy.ts";
+import { t } from "./i18n-bridge.ts";
+import { routeKey, type VoiceAction } from "./key-router.ts";
 import {
 	selectEqualizerFieldProps,
 	selectEqualizerProps,
@@ -22,9 +22,9 @@ import {
 	selectNumThreadsReadonlyFieldProps,
 	selectStatusBarProps,
 	selectTranscriptProps,
-} from "./selectors/projections.js";
-import { initialVoiceState, type VoiceState } from "./state.js";
-import { type ApplyContext, draftFromConfig, type Effect, reduce, type VoiceResult } from "./state-reducer.js";
+} from "./selectors/projections.ts";
+import { initialVoiceState, type VoiceState } from "./state.ts";
+import { type ApplyContext, draftFromConfig, type Effect, reduce, type VoiceResult } from "./state-reducer.ts";
 
 export interface VoiceSessionDeps {
 	pasteToEditor: (text: string) => void;

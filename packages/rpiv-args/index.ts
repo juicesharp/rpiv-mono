@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerArgsHandler } from "./args.js";
+import { registerArgsHandler } from "./args.ts";
 
 /**
  * Presence marker: rpiv-args registers no tool or command, so rpiv-pi's sibling

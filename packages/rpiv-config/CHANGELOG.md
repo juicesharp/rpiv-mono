@@ -1,5 +1,22 @@
 ## [Unreleased]
 
+## [2.15.0] - 2026-10-24
+
+## [2.14.2] - 2026-10-23
+
+## [2.14.1] - 2026-10-23
+
+## [2.14.0] - 2026-10-23
+
+## [2.13.10] - 2026-10-23
+
+## [2.13.9] - 2026-10-17
+
+### Changed
+
+- Faster extension startup: relative imports now name the published `.ts` files instead of nonexistent `.js` targets, so Pi's loader (jiti) no longer runs fallback resolution for each of them on every launch. Runtime behavior is unchanged. Thanks @ry4nyu for #306, and @szastupov for #304.
+- TypeScript projects that type-check this package's sources with `tsc` now need `allowImportingTsExtensions: true` (with `noEmit` or `emitDeclarationOnly`); without it `tsc` reports TS5097 on the `.ts` import paths. Pi itself loads the sources through jiti and is unaffected.
+
 ## [2.13.8] - 2026-10-12
 
 ## [2.13.7] - 2026-10-12

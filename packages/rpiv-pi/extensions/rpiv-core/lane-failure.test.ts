@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shortFailureReason } from "./lane-failure.js";
+import { shortFailureReason } from "./lane-failure.ts";
 
 describe("shortFailureReason", () => {
 	it("returns undefined for an absent/empty reason", () => {

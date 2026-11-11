@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fs as fsHandle, jsonBodyParser, type ParseContext } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { verdictOutcome } from "./verdict-outcome.js";
+import { verdictOutcome } from "./verdict-outcome.ts";
 
 const ctxOf = (cwd: string, runId: string, rel: string): ParseContext => ({
 	cwd,

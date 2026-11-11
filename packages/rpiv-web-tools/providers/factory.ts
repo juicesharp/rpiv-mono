@@ -1,14 +1,14 @@
-import { BraveProvider } from "./brave.js";
-import { ExaProvider } from "./exa.js";
-import { FirecrawlProvider } from "./firecrawl.js";
-import { JinaProvider } from "./jina.js";
-import { OllamaProvider } from "./ollama.js";
-import { PerplexityProvider } from "./perplexity.js";
-import { SearxngProvider } from "./searxng.js";
-import { SerperProvider } from "./serper.js";
-import { TavilyProvider } from "./tavily.js";
-import type { FullProvider, SearchProvider } from "./types.js";
-import { YouComProvider } from "./youcom.js";
+import { BraveProvider } from "./brave.ts";
+import { ExaProvider } from "./exa.ts";
+import { FirecrawlProvider } from "./firecrawl.ts";
+import { JinaProvider } from "./jina.ts";
+import { OllamaProvider } from "./ollama.ts";
+import { PerplexityProvider } from "./perplexity.ts";
+import { SearxngProvider } from "./searxng.ts";
+import { SerperProvider } from "./serper.ts";
+import { TavilyProvider } from "./tavily.ts";
+import type { FullProvider, SearchProvider } from "./types.ts";
+import { YouComProvider } from "./youcom.ts";
 
 export interface ProviderCredentials {
 	apiKey?: string;

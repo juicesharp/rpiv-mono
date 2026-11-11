@@ -5,9 +5,9 @@
  * dynamically imports your definitions so they build on first `/wf`, not startup.
  */
 
-export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.js";
-export { registerLifecycle } from "./events.js";
-export { registerWorkflowExecutionHost } from "./execution-host.js";
+export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.ts";
+export { registerLifecycle } from "./events.ts";
+export { registerWorkflowExecutionHost } from "./execution-host.ts";
 export {
 	getBucketKindMappings,
 	registerBucketKindMapping,
@@ -15,5 +15,5 @@ export {
 	registerOutcomeDeriver,
 	registerSkillContracts,
 	registerSkillContractsProvider,
-} from "./skill-contracts/index.js";
-export { summarizeRun } from "./state/index.js";
+} from "./skill-contracts/index.ts";
+export { summarizeRun } from "./state/index.ts";

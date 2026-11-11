@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { VoiceConfig } from "../config/voice-config.js";
-import { initialVoiceState } from "./state.js";
-import { type ApplyContext, configFromDraft, draftFromConfig, reduce } from "./state-reducer.js";
-import { STATUS_META } from "./status-intent.js";
+import type { VoiceConfig } from "../config/voice-config.ts";
+import { initialVoiceState } from "./state.ts";
+import { type ApplyContext, configFromDraft, draftFromConfig, reduce } from "./state-reducer.ts";
+import { STATUS_META } from "./status-intent.ts";
 
 const ctx: ApplyContext = { readPersistedConfig: () => ({}) };
 

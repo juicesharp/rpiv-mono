@@ -12,7 +12,7 @@ import {
 	type RunView,
 	type ScriptContext,
 } from "@juicesharp/rpiv-workflow/registration";
-import { haltPreflight, latestFsArtifact, readArtifactFile } from "./shared.js";
+import { haltPreflight, latestFsArtifact, readArtifactFile } from "./shared.ts";
 
 /** Bucket directory the goal capture writes into — build's verbatim-brief channel. */
 const GOAL_DIR = ".rpiv/artifacts/goal";

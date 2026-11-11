@@ -19,9 +19,9 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isManagedAgentName } from "./agents-allowlist.js";
-import { SYNC_OP, type SyncResult } from "./agents-types.js";
-import { isPlainObject, toErrorMessage } from "./utils.js";
+import { isManagedAgentName } from "./agents-allowlist.ts";
+import { SYNC_OP, type SyncResult } from "./agents-types.ts";
+import { isPlainObject, toErrorMessage } from "./utils.ts";
 
 // ---------------------------------------------------------------------------
 // Manifest

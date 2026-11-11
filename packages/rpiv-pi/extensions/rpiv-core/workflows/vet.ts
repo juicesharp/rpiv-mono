@@ -17,14 +17,14 @@ import {
 	implementScopeCheckVet,
 	reconcile,
 	scopeQuarantine,
-} from "../built-ins/index.js";
+} from "../built-ins/index.ts";
 import {
 	codeReviewGate,
 	RECONCILE_FIX_OUTCOME,
 	RECONCILE_FIX_PROMPT,
 	reconcileGate,
 	scopeFloorGate,
-} from "./shared.js";
+} from "./shared.ts";
 
 const vetWorkflow = defineWorkflow({
 	name: "vet",

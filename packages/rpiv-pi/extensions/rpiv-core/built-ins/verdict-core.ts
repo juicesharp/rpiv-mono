@@ -8,7 +8,7 @@
  */
 import { basename } from "node:path";
 import { handleToString, type Output, type RunView } from "@juicesharp/rpiv-workflow/registration";
-import { latestFsArtifact } from "./shared.js";
+import { latestFsArtifact } from "./shared.ts";
 
 /**
  * The single LLM dimension the EARLY gate grades the slice map against — before

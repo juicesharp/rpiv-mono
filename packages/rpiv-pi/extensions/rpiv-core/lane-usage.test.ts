@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addLaneUsage, formatTokens, type LaneUsage, toLaneUsage } from "./lane-usage.js";
+import { addLaneUsage, formatTokens, type LaneUsage, toLaneUsage } from "./lane-usage.ts";
 
 describe("formatTokens (footer.js thresholds, verbatim)", () => {
 	it.each([

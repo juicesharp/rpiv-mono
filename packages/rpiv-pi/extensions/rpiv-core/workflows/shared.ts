@@ -26,8 +26,8 @@ import {
 	type PromptFn,
 	setRouteNote,
 } from "@juicesharp/rpiv-workflow/registration";
-import { rpivBucketOutcome } from "../artifact-collector.js";
-import { latestFsArtifact, verdictRiskRulings } from "../built-ins/index.js";
+import { rpivBucketOutcome } from "../artifact-collector.ts";
+import { latestFsArtifact, verdictRiskRulings } from "../built-ins/index.ts";
 
 // The code-review stage's output schema is no longer declared here — every
 // code-review stage sources it from the skill's contract `produces.data`

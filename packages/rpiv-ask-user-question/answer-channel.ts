@@ -4,9 +4,9 @@ import {
 	ASK_USER_ANSWER_RESULT_EVENT,
 	type AskUserAnswerRejectCode,
 	type AskUserAnswerResultEventPayload,
-} from "./events.js";
-import { resolveExternalAnswer } from "./tool/external-answer.js";
-import type { QuestionData, QuestionnaireResult } from "./tool/types.js";
+} from "./events.ts";
+import { resolveExternalAnswer } from "./tool/external-answer.ts";
+import type { QuestionData, QuestionnaireResult } from "./tool/types.ts";
 
 /** "rpc" while the RPC dialog walker owns the prompts — those cannot be answered from outside. */
 export type AnswerHost = "tui" | "rpc";

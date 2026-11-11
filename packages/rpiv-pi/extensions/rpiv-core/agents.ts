@@ -19,12 +19,12 @@
  * re-export statements keep every child on the extension's static import
  * graph. Internal layer symbols (safeJoin, readManifest, writeManifest,
  * sha256, the result factories, …) are intentionally NOT re-exported.
- * Consumers import "./agents.js" unchanged.
+ * Consumers import "./agents.ts" unchanged.
  */
 
-export type { AgentInjectionContext } from "./agents-inject.js";
-export { injectModelFrontmatter } from "./agents-inject.js";
-export { cleanupPerCwdAgents, isSafeDestructiveOp, syncBundledAgents } from "./agents-sync.js";
+export type { AgentInjectionContext } from "./agents-inject.ts";
+export { injectModelFrontmatter } from "./agents-inject.ts";
+export { cleanupPerCwdAgents, isSafeDestructiveOp, syncBundledAgents } from "./agents-sync.ts";
 export type {
 	CleanupResult,
 	CleanupSkip,
@@ -32,5 +32,5 @@ export type {
 	SyncError,
 	SyncOp,
 	SyncResult,
-} from "./agents-types.js";
-export { CLEANUP_SKIP_REASON, SYNC_OP, summarizeCleanupSkips } from "./agents-types.js";
+} from "./agents-types.ts";
+export { CLEANUP_SKIP_REASON, SYNC_OP, summarizeCleanupSkips } from "./agents-types.ts";

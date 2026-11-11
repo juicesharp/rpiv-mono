@@ -6,8 +6,8 @@
  * `.ts`).
  */
 
-export { designOutcome, designParser, designStructure } from "./design.js";
-export { elaborationOutcome, elaborationParser, elaborationStructure } from "./elaboration.js";
+export { designOutcome, designParser, designStructure } from "./design.ts";
+export { elaborationOutcome, elaborationParser, elaborationStructure } from "./elaboration.ts";
 export {
 	allDimensionsPass,
 	anchorNitsOnly,
@@ -38,13 +38,13 @@ export {
 	type VerdictRecord,
 	verdictBlocks,
 	verdictRiskRulings,
-} from "./gates.js";
+} from "./gates.ts";
 export {
 	COMMIT_BASELINE_PROMPT,
 	captureGoal,
 	captureReviewScope,
 	VALIDATE_GOAL_PROMPT,
-} from "./goal-baseline.js";
+} from "./goal-baseline.ts";
 export {
 	CODE_CONFIRM_FANOUT,
 	CODE_DIMENSION_FANOUT,
@@ -57,7 +57,7 @@ export {
 	SLICE_DIMENSION_FANOUT,
 	SLICE_PANEL_PROGRESS,
 	shipVerdictOutcome,
-} from "./grade-panel.js";
+} from "./grade-panel.ts";
 export {
 	closesFence,
 	countHeadingsOutsideFences,
@@ -65,8 +65,8 @@ export {
 	fencedSpans,
 	forEachLineOutsideFences,
 	openFenceLine,
-} from "./markdown-fence.js";
-export { planCitationCheck } from "./plan-cite.js";
+} from "./markdown-fence.ts";
+export { planCitationCheck } from "./plan-cite.ts";
 export {
 	ELABORATE_PHASE_FANOUT,
 	FRONTMATTER_PHASE_FANOUT,
@@ -74,11 +74,11 @@ export {
 	IMPLEMENT_PLANS_FANOUT,
 	latestPlans,
 	REVIEW_PHASE_ITERATE,
-} from "./plan-phases.js";
-export { codeDemote, codeSnapshot, planDemote, planSnapshot } from "./priors.js";
-export { reconcile } from "./reconcile.js";
-export { remediationOutcome } from "./remediation.js";
-export { implementScopeCheck, implementScopeCheckVet, ScopeVerdict, scopeQuarantine } from "./scope-checks.js";
+} from "./plan-phases.ts";
+export { codeDemote, codeSnapshot, planDemote, planSnapshot } from "./priors.ts";
+export { reconcile } from "./reconcile.ts";
+export { remediationOutcome } from "./remediation.ts";
+export { implementScopeCheck, implementScopeCheckVet, ScopeVerdict, scopeQuarantine } from "./scope-checks.ts";
 export {
 	FILE_LINE_CITATION_RE,
 	FsArtifact,
@@ -93,7 +93,7 @@ export {
 	VERDICT_FAIL_SCORE,
 	VERDICT_PASS_SCORE,
 	writeStructureVerdict,
-} from "./shared.js";
-export { sliceSeedLift, sliceStructureCheck, subplanCoverageCheck } from "./slice-checks.js";
-export { SLICE_DESIGN_FANOUT, SYNTH_CLUSTER_FANOUT } from "./slices.js";
-export { verdictOutcome } from "./verdict-outcome.js";
+} from "./shared.ts";
+export { sliceSeedLift, sliceStructureCheck, subplanCoverageCheck } from "./slice-checks.ts";
+export { SLICE_DESIGN_FANOUT, SYNTH_CLUSTER_FANOUT } from "./slices.ts";
+export { verdictOutcome } from "./verdict-outcome.ts";

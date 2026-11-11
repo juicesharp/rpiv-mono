@@ -17,8 +17,8 @@ import {
 	type StageDef,
 	type VerifySpec,
 	type Workflow,
-} from "./api.js";
-import { type Judge, judge, marksCanonicalFold, type NamedOutcome } from "./judge.js";
+} from "./api.ts";
+import { type Judge, judge, marksCanonicalFold, type NamedOutcome } from "./judge.ts";
 import {
 	all,
 	any,
@@ -38,9 +38,9 @@ import {
 	panelSpecOf,
 	synthesizeVerifyLoop,
 	verify,
-} from "./loop-constructors.js";
-import type { Output } from "./output.js";
-import { eq, gt } from "./predicates.js";
+} from "./loop-constructors.ts";
+import type { Output } from "./output.ts";
+import { eq, gt } from "./predicates.ts";
 
 const verdictOutcome = { name: "verdict" } as Judge["outcome"];
 

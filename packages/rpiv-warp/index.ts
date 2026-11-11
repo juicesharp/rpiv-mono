@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_HEARTBEAT_MS, getBlockingTools, getHeartbeatMs } from "./config.js";
+import { DEFAULT_HEARTBEAT_MS, getBlockingTools, getHeartbeatMs } from "./config.ts";
 import {
 	buildIdlePromptPayload,
 	buildPromptSubmitPayload,
@@ -14,10 +14,10 @@ import {
 	lastAssistantText,
 	serializePayload,
 	type WarpPayload,
-} from "./payload.js";
-import { detectWarpEnvironment } from "./protocol.js";
-import { startSpinner, stopSpinner } from "./title-spinner.js";
-import { writeOSC777 } from "./warp-notify.js";
+} from "./payload.ts";
+import { detectWarpEnvironment } from "./protocol.ts";
+import { startSpinner, stopSpinner } from "./title-spinner.ts";
+import { writeOSC777 } from "./warp-notify.ts";
 
 // ---------------------------------------------------------------------------
 // Module-level timer state — __resetState() clears for test isolation
@@ -29,6 +29,11 @@ interface PendingBlockingCall {
 }
 
 let pendingQuery = "";
+// True while the in-flight run was started by `pi.sendMessage(..., { triggerTurn: true })`
+// rather than a user prompt. Set at `before_agent_start` and kept through `agent_end`:
+// retries and pre-settle continuations re-emit `agent_start` without a new
+// `before_agent_start`.
+let activeRunIsCustom = false;
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
 let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
 let heartbeatMs = DEFAULT_HEARTBEAT_MS;
@@ -52,6 +57,7 @@ const PROMPT_BLOCK_REASON = "prompt";
 
 export function __resetState(): void {
 	pendingQuery = "";
+	activeRunIsCustom = false;
 	if (idleTimer !== undefined) {
 		clearTimeout(idleTimer);
 		idleTimer = undefined;
@@ -201,7 +207,13 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		pendingQuery = event.prompt ?? "";
+		// A custom run carries no prompt; keep the query of the last user run.
+		if (event.messageType === "custom") {
+			activeRunIsCustom = true;
+			return;
+		}
+		activeRunIsCustom = false;
+		pendingQuery = event.prompt;
 	});
 
 	pi.on("agent_start", async (_event, ctx) => {
@@ -223,8 +235,10 @@ export default function (pi: ExtensionAPI): void {
 			emit(buildToolCompletePayload(ctx, "ask_user_question", undefined));
 		}
 		turnActive = true;
-		emit(buildSessionStartPayload(ctx)); // Item 2: defensive re-announce
-		emit(buildPromptSubmitPayload(ctx, pendingQuery));
+		if (!activeRunIsCustom) {
+			emit(buildSessionStartPayload(ctx)); // Item 2: defensive re-announce
+			emit(buildPromptSubmitPayload(ctx, pendingQuery));
+		}
 		startSpinner(titleSuffix(ctx));
 		cancelIdleTimer(); // Item 3: cancel pending idle from previous turn
 		startHeartbeat(ctx, heartbeatMs); // Item 4: heartbeat
@@ -303,6 +317,7 @@ export default function (pi: ExtensionAPI): void {
 		stopHeartbeat();
 		pendingQuery = "";
 		activeBlockReasons.clear();
+		activeRunIsCustom = false;
 		pendingBlockingCalls.clear();
 		turnActive = false;
 		stopSpinner();

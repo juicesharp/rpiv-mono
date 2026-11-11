@@ -13,8 +13,8 @@
 import type { EdgeFn } from "@juicesharp/rpiv-workflow";
 import { fs as fsHandle, type Output, type RunView } from "@juicesharp/rpiv-workflow/registration";
 import { describe, expect, it } from "vitest";
-import { SHIP_DIMENSION_FANOUT, shipGatePasses } from "../built-in-workflows.js";
-import { findWorkflow } from "../workflow-test-harness.js";
+import { SHIP_DIMENSION_FANOUT, shipGatePasses } from "../built-in-workflows.ts";
+import { findWorkflow } from "../workflow-test-harness.ts";
 import {
 	evidenceCitesFileLine,
 	gateRoster,
@@ -24,10 +24,10 @@ import {
 	type RiskRecord,
 	rulingEffectivePass,
 	shipRoster,
-} from "./gate-rosters.js";
-import { planGatePasses } from "./gates.js";
-import { PLAN_PANEL_PROGRESS } from "./grade-panel.js";
-import { PLAN_DIMENSIONS, RISK_DIMENSION, SHIP_DIMENSIONS, SLICE_DIMENSIONS } from "./verdict-core.js";
+} from "./gate-rosters.ts";
+import { planGatePasses } from "./gates.ts";
+import { PLAN_PANEL_PROGRESS } from "./grade-panel.ts";
+import { PLAN_DIMENSIONS, RISK_DIMENSION, SHIP_DIMENSIONS, SLICE_DIMENSIONS } from "./verdict-core.ts";
 
 const dataRow = (data: Record<string, unknown>): Output =>
 	({ kind: "json", artifacts: [], data, meta: {} }) as unknown as Output;
@@ -151,6 +151,42 @@ describe("evidenceCitesFileLine", () => {
 		);
 		expect(evidenceCitesFileLine({ id: "r1", pass: true, evidence: "I checked it" }, mechanics)).toBe(false);
 		expect(evidenceCitesFileLine({ id: "r1", pass: true }, mechanics)).toBe(false);
+	});
+
+	it("a citation with a 6+ char extension counts — a .csproj pass is never demoted", () => {
+		for (const evidence of [
+			"TruVisibility.TruHosting.WebApi/TruVisibility.TruHosting.WebApi.csproj:34 PackageReference",
+			"Views/Home/Index.cshtml:12",
+			"web.config:5",
+			"app/build.gradle:7",
+		]) {
+			expect(evidenceCitesFileLine({ id: "r1", pass: true, evidence }, mechanics)).toBe(true);
+		}
+	});
+
+	it("a slash-qualified extensionless file counts — a Makefile pass is never demoted", () => {
+		for (const evidence of ["scripts/Makefile:18 — the target is present", "./Makefile:18", "bin/run:3-9"]) {
+			expect(evidenceCitesFileLine({ id: "r1", pass: true, evidence }, mechanics)).toBe(true);
+		}
+	});
+
+	it("a bare extensionless name or a word:number token still demotes", () => {
+		for (const evidence of ["Makefile:18", "HTTP:80", "the 3:1 ratio at 17:13:27"]) {
+			expect(evidenceCitesFileLine({ id: "r1", pass: true, evidence }, mechanics)).toBe(false);
+		}
+	});
+
+	it("a verify-at-implement mechanics flag carries no evidence duty — its procedure + owner are the duty", () => {
+		const deferredMechanics: RiskRecord = {
+			id: "r1",
+			claim_type: "mechanics",
+			disposition: "verify-at-implement",
+		};
+		expect(evidenceCitesFileLine({ id: "r1", pass: true }, deferredMechanics)).toBe(true);
+		expect(
+			rulingEffectivePass({ id: "r1", pass: true, procedure: "npx vitest run", owner: 5 }, deferredMechanics),
+		).toBe(true);
+		expect(rulingEffectivePass({ id: "r1", pass: true }, deferredMechanics)).toBe(false);
 	});
 
 	it(".match() semantics — consecutive mechanics checks all match (a /g .test() would alternate on lastIndex)", () => {

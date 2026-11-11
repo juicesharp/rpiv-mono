@@ -1,4 +1,4 @@
-import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.js";
+import type { FetchResponse, FullProvider, SearchResponse, SearchResult } from "./types.ts";
 
 const TAVILY_API_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_API_URL = "https://api.tavily.com/extract";

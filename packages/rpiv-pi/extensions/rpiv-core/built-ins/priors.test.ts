@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import type { EdgeFn, Output, RunView } from "@juicesharp/rpiv-workflow";
 import { fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findWorkflow } from "../workflow-test-harness.js";
+import { findWorkflow } from "../workflow-test-harness.ts";
 
 describe("plan/code gate duty-demotion write-back (plan-demote / code-demote)", () => {
 	let tmpDir: string;

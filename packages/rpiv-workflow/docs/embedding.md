@@ -37,7 +37,7 @@ runtime re-exports.
 
 The package's public type surface names **zero** `@earendil-works/pi-coding-agent`
 types, and imports no value from it. Every host capability the runtime needs is a
-workflow-owned port declared in `./host.js`:
+workflow-owned port declared in `./host.ts`:
 
 | Port | What it is | Members the runtime touches |
 | --- | --- | --- |

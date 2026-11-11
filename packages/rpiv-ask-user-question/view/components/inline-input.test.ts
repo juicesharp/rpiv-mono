@@ -1,6 +1,6 @@
 import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { renderInlineInputRow } from "./inline-input.js";
+import { renderInlineInputRow } from "./inline-input.ts";
 
 const cursorOn = (ch: string) => `${CURSOR_MARKER}\x1b[7m${ch}\x1b[27m`;
 const NBSP = "\xa0";

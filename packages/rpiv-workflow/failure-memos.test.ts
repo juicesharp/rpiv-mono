@@ -4,11 +4,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { AuditContext } from "./audit-ctx.js";
-import { LifecycleDispatcher } from "./events.js";
-import { appendFailureMemo, failureMemoSuffix, MAX_FAILURE_MEMO_ERR_LEN, MAX_FAILURE_MEMOS } from "./failure-memos.js";
-import { freshRunState } from "./runner/run-context.js";
-import type { FailureMemo, RunState, UnitRef } from "./types.js";
+import type { AuditContext } from "./audit-ctx.ts";
+import { LifecycleDispatcher } from "./events.ts";
+import { appendFailureMemo, failureMemoSuffix, MAX_FAILURE_MEMO_ERR_LEN, MAX_FAILURE_MEMOS } from "./failure-memos.ts";
+import { freshRunState } from "./runner/run-context.ts";
+import type { FailureMemo, RunState, UnitRef } from "./types.ts";
 
 /** A sessionless AuditContext for a non-unit (single-stage) failure, like `auditCtxFor`. */
 const auditFor = (state: RunState, stageName = "build", skill = "build", unit?: UnitRef): AuditContext => ({

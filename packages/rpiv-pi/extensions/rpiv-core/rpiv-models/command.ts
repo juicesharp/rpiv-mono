@@ -21,8 +21,8 @@ import {
 	invalidateModelsConfigCache,
 	type ModelsConfigSchema,
 	type ModelThinkingLevelValue,
-} from "../models-config.js";
-import { showFilterablePicker } from "../models-picker.js";
+} from "../models-config.ts";
+import { showFilterablePicker } from "../models-picker.ts";
 import {
 	buildEffortItems,
 	buildModelItems,
@@ -31,7 +31,7 @@ import {
 	RESET_LABEL,
 	RESET_VALUE,
 	scopeItems,
-} from "./items.js";
+} from "./items.ts";
 import {
 	applyOverride,
 	floatChecked,
@@ -47,7 +47,7 @@ import {
 	SCOPE_RESET_ALL,
 	SCOPES,
 	type ScopeDescriptor,
-} from "./overrides.js";
+} from "./overrides.ts";
 
 export function registerRpivModelsCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("rpiv-models", {

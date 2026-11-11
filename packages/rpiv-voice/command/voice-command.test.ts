@@ -70,14 +70,14 @@ const mocks = vi.hoisted(() => {
 	};
 });
 
-vi.mock("./splash-runner.js", () => ({
+vi.mock("./splash-runner.ts", () => ({
 	runWithSplash: vi.fn(async (_ctx, _config, work) => {
 		const controller = { setPhase: vi.fn() };
 		return await work(controller);
 	}),
 }));
 
-vi.mock("../audio/model-download.js", () => ({
+vi.mock("../audio/model-download.ts", () => ({
 	ensureModelDownloaded: mocks.ensureModelDownloaded,
 	isModelDownloaded: mocks.isModelDownloaded,
 	assertModelIntact: mocks.assertModelIntact,
@@ -86,19 +86,19 @@ vi.mock("../audio/model-download.js", () => ({
 	ModelInstallError: mocks.ModelInstallError,
 }));
 
-vi.mock("../audio/stt-engine.js", () => ({ createSttEngine: mocks.createSttEngine }));
+vi.mock("../audio/stt-engine.ts", () => ({ createSttEngine: mocks.createSttEngine }));
 
-vi.mock("../audio/mic-source.js", () => ({
+vi.mock("../audio/mic-source.ts", () => ({
 	createMic: mocks.createMic,
 	TARGET_SAMPLE_RATE: 16000,
 	FRAMES_PER_BUFFER: 1600,
 }));
 
-vi.mock("../config/voice-config.js", async (importOriginal) => {
+vi.mock("../config/voice-config.ts", async (importOriginal) => {
 	// Keep the real module surface (including `__resetState`, which the repo-
 	// wide test/setup.ts beforeEach calls) and only stub the two functions the
 	// voice-command file consumes.
-	const actual = await importOriginal<typeof import("../config/voice-config.js")>();
+	const actual = await importOriginal<typeof import("../config/voice-config.ts")>();
 	return {
 		...actual,
 		loadVoiceConfig: vi.fn(() => ({})),
@@ -106,13 +106,13 @@ vi.mock("../config/voice-config.js", async (importOriginal) => {
 	};
 });
 
-vi.mock("./pipeline-runner.js", () => ({ startDictationPipeline: mocks.startDictationPipeline }));
+vi.mock("./pipeline-runner.ts", () => ({ startDictationPipeline: mocks.startDictationPipeline }));
 
-vi.mock("../state/voice-session.js", () => ({ VoiceSession: mocks.VoiceSession }));
+vi.mock("../state/voice-session.ts", () => ({ VoiceSession: mocks.VoiceSession }));
 
 // `t(key, fallback)` returns the KEY so notify-call assertions can match
 // against the canonical i18n key instead of the English copy.
-vi.mock("../state/i18n-bridge.js", () => ({
+vi.mock("../state/i18n-bridge.ts", () => ({
 	t: (key: string, _fallback: string) => key,
 	getActiveLocale: mocks.getActiveLocale,
 	I18N_NAMESPACE: "@juicesharp/rpiv-voice",
@@ -132,8 +132,8 @@ const {
 	sessionState,
 } = mocks;
 
-import { loadVoiceConfig } from "../config/voice-config.js";
-import { registerVoiceCommand, VOICE_COMMAND_NAME } from "./voice-command.js";
+import { loadVoiceConfig } from "../config/voice-config.ts";
+import { registerVoiceCommand, VOICE_COMMAND_NAME } from "./voice-command.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 type Handler = (args: string, ctx: unknown) => Promise<void>;

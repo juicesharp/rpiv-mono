@@ -13,13 +13,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StageDef, Workflow } from "../api.js";
-import { LifecycleDispatcher } from "../events.js";
-import { effectiveOutputSchemaOf } from "../stage-identity.js";
-import { appendHeader, readAllStages, STATE_SCHEMA_VERSION } from "../state/index.js";
-import type { RunContext, RunState, WorkflowHostContext } from "../types.js";
-import type { ResolvedStage } from "./resolve-stage.js";
-import { gateValidationRedispatch } from "./run-stage.js";
+import type { StageDef, Workflow } from "../api.ts";
+import { LifecycleDispatcher } from "../events.ts";
+import { effectiveOutputSchemaOf } from "../stage-identity.ts";
+import { appendHeader, readAllStages, STATE_SCHEMA_VERSION } from "../state/index.ts";
+import type { RunContext, RunState, WorkflowHostContext } from "../types.ts";
+import type { ResolvedStage } from "./resolve-stage.ts";
+import { gateValidationRedispatch } from "./run-stage.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers

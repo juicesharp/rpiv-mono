@@ -16,8 +16,8 @@ import {
 import type { ConsumesSpec, ProducesSpec, SkillContract } from "@juicesharp/rpiv-workflow/registration";
 import { defineWorkflow, produces } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { builtInWorkflows } from "./built-in-workflows.js";
-import { BUNDLED_SKILLS_DIR } from "./paths.js";
+import { builtInWorkflows } from "./built-in-workflows.ts";
+import { BUNDLED_SKILLS_DIR } from "./paths.ts";
 import {
 	artifactKindComparator,
 	buildSkillContractsFromFrontmatter,
@@ -25,7 +25,7 @@ import {
 	isBundledSkillPath,
 	normalizeContract,
 	registerSkillContractsSource,
-} from "./skill-contracts-source.js";
+} from "./skill-contracts-source.ts";
 
 /** Create a temp dir with skill subdirs; caller must rmSync when done. */
 function makeSkillsDir(baseDir: string, skills: Record<string, string /* SKILL.md content */>): string {
@@ -530,7 +530,7 @@ describe("registerSkillContractsSource", () => {
 				});
 			});
 
-			const fresh = await import("./skill-contracts-source.js");
+			const fresh = await import("./skill-contracts-source.ts");
 			await expect(fresh.registerSkillContractsSource()).resolves.toBeUndefined();
 		});
 	});
@@ -633,7 +633,7 @@ describe("registerUserSkillContractsSource", () => {
 					code: "ERR_MODULE_NOT_FOUND",
 				});
 			});
-			const fresh = await import("./skill-contracts-source.js");
+			const fresh = await import("./skill-contracts-source.ts");
 			await expect(fresh.registerUserSkillContractsSource()).resolves.toBeUndefined();
 		});
 	});

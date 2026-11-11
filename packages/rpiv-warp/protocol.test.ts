@@ -12,7 +12,7 @@ import {
 	supportsStructured,
 	tupleLeq,
 	type VersionTuple,
-} from "./protocol.js";
+} from "./protocol.ts";
 
 const WARP_ENV_VARS = ["TERM_PROGRAM", "WARP_CLI_AGENT_PROTOCOL_VERSION", "WARP_CLIENT_VERSION"] as const;
 

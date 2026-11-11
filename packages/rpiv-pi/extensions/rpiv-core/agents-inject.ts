@@ -8,9 +8,9 @@
  * hash-after-transform.
  */
 
-import { mergeCsvAdditions, mergeFlowSeqAdditions, resolveAgentEnablement } from "./agent-enablement.js";
-import { parseFrontmatterBounds, readFrontmatterKey } from "./frontmatter.js";
-import { getAgentModelConfig, type ModelsConfig } from "./models-config.js";
+import { mergeCsvAdditions, mergeFlowSeqAdditions, resolveAgentEnablement } from "./agent-enablement.ts";
+import { parseFrontmatterBounds, readFrontmatterKey } from "./frontmatter.ts";
+import { getAgentModelConfig, type ModelsConfig } from "./models-config.ts";
 
 // ---------------------------------------------------------------------------
 // Frontmatter injection — pure transform

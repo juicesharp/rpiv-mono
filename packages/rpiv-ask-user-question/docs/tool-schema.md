@@ -107,6 +107,22 @@ indexes are in `details.unanswered`. Both are absent when every question is answ
 A cancelled result always reads as the decline in text; its note, if any, survives only
 in `details.globalNote`.
 
+## Terminal program status
+
+Questionnaires request `blocked` program status with kind `question` through
+`ctx.ui.custom()`: supported for inline questionnaires on Pi 1.5.0+ and overlay fallbacks
+on Pi 1.5.1+. Pi manages the OSC 7501 record and its cleanup. Overlay status remains blocked
+while an unanswered questionnaire is hidden or covered by another overlay; closing one
+questionnaire does not clear another pending question's status. The fixed message,
+`Waiting for your answer` (translated as `status.blocked`), keeps question and answer text out of
+the terminal status record.
+
+Older Pi versions still render questionnaires but ignore unsupported `blocked` metadata.
+`rpiv:ask-user:blocked` remains available for status integrations on all presentation paths.
+Beside it, `herdr:blocked` (`{ active, label }`, the same translated message) brackets the same
+wait, because Herdr's Pi integration reads only that event, not OSC 7501.
+Progress reporting is not exposed by Pi's `blocked` option.
+
 ## Event contract
 
 Everything here imports from the `/events` subpath.

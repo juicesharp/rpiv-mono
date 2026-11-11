@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerAskUserQuestionTool } from "./ask-user-question.js";
-import type { AskUserQuestionConfig } from "./config.js";
-import { type Presentation, resolvePresentation } from "./presentation.js";
+import { registerAskUserQuestionTool } from "./ask-user-question.ts";
+import type { AskUserQuestionConfig } from "./config.ts";
+import { type Presentation, resolvePresentation } from "./presentation.ts";
 
 /**
  * Integration tests for the raw `ctx.ui.onTerminalInput` collapse listener.
