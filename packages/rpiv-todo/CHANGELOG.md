@@ -10,6 +10,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **`maxWidgetLines: 0` turns the overlay off.** The panel above the editor is no longer drawn, while the `todo` tool and `/todos` keep working. Like any other `maxWidgetLines` value, it applies on the next repaint, without `/reload`.
+- **Clicking the panel heading collapses and expands it.** This helps in terminals where the collapse shortcut never arrives. Only a plain left click on the heading row counts; task rows, modified clicks, drags and the mouse wheel work as before, and it works with `collapseKey: "off"`. It needs Pi's fullscreen TUI mode (`tuiMode: "fullscreen"`, the default), which turns on mouse tracking. Thanks @summer-tt ([#323](https://github.com/juicesharp/rpiv-mono/pull/323)).
 
 ### Fixed
 
@@ -38,7 +39,6 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - **Batch create.** `create` accepts `tasks[]` instead of `subject`, so a whole plan lands in one call: `{"action":"create","tasks":[{"subject":"Inspect"},{"subject":"Test"}]}`. The batch is all-or-nothing: every item is validated first, and one bad item fails the call with the list unchanged. Each item carries its own `description`, `activeForm`, `blockedBy`, `owner` and `metadata`; the same fields at the top level of a batch, or a `subject` next to `tasks[]`, are rejected rather than dropped. Items cannot `blockedBy` each other, since their ids do not exist until the call commits; create the prerequisite first, then the dependent with `blockedBy`. A `tasks[]` sent as a JSON string, as some vLLM/LiteLLM-served models do, is decoded before validation. Single create is unchanged. Thanks @0xbentang. ([#44](https://github.com/juicesharp/rpiv-mono/issues/44), [#193](https://github.com/juicesharp/rpiv-mono/pull/193))
-- Clicking the overlay's heading row toggles the collapsed state, for terminals where the configured shortcut never arrives. Only an unmodified left click on that row counts — task rows, modified clicks, drags and wheel events are untouched — and it works with `collapseKey: "off"`. Needs Pi's fullscreen mouse dispatch; hosts without it keep the keyboard-only behavior.
 
 ### Changed
 
