@@ -3,6 +3,7 @@ import { EXA_PROVIDER_META } from "./exa.ts";
 import { FIRECRAWL_PROVIDER_META } from "./firecrawl.ts";
 import { JINA_PROVIDER_META } from "./jina.ts";
 import { OLLAMA_PROVIDER_META } from "./ollama.ts";
+import { OUTCRAWL_PROVIDER_META } from "./outcrawl.ts";
 import { PERPLEXITY_PROVIDER_META } from "./perplexity.ts";
 import { SEARXNG_PROVIDER_META } from "./searxng.ts";
 import { SERPER_PROVIDER_META } from "./serper.ts";
@@ -34,6 +35,7 @@ export {
 	OLLAMA_PROVIDER_META,
 	OllamaProvider,
 } from "./ollama.ts";
+export { OUTCRAWL_API_KEY_ENV_VAR, OUTCRAWL_PROVIDER_META, OutcrawlProvider } from "./outcrawl.ts";
 export { PERPLEXITY_API_KEY_ENV_VAR, PERPLEXITY_PROVIDER_META, PerplexityProvider } from "./perplexity.ts";
 export {
 	configureSearxng,
@@ -75,6 +77,7 @@ export const PROVIDERS: readonly ProviderMeta[] = [
 	YOUCOM_PROVIDER_META,
 	JINA_PROVIDER_META,
 	FIRECRAWL_PROVIDER_META,
+	OUTCRAWL_PROVIDER_META,
 	PERPLEXITY_PROVIDER_META,
 	SEARXNG_PROVIDER_META,
 	OLLAMA_PROVIDER_META,
