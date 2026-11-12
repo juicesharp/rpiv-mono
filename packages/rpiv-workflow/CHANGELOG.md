@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Support for jujutsu (jj) working copies in the workflow VCS readers.** The git-commit outcome, the workspace-diff collector and the worktree digest now detect the backend once (`jj root`, else the git toplevel) and read jj's working copy in git's grammar, so a jj workspace reports the same landed-commit, changed-artifact and digest signals a git checkout does.
 - **`LoopStartInfo.settled` on a resumed fanout.** When a resume re-announces a partially-finished fanout, `onLoopStart` now lists the slots already filled from the trail (`{ index, failed }`, where `failed` marks a collected soft-halt). Those units are replayed, not re-run, so they fire no `onUnitStart`/`onUnitEnd`; listeners read their state here. The field is absent on a live entry. New exported type `SettledUnit`.
 
 ## [2.15.0] - 2026-10-24

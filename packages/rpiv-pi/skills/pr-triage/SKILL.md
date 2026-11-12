@@ -60,14 +60,39 @@ LLM-invoked at Step 1 via the bundled `_helpers/pr-fetch.mjs` — it depends on 
 substituted Input and on conversational clarification, which render-time substitution
 cannot capture.
 
+## VCS backend
+
+One decision governs every command in this skill:
+
+1. `jj root` succeeds → backend `jj`.
+2. Otherwise `git rev-parse --show-toplevel` succeeds → backend `git`.
+3. Neither → this skill's repository gate applies, unchanged.
+
+When the Metadata block prints a `vcs:` line, it carries the same decision.
+
+| Purpose | `git` | `jj` |
+|---|---|---|
+| working-copy state | `git status --short --untracked-files=all` | `jj diff --summary` — an `A` line is a new file, not untracked |
+| change against the parent | `git diff HEAD` | `jj diff --git` |
+| recent commits | `git log --oneline -n 20` | `jj log -r '::@-' --no-graph -T 'commit_id.short() ++ " " ++ description.first_line() ++ "\n"'` |
+| one commit | `git show <id>` | `jj show <id>` — a change id and a commit id both resolve |
+| one file in one commit | `git show <id>:<path>` | `jj file show -r <id> <path>` |
+| changed paths between two revisions | `git diff <a> <b> --name-only` | `jj diff --from <a> --to <b> --name-only` |
+| path-filtered history | `git log -- <path>` | `jj log -r '::@' -- <path>` |
+| parent revision | `<id>^` | `<id>-` |
+| ancestry proof | `git merge-base --is-ancestor <a> <b>` | `jj log -r '<a> & ::<b>' --no-graph -T commit_id` prints `<a>` when `<a>` is an ancestor of `<b>` |
+| undo a local edit | `git restore <path>` | `cp` the captured bytes back — never `jj restore --from @-`, which also discards pre-existing uncommitted edits |
+| never run | `git reset` | `jj abandon`, `jj op restore` |
+
 ## Flow
 
 1. Resolve + fetch PR → 2. Discover standards → 3. Dispatch assessment agents →
 4. Triage checkpoint → 5. Write artifact → 6. Present + recommend
 
 **Read-only contract (load-bearing):** every agent is dispatched with read-only tools.
-The skill MUST NOT `git checkout`, switch branches, or edit files — it reasons about the
-PR diff as text fetched through `gh`. The security gate runs on fetched diff text
+The skill MUST NOT `git checkout`, `git switch`, `jj abandon`, `jj restore`,
+`jj op restore`, switch branches, or edit files — it reasons about the PR diff as
+text fetched through `gh`. The security gate runs on fetched diff text
 *before* any routed workflow touches the tree.
 
 ## Steps
@@ -324,8 +349,9 @@ Next step:      {the action: open a review / back to the author / comment the sc
 
 ### Guardrails — the agent MUST obey (the rest of the skill is the happy path)
 
-- **ALWAYS read-only.** NEVER `git checkout`, switch branches, or Edit/Write source — reason
-  about the diff as fetched text only. All three agents get read-only tools.
+- **ALWAYS read-only.** NEVER `git checkout`, `git switch`, `jj abandon`, `jj restore`,
+  `jj op restore`, switch branches, or Edit/Write source — reason about the diff as
+  fetched text only. All three agents get read-only tools.
 - **NEVER let an agent set the tier or the counts.** `diff-auditor` emits rows only; the skill
   derives `security_flag` and every count in Step 4.
 - **ALWAYS count agent rows exactly once and reuse them verbatim.** NEVER re-count in prose — the

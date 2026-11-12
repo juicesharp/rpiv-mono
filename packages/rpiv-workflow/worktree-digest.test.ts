@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hasJj, seedJjStatusWorkspace } from "@juicesharp/rpiv-test-utils/vcs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { computeWorktreeDigest, resolveDigest } from "./worktree-digest.ts";
 
@@ -91,6 +92,45 @@ describe("computeWorktreeDigest — artifacts tree", () => {
 		const before = computeWorktreeDigest(tmp);
 		writeFileSync(join(tmp, ".rpiv", "artifacts", "plans", "failures", "x.md"), "not a sidecar\n");
 		expect(computeWorktreeDigest(tmp)).not.toBe(before);
+	});
+});
+
+describe.runIf(hasJj())("computeWorktreeDigest — jj workspaces", () => {
+	const jj = (cwd: string, ...args: string[]): void => {
+		execFileSync("jj", args, { cwd, stdio: ["ignore", "pipe", "ignore"] });
+	};
+	let jjDir: string;
+
+	beforeEach(() => {
+		jjDir = mkdtempSync(join(tmpdir(), "wt-digest-jj-"));
+		seedJjStatusWorkspace(jjDir);
+	});
+
+	afterEach(() => {
+		rmSync(jjDir, { recursive: true, force: true });
+	});
+
+	it("returns a digest that is stable across identical jj working copies", () => {
+		const d1 = computeWorktreeDigest(jjDir);
+		const d2 = computeWorktreeDigest(jjDir);
+		expect(d1).toBeDefined();
+		expect(d2).toBe(d1);
+	});
+
+	it("editing one seeded file changes the digest", () => {
+		const before = computeWorktreeDigest(jjDir);
+		writeFileSync(join(jjDir, "modified.ts"), "three\n");
+		expect(computeWorktreeDigest(jjDir)).not.toBe(before);
+	});
+
+	it("is produced in a jj secondary workspace where git rev-parse fails", () => {
+		const secondary = join(tmpdir(), `wt-digest-ws-${Math.random().toString(36).slice(2)}`);
+		try {
+			jj(jjDir, "workspace", "add", secondary);
+			expect(computeWorktreeDigest(secondary)).toBeDefined();
+		} finally {
+			rmSync(secondary, { recursive: true, force: true });
+		}
 	});
 });
 
