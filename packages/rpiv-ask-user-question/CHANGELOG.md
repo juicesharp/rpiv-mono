@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Optional Vim navigation (`vimKeys`).** Set `vimKeys` to `true` and `j` (down) / `k` (up) move between rows wherever the arrows work — the option list and the Submit picker, wrapping at both ends. They are added to your `tui.select.up` / `tui.select.down` bindings rather than replacing them, and they are never captured while you type: `j` and `k` stay text inside `Type something.` and the notes editor, and a `notesKey` set to one of them keeps its meaning. Off by default, because remapping `tui.select.up` / `tui.select.down` globally would also take the letters away from every other Pi select list. Thanks @snirt ([#217](https://github.com/juicesharp/rpiv-mono/issues/217)).
+
 ### Fixed
 
 - **Terminals show that Pi is waiting for your answer while a questionnaire is open.** Terminals and dashboards that read OSC 7501 program status (iTerm2, Rex) kept showing Pi as working while a questionnaire waited, so their attention cues never fired. The questionnaire now asks Pi to report `blocked` with kind `question`: inline questionnaires on Pi 1.5.0+, overlay fallbacks on Pi 1.5.1+, and an overlay stays blocked while collapsed or covered by another one. The status says only "Waiting for your answer", in your language, never the question or your answers. Older Pi versions ignore it, and `rpiv:ask-user:blocked` is unchanged. Thanks @derrik-fleming ([#345](https://github.com/juicesharp/rpiv-mono/issues/345)).

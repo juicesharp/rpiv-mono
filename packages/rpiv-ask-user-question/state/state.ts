@@ -64,4 +64,10 @@ export interface QuestionnaireRuntime {
 	collapseKey: string;
 	/** Key that opens the notes editor (`resolveNotesKey` output: `"n"` by default). */
 	notesKey: string;
+	/**
+	 * Vim's `j`/`k` also move between rows (`resolveVimKeys` output: `false` by default).
+	 * Read only by row navigation — the notes editor and the inline input forward their
+	 * keystrokes before this flag is ever consulted, so typing still inserts the letters.
+	 */
+	vimKeys: boolean;
 }

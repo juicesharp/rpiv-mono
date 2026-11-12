@@ -11,6 +11,7 @@ import {
 	loadConfig,
 	resolveCollapseKey,
 	resolveNotesKey,
+	resolveVimKeys,
 } from "./config.ts";
 
 describe("formatKeySpecForDisplay", () => {
@@ -110,6 +111,19 @@ describe("resolveNotesKey", () => {
 		for (const notesKey of ["ctr+n", "тт", "space", "Enter", "tab", "escape", "up", "left"]) {
 			expect(resolveNotesKey({ notesKey }), notesKey).toBe("n");
 		}
+	});
+});
+
+describe("resolveVimKeys", () => {
+	it("is off unless the config turns it on", () => {
+		expect(resolveVimKeys({})).toBe(false);
+		expect(resolveVimKeys({ vimKeys: false })).toBe(false);
+		expect(resolveVimKeys({ vimKeys: true })).toBe(true);
+	});
+
+	it("ignores a value of the wrong type", () => {
+		expect(resolveVimKeys({ vimKeys: "true" as never })).toBe(false);
+		expect(resolveVimKeys({ vimKeys: 1 as never })).toBe(false);
 	});
 });
 

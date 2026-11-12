@@ -60,6 +60,7 @@ type are likewise dropped back to their default without a warning.
 | --- | --- | --- |
 | `collapseKey` | Key that collapses and expands the dialog. | `"ctrl+]"` |
 | `notesKey` | Key that opens the notes editor. | `"n"` |
+| `vimKeys` | Also move between rows with Vim's `j` (down) and `k` (up). | `false` |
 | `guidance.description` | Full text of the tool description the model sees. Replaces the built-in default entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line snippet describing the tool in the system prompt. | built-in snippet |
 | `guidance.promptGuidelines` | List of usage guidelines given to the model. | 4 built-in guidelines |
@@ -104,6 +105,27 @@ works on non-Latin layouts, because the terminal reports the key's Latin equival
 A spec that does not match the grammar, or that names a key the dialog already uses
 (`space`, `enter`, `return`, `tab`, `escape`, `esc`, and the arrow keys), is rejected and
 `"n"` is used. The notes hints in the dialog name whatever key you configure.
+
+### `vimKeys`
+
+Set it to `true` to move between rows with Vim's `j` (down) and `k` (up) wherever the
+arrow keys work — the option list and the Submit picker, wrapping at both ends. The
+letters are added to your `tui.select.up` / `tui.select.down` bindings, not instead of
+them, so the arrows keep working.
+
+Only the boolean `true` turns it on. A missing value, or anything else (`"true"` as a
+string, `1`), leaves the dialog on the arrows, so an existing config never starts moving
+under you.
+
+The letters are never captured while you type: `Type something.` and the notes editor
+receive their keystrokes first, so `j` and `k` stay text there. A `notesKey` set to `j` or
+`k` keeps its meaning on every tab. In terminals using the Kitty keyboard protocol the
+CSI-u encoding is recognised too; `Ctrl`/`Alt`/`Shift` variants are not navigation.
+
+The option is local to this dialog on purpose. Mapping `tui.select.up` / `tui.select.down`
+to `j` / `k` in `~/.pi/agent/keybindings.json` also rewrites every other Pi select list —
+slash autocomplete, the model picker, `/resume` search — where you do want to type the
+letters.
 
 ### `guidance.description`, `guidance.promptSnippet` and `guidance.promptGuidelines`
 

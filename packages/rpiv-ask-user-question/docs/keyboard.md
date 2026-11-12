@@ -7,7 +7,7 @@ adapts to the size of your terminal.
 
 | Key | What it does | Where it applies |
 | --- | --- | --- |
-| `↑` / `↓` | Move between rows. Wraps at both ends. | Option list, Submit picker |
+| `↑` / `↓` | Move between rows. Wraps at both ends. With `vimKeys` on, `k` / `j` do the same. | Option list, Submit picker |
 | `Enter` | Confirm the focused option, commit typed text, close notes, or activate the focused Submit-picker row. | Everywhere |
 | `Shift+Enter` | Insert a newline. | `Type something.` input, notes editor |
 | `Esc` | Cancel the whole questionnaire. | Everywhere except the notes editor, where it closes notes |
@@ -25,6 +25,11 @@ Confirm listens to both `tui.select.confirm` and `tui.input.submit`, and a key b
 Slack-style configuration — `enter` folded into `tui.input.newLine`, submit moved to
 `ctrl+enter` — keeps working: `enter` breaks lines, and your submit key confirms
 everywhere `Enter` does.
+
+Navigation follows `tui.select.up` / `tui.select.down`. Setting `vimKeys` in the config
+adds Vim's `k` / `j` on top of those bindings, for the option list and the Submit picker
+only — the notes editor and `Type something.` still receive the letters as text, and a
+`notesKey` set to `j` or `k` keeps its meaning.
 
 In a multi-select question, `Enter` on a regular row toggles its checkbox exactly like
 `Space`. It does not submit. Focus `Next` and press `Enter` to commit the question. That

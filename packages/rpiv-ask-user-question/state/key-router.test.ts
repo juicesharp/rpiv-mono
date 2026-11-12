@@ -80,6 +80,7 @@ function makeRuntime(over: Partial<QuestionnaireRuntime> = {}): QuestionnaireRun
 		items,
 		collapseKey: "ctrl+]",
 		notesKey: "n",
+		vimKeys: false,
 		...over,
 	};
 }
@@ -197,6 +198,68 @@ describe("routeKey — configured notes key", () => {
 		expect(routeKey("n", makeState(), makeRuntime({ notesKey: undefined as never }))).toEqual({
 			kind: "notes_enter",
 		});
+	});
+});
+
+describe("routeKey — vim navigation", () => {
+	const vim = (over: Partial<QuestionnaireRuntime> = {}) => makeRuntime({ vimKeys: true, ...over });
+
+	it("j moves down and k moves up in the option list", () => {
+		const state = makeState({ optionIndex: 1 });
+
+		expect(routeKey("j", state, vim())).toEqual({ kind: "nav", nextIndex: 2, inputValue: "" });
+		expect(routeKey("k", state, vim())).toEqual({ kind: "nav", nextIndex: 0, inputValue: "" });
+	});
+
+	it("wraps at both ends like the arrows", () => {
+		const items = ["A", "B", "C"].map((label) => ({ kind: "option" as const, label }));
+		const runtime = vim({ items });
+
+		expect(routeKey("j", makeState({ optionIndex: 2 }), runtime)).toEqual({
+			kind: "nav",
+			nextIndex: 0,
+			inputValue: "",
+		});
+		expect(routeKey("k", makeState({ optionIndex: 0 }), runtime)).toEqual({
+			kind: "nav",
+			nextIndex: 2,
+			inputValue: "",
+		});
+	});
+
+	it("does nothing while the config leaves vimKeys off", () => {
+		expect(routeKey("j", makeState({ optionIndex: 1 }), makeRuntime())).toEqual({ kind: "ignore" });
+		expect(routeKey("k", makeState({ optionIndex: 1 }), makeRuntime())).toEqual({ kind: "ignore" });
+	});
+
+	it("moves the Submit picker", () => {
+		const state = makeState({ currentTab: 2, submitChoiceIndex: 0 });
+
+		expect(routeKey("j", state, vim())).toEqual({ kind: "submit_nav", nextIndex: 1 });
+		expect(routeKey("k", state, vim())).toEqual({ kind: "submit_nav", nextIndex: 1 });
+	});
+
+	it("reaches the keys a Kitty-protocol terminal encodes as CSI-u", () => {
+		const state = makeState({ optionIndex: 1 });
+
+		expect(routeKey("\x1b[106u", state, vim())).toEqual({ kind: "nav", nextIndex: 2, inputValue: "" });
+		expect(routeKey("\x1b[107u", state, vim())).toEqual({ kind: "nav", nextIndex: 0, inputValue: "" });
+	});
+
+	it.each(["\x1b[106;5u", "\x1b[107;3u"])("leaves a modified j/k alone (%j)", (data) => {
+		expect(routeKey(data, makeState({ optionIndex: 1 }), vim())).toEqual({ kind: "ignore" });
+	});
+
+	it("types the letters instead inside Type something. and the notes editor", () => {
+		expect(routeKey("j", makeState({ inputMode: true }), vim())).toEqual({ kind: "ignore" });
+		expect(routeKey("k", makeState({ notesVisible: true }), vim())).toEqual({ kind: "notes_forward", data: "k" });
+	});
+
+	it("yields to a notesKey set to the same letter", () => {
+		const runtime = vim({ notesKey: "j" });
+
+		expect(routeKey("j", makeState(), runtime)).toEqual({ kind: "notes_enter" });
+		expect(routeKey("j", makeState({ currentTab: 2 }), runtime)).toEqual({ kind: "notes_enter" });
 	});
 });
 
