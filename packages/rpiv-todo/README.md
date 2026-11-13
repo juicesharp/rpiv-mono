@@ -40,8 +40,8 @@ input box, updating as work moves:
 ![Todo overlay panel: a Todos (2/7) heading above two struck-through completed rows, one in-progress row with its activity label, and four pending rows](https://raw.githubusercontent.com/juicesharp/rpiv-mono/main/packages/rpiv-todo/docs/overlay.jpg)
 
 Press `ctrl+shift+t` to collapse the panel to its heading plus a one-line hint,
-and again to expand it. Run `/todos` at any time to print the full list grouped
-by status.
+and again to expand it. Clicking the heading row toggles it too. Run `/todos` at
+any time to print the full list grouped by status.
 
 ## What you get
 
@@ -88,7 +88,7 @@ Optional. Create `~/.config/rpiv-todo/config.json` (or
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| `maxWidgetLines` | Content rows the overlay may use, heading included. Minimum `3`. Applies on the next repaint. Pi's tool-output expansion mode shows all tasks. | `12` |
+| `maxWidgetLines` | Content rows the overlay may use, heading included. Minimum `3`. `0` turns the overlay off. Applies on the next repaint. Pi's tool-output expansion mode shows all tasks. | `12` |
 | `collapseKey` | Key that collapses and expands the panel, in Pi keybinding form (`alt+o`, `ctrl+shift+t`). Set `"off"` to register no shortcut. Needs `/reload` to rebind. | `"ctrl+shift+t"` |
 | `contextSync` | Re-state the task list to the model after a compaction, `/resume` or tree switch, and nudge a stale list. Set `false` to disable every injection. | `true` |
 | `staleAfterTurns` | Turns without a `todo` call before the model is reminded of the open tasks. `0` disables just the reminder. | `12` |

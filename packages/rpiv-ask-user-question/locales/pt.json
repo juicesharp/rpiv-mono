@@ -32,5 +32,7 @@
   "rpc.custom_answer_title": "Escreva a sua resposta:",
 
   "transcript.not_answered": "não respondida",
-  "transcript.no_answer": "sem resposta"
+  "transcript.no_answer": "sem resposta",
+
+  "status.blocked": "À espera da sua resposta"
 }

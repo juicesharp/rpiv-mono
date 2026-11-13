@@ -5,7 +5,8 @@
  * registration in widgetContainerAbove, register-once + requestRender()
  * refresh, configurable collapse-not-scroll (default 12 content rows via
  * getMaxWidgetLines(); plus a trailing spacer row so the widget renders up
- * to 13 lines), Pi tool-output expansion awareness, auto-hide when empty.
+ * to 13 lines), Pi tool-output expansion awareness, auto-hide when empty, off when
+ * getMaxWidgetLines() is 0.
  *
  * Reads live state via `getRenderState()` (the ctx-less foreground slot) at render
  * time — NEVER `replayFromBranch` from `tool_execution_end` (branch is stale;
@@ -13,6 +14,7 @@
  */
 
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
+import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 import { COLLAPSE_KEY_OFF, getMaxWidgetLines, resolveCollapseKey } from "./config.ts";
 import { formatStatusLabel, t } from "./state/i18n-bridge.ts";
@@ -21,6 +23,9 @@ import { getRenderState } from "./state/store.ts";
 import { formatOverlayTaskLine } from "./view/format.ts";
 
 const WIDGET_KEY = "rpiv-todos";
+
+/** Local row index of the heading inside the rendered widget. */
+const HEADING_ROW = 0;
 
 // English fallbacks for localized overlay chrome strings.
 const OVERLAY_HEADING = "Todos";
@@ -72,6 +77,7 @@ export class TodoOverlay {
 							// No rendered strings are cached. Pi invalidates on theme changes;
 							// the next render reads uiCtx.theme.
 						},
+						handleMouse: (event: TuiMouseEvent) => this.handleHeadingClick(event),
 					};
 				},
 				{ placement: "aboveEditor" },
@@ -80,6 +86,22 @@ export class TodoOverlay {
 		} else {
 			this.tui?.requestRender();
 		}
+	}
+
+	/** Toggle the panel from a click on the heading row.
+	 *
+	 * Only an unmodified left click counts: task rows keep their own meaning (and
+	 * there is no per-task action yet), while modified clicks, drags, wheels and
+	 * press/release events stay available to the transcript's selection, scrolling
+	 * and app-level bindings. The heading renders in both states, so the same row
+	 * collapses and expands. Hosts without mouse dispatch never call this and keep
+	 * the keyboard-only behavior. */
+	private handleHeadingClick(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "click" || event.button !== "left") return undefined;
+		if (event.shift || event.alt || event.ctrl) return undefined;
+		if (event.y !== HEADING_ROW) return undefined;
+		this.toggleCollapse();
+		return { handled: true };
 	}
 
 	resetCompletedDisplayState(): void {
@@ -94,7 +116,8 @@ export class TodoOverlay {
 			this.hiddenCompletedTaskIds.add(taskId);
 		}
 		this.completedTaskIdsPendingHide.clear();
-		this.tui?.requestRender();
+		// update(), not a bare repaint: hiding the last row must unregister the widget.
+		this.update();
 	}
 
 	toggleCollapse(): void {
@@ -136,6 +159,12 @@ export class TodoOverlay {
 	}
 
 	private renderWidget(theme: Theme, width: number): string[] {
+		// maxWidgetLines 0 turns the overlay off. Like the collapsed view below, return
+		// before the completed-display tracking: a task that is never shown must not be
+		// queued for hide.
+		const maxWidgetLines = getMaxWidgetLines();
+		if (maxWidgetLines === 0) return [];
+
 		const snapshot = this.getSnapshot();
 		const overlayTasks = this.selectOverlayTasks(snapshot);
 		if (overlayTasks.length === 0) return [];
@@ -175,7 +204,7 @@ export class TodoOverlay {
 		// Pi's global tool-output expansion mode is read on every render so its
 		// expand/collapse shortcut also expands this live widget. Optional chaining
 		// preserves compatibility with hosts predating getToolsExpanded().
-		const bodyBudget = this.uiCtx?.getToolsExpanded?.() === true ? overlayTasks.length : getMaxWidgetLines() - 1;
+		const bodyBudget = this.uiCtx?.getToolsExpanded?.() === true ? overlayTasks.length : maxWidgetLines - 1;
 		const layout = selectOverlayLayout(overlayState, bodyBudget);
 		for (const task of layout.visible) {
 			lines.push(truncate(`${theme.fg("dim", "├─")} ${formatOverlayTaskLine(task, theme, showIds)}`));

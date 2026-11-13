@@ -387,7 +387,16 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	const prewarmTimer = setTimeout(() => void loadTodoOverlay().catch(() => undefined), PREWARM_DELAY_MS);
 	prewarmTimer.unref?.();
 
-	pi.on("agent_start", async () => {
+	pi.on("agent_start", async (_event, ctx) => {
+		let id: string;
+		try {
+			id = sid(ctx);
+		} catch (e) {
+			if (!isStaleCtxError(e)) throw e;
+			return;
+		}
+		// A child session's run must not hide rows the foreground has not moved past.
+		if (id !== getActiveRenderSession()) return;
 		todoOverlay?.hideCompletedTasksFromPreviousTurn();
 	});
 }

@@ -32,5 +32,7 @@
   "rpc.custom_answer_title": "Введите свой ответ:",
 
   "transcript.not_answered": "без ответа",
-  "transcript.no_answer": "ответа нет"
+  "transcript.no_answer": "ответа нет",
+
+  "status.blocked": "Ждёт вашего ответа"
 }
