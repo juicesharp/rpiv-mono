@@ -6,6 +6,7 @@ import {
 	DEFAULT_COLLAPSE_KEY,
 	DEFAULT_MAX_WIDGET_LINES,
 	getMaxWidgetLines,
+	getSyncSettings,
 	isValidCollapseKeySpec,
 	loadConfig,
 	resolveCollapseKey,
@@ -155,5 +156,44 @@ describe("isValidCollapseKeySpec", () => {
 	it("rejects typo bases (multi-char non-special)", () => {
 		// 'ctr' is 3 chars and not a named special key → a typo for 'ctrl'.
 		expect(isValidCollapseKeySpec("ctr+t")).toBe(false);
+	});
+});
+
+describe("getSyncSettings", () => {
+	const DEFAULTS = { enabled: true, staleAfterTurns: 12, reminderCooldownTurns: 12 };
+
+	it("returns the defaults when no config is present", () => {
+		expect(getSyncSettings()).toEqual(DEFAULTS);
+	});
+
+	it("disables every injection only for the literal `false`", () => {
+		writeConfigFile(JSON.stringify({ contextSync: false }));
+		expect(getSyncSettings().enabled).toBe(false);
+		writeConfigFile(JSON.stringify({ contextSync: "false" }));
+		expect(getSyncSettings().enabled).toBe(true);
+		writeConfigFile(JSON.stringify({ contextSync: 0 }));
+		expect(getSyncSettings().enabled).toBe(true);
+	});
+
+	it("accepts 0 as an explicit threshold that disables only the reminder", () => {
+		writeConfigFile(JSON.stringify({ staleAfterTurns: 0 }));
+		expect(getSyncSettings().staleAfterTurns).toBe(0);
+	});
+
+	it("falls back for negative and non-numeric thresholds", () => {
+		writeConfigFile(JSON.stringify({ staleAfterTurns: -1, reminderCooldownTurns: "soon" }));
+		expect(getSyncSettings()).toEqual(DEFAULTS);
+	});
+
+	it("accepts an explicit cooldown of 0", () => {
+		writeConfigFile(JSON.stringify({ reminderCooldownTurns: 0 }));
+		expect(getSyncSettings().reminderCooldownTurns).toBe(0);
+	});
+
+	it("reads the file fresh on every call", () => {
+		writeConfigFile(JSON.stringify({ staleAfterTurns: 4 }));
+		expect(getSyncSettings().staleAfterTurns).toBe(4);
+		writeConfigFile(JSON.stringify({ staleAfterTurns: 7 }));
+		expect(getSyncSettings().staleAfterTurns).toBe(7);
 	});
 });

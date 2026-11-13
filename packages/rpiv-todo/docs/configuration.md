@@ -33,6 +33,9 @@ extension only reads it.
 {
   "maxWidgetLines": 8,
   "collapseKey": "alt+t",
+  "staleAfterTurns": 8,
+  "reminderCooldownTurns": 16,
+  "contextSync": true,
   "guidance": {
     "promptSnippet": "Use the `todo` tool to track multi-step work before starting it.",
     "promptGuidelines": [
@@ -84,6 +87,60 @@ Examples: `alt+o`, `ctrl+shift+t`, `super+alt+f5`.
   run `/reload` to rebind; until you do, the old key stays active even though the
   collapsed panel's hint text (which is resolved per render) already shows the
   new one.
+
+## Context sync
+
+Three options control when the task list is put back in front of the model.
+Nothing in this section changes a task's status, and nothing it emits is
+persisted to the session.
+
+Why it exists: the task data survives compaction, `/resume` and `/tree` (it is
+replayed from the branch), but the model's context does not contain it. Without
+this, the overlay shows a correct list the model can no longer see, so statuses
+drift while the TUI looks healthy.
+
+When something is injected:
+
+| Trigger | What the next request carries |
+| --- | --- |
+| a compaction boundary now hides the list (including one that happened before this run started) | the full list |
+| a tree switch to a branch whose list is not visible | the full list |
+| a list written only by a nested call (codemode), which leaves no `todo` result | the full list |
+| `staleAfterTurns` turns without a successful `todo` call | only the outstanding tasks |
+| the run is about to settle while that reminder is still armed | one extra request carrying it |
+
+Whether the model already sees the list is decided from the branch: a `custom`
+state entry is never sent to the model, and a `todo` tool result stops being
+visible once a later compaction boundary exists. A plain `/resume` of a complete
+transcript therefore carries **nothing extra** — the model already has the list.
+
+A normal request with nothing pending carries **nothing** — the cost is paid on
+the triggering request, not on every turn.
+
+### `contextSync`
+
+**Default `true`.** Set to `false` to disable the whole feature: no injection of
+any kind, leaving only the overlay. Any value other than the literal `false`
+(including a missing key) keeps it enabled.
+
+### `staleAfterTurns`
+
+**Default `12`.** Number of turns without a successful `todo` call before the
+model is reminded of the outstanding tasks.
+
+- `0` disables the stale reminder only; the resync after a reconstruction still
+  runs.
+- A non-number or a negative number falls back to the default.
+- Read fresh at each decision, so a change applies without `/reload`.
+
+### `reminderCooldownTurns`
+
+**Default `12`.** Minimum number of turns between two stale reminders, so a
+model that ignores the first nudge is not reminded on every turn.
+
+- A non-number or a negative number falls back to the default.
+- `0` allows a reminder as soon as the threshold is crossed again.
+- A successful `todo` call resets both the counter and the cooldown.
 
 ## Guidance
 
