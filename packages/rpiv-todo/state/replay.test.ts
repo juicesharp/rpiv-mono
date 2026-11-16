@@ -251,4 +251,36 @@ describe("replayFromBranch — state entries", () => {
 		const ctx = createMockCtx({ branch: [stateEntry(snap([fixture], 2))] });
 		expect(replayFromBranch(ctx).tasks[0]).not.toBe(fixture);
 	});
+
+	it("demotes in_progress to pending: nothing is running at replay time (#361 B)", () => {
+		const ctx = createMockCtx({
+			branch: [todoResult(snap([taskFixture(1, "T", { status: "in_progress" })], 2))],
+		});
+		expect(replayFromBranch(ctx).tasks[0]?.status).toBe("pending");
+	});
+
+	it("demotes in_progress from a state entry too (#361 B)", () => {
+		const ctx = createMockCtx({
+			branch: [stateEntry(snap([taskFixture(1, "T", { status: "in_progress" })], 2))],
+		});
+		expect(replayFromBranch(ctx).tasks[0]?.status).toBe("pending");
+	});
+
+	it("leaves completed, pending and deleted statuses untouched on replay (#361 B control)", () => {
+		const ctx = createMockCtx({
+			branch: [
+				stateEntry(
+					snap(
+						[
+							taskFixture(1, "done", { status: "completed" }),
+							taskFixture(2, "todo"),
+							taskFixture(3, "gone", { status: "deleted" }),
+						],
+						4,
+					),
+				),
+			],
+		});
+		expect(replayFromBranch(ctx).tasks.map((t) => t.status)).toEqual(["completed", "pending", "deleted"]);
+	});
 });

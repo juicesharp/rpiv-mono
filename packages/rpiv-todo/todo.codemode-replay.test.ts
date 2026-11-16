@@ -133,7 +133,9 @@ await tools.todo({ action: "create", subject: "Task C" });
 await tools.todo({ action: "update", id: 1, status: "in_progress" });
 text("ok");`),
 		]);
-		expect(listed).toBe("[in_progress] #1 Task A\n[pending] #2 Task B\n[pending] #3 Task C");
+		// #361 B: resume replays between runs, when nothing is running, so the
+		// in_progress claim from before the close is demoted to pending.
+		expect(listed).toBe("[pending] #1 Task A\n[pending] #2 Task B\n[pending] #3 Task C");
 	});
 
 	it("keeps a completion made through codemode after direct create + in_progress calls", async () => {

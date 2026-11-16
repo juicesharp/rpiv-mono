@@ -29,6 +29,24 @@ describe("formatContent", () => {
 		expect(formatContent(op, state)).toBe("Updated #1");
 	});
 
+	it("update — names demoted tasks when a promotion displaces another in_progress task (#361 C)", () => {
+		const state = stateWith(
+			t({ id: 1, subject: "first", status: "pending" }),
+			t({ id: 2, subject: "second", status: "in_progress" }),
+		);
+		const op: Op = {
+			kind: "update",
+			id: 2,
+			fromStatus: "pending",
+			toStatus: "in_progress",
+			changed: true,
+			demotedIds: [1],
+		};
+		expect(formatContent(op, state)).toBe(
+			"Updated #2 (pending → in_progress); #1 back to pending (only one task may be in_progress)",
+		);
+	});
+
 	it("update — reports 'No change' when changed is false (no-effect update)", () => {
 		const state = stateWith(t({ id: 1, subject: "x" }));
 		const op: Op = { kind: "update", id: 1, fromStatus: "pending", toStatus: "pending", changed: false };
