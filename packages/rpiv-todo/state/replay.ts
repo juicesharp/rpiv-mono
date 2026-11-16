@@ -55,6 +55,16 @@ function stateOf(details: TaskDetails): TaskState {
  * (sessions written before entries existed) replay from `toolResult` snapshots.
  * When neither exists, returns `EMPTY_STATE`.
  *
+ * A snapshot may still claim a task `in_progress`, but nothing is running at
+ * replay time in the resume/tree cases — replay only happens on session start
+ * and tree changes, both between runs — so such a claim is stale by
+ * construction. The exception is auto-compaction, which fires `session_compact`
+ * mid-run while the agent is still working: there the claim is dropped and the
+ * continuing run re-asserts it if it resumes the task (the guidelines already
+ * say to mark a task `in_progress` before beginning work). Replay demotes it
+ * to `pending` either way (#361 B): resuming or compacting must never report
+ * work as running that no agent is doing.
+ *
  * Pure of module state — `index.ts` writes the returned snapshot into the
  * store after this returns. The function explicitly does NOT touch the store
  * cell.
@@ -79,5 +89,9 @@ export function replayFromBranch(ctx: { sessionManager: { getBranch(): Iterable<
 		if (!isTaskDetails(msg.details)) continue;
 		fromToolResults = stateOf(msg.details);
 	}
-	return fromEntries ?? fromToolResults ?? { tasks: [...EMPTY_STATE.tasks], nextId: EMPTY_STATE.nextId };
+	const state = fromEntries ?? fromToolResults ?? { tasks: [...EMPTY_STATE.tasks], nextId: EMPTY_STATE.nextId };
+	return {
+		tasks: state.tasks.map((t) => (t.status === "in_progress" ? { ...t, status: "pending" as TaskStatus } : t)),
+		nextId: state.nextId,
+	};
 }

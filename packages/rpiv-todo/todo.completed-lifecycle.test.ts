@@ -23,9 +23,9 @@ async function completedParent() {
 	const { pi, captured } = createMockPi();
 	registerTodo(pi);
 	const parent = createMockCtx({ hasUI: true, sessionId: "parent" });
-	const emit = async (name: string, ctx = parent) => {
+	const emit = async (name: string, ctx = parent, event: unknown = {}) => {
 		for (const handler of captured.events.get(name) ?? []) {
-			await handler({} as never, ctx as never);
+			await handler(event as never, ctx as never);
 		}
 	};
 	await emit("session_start");
@@ -48,6 +48,27 @@ describe("completed todo visibility", () => {
 	it("hides displayed completions when the foreground session starts its next agent run", async () => {
 		const { emit, widget } = await completedParent();
 		await emit("agent_start");
+		expect(widget.render(100)).toEqual([]);
+	});
+
+	it("hides displayed completions when the foreground agent run settles, without a next run (#361 A)", async () => {
+		const { emit, widget } = await completedParent();
+		await emit("agent_settled");
+		expect(widget.render(100)).toEqual([]);
+	});
+
+	it("hides displayed completions on an aborted settle too — aborted is not a reason to keep showing them (#361 A)", async () => {
+		const { emit, widget } = await completedParent();
+		await emit("agent_settled", undefined, { type: "agent_settled", aborted: true });
+		expect(widget.render(100)).toEqual([]);
+	});
+
+	it("does not let a child session's agent settle hide foreground completions", async () => {
+		const { emit, widget } = await completedParent();
+		const child = createMockCtx({ hasUI: true, sessionId: "child" });
+		await emit("agent_settled", child);
+		expect(widget.render(100).join("\n")).toContain("finished parent task");
+		await emit("agent_settled");
 		expect(widget.render(100)).toEqual([]);
 	});
 

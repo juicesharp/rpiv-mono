@@ -284,7 +284,12 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 	const prewarmTimer = setTimeout(() => void loadTodoOverlay().catch(() => undefined), PREWARM_DELAY_MS);
 	prewarmTimer.unref?.();
 
-	pi.on("agent_start", async (_event, ctx) => {
+	// Hide rows the foreground completed in the run that just ended
+	// (agent_settled) or the run before the one starting now (agent_start).
+	// A child session's settle/start must not hide rows the foreground has
+	// not moved past. Without the agent_settled arm, completed rows lingered
+	// while idle until the next prompt started a run (#361 A).
+	const hideCompletedTasksIfForeground = (ctx: { sessionManager: { getSessionId(): string } }): void => {
 		let id: string;
 		try {
 			id = sid(ctx);
@@ -292,8 +297,15 @@ export default function (pi: ExtensionAPI, importOverlay: TodoOverlayImporter = 
 			if (!isStaleCtxError(e)) throw e;
 			return;
 		}
-		// A child session's run must not hide rows the foreground has not moved past.
 		if (id !== getActiveRenderSession()) return;
 		todoOverlay?.hideCompletedTasksFromPreviousTurn();
+	};
+
+	pi.on("agent_start", async (_event, ctx) => {
+		hideCompletedTasksIfForeground(ctx);
+	});
+
+	pi.on("agent_settled", async (_event, ctx) => {
+		hideCompletedTasksIfForeground(ctx);
 	});
 }

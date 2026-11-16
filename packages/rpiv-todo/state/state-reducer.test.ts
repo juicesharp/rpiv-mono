@@ -351,3 +351,69 @@ describe("isTransitionValid", () => {
 		expect(isTransitionValid("completed", "deleted")).toBe(true);
 	});
 });
+
+describe("applyTaskMutation — single in_progress (#361 C)", () => {
+	it("demotes the previous in_progress task when another is promoted", () => {
+		const state = stateWith(
+			task({ id: 1, subject: "first", status: "in_progress" }),
+			task({ id: 2, subject: "second" }),
+		);
+		const result = applyTaskMutation(state, "update", { id: 2, status: "in_progress" });
+		expect(result.state.tasks[0]?.status).toBe("pending");
+		expect(result.state.tasks[1]?.status).toBe("in_progress");
+		expect(result.op).toEqual({
+			kind: "update",
+			id: 2,
+			fromStatus: "pending",
+			toStatus: "in_progress",
+			changed: true,
+			demotedIds: [1],
+		});
+		expect(changesState(result.op)).toBe(true);
+	});
+
+	it("demotes every other in_progress task when healing a legacy double claim", () => {
+		const state = stateWith(
+			task({ id: 1, subject: "first", status: "in_progress" }),
+			task({ id: 2, subject: "second", status: "in_progress" }),
+		);
+		const result = applyTaskMutation(state, "update", { id: 2, status: "in_progress" });
+		expect(result.state.tasks[0]?.status).toBe("pending");
+		expect(result.state.tasks[1]?.status).toBe("in_progress");
+		expect(result.op).toEqual(expect.objectContaining({ kind: "update", id: 2, changed: true, demotedIds: [1] }));
+	});
+
+	it("does not demote when the update touches no status (control)", () => {
+		const state = stateWith(
+			task({ id: 1, subject: "first", status: "in_progress" }),
+			task({ id: 2, subject: "second" }),
+		);
+		const result = applyTaskMutation(state, "update", { id: 2, subject: "second, renamed" });
+		expect(result.state.tasks[0]?.status).toBe("in_progress");
+		expect(result.state.tasks[1]?.subject).toBe("second, renamed");
+		expect(result.op).toEqual({
+			kind: "update",
+			id: 2,
+			fromStatus: "pending",
+			toStatus: "pending",
+			changed: true,
+		});
+	});
+
+	it("does not demote when completing another task (control)", () => {
+		const state = stateWith(
+			task({ id: 1, subject: "first", status: "in_progress" }),
+			task({ id: 2, subject: "second", status: "in_progress" }),
+		);
+		const result = applyTaskMutation(state, "update", { id: 2, status: "completed" });
+		expect(result.state.tasks[0]?.status).toBe("in_progress");
+		expect(result.state.tasks[1]?.status).toBe("completed");
+		expect(result.op).toEqual({
+			kind: "update",
+			id: 2,
+			fromStatus: "in_progress",
+			toStatus: "completed",
+			changed: true,
+		});
+	});
+});
