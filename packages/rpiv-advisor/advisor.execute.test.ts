@@ -223,6 +223,29 @@ describe("executeAdvisor — 4 StopReason branches", () => {
 		]);
 	});
 
+	it("prefixes the active tool names and never reads the full registry", async () => {
+		setAdvisorModel({ provider: "a", id: "m" } as never);
+		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ text: "advice" }) as never);
+		const getAllTools = vi.fn(() => {
+			throw new Error("getAllTools must not be called");
+		});
+		const { pi, captured } = createMockPi({ getAllTools: getAllTools as never });
+		registerAdvisorTool(pi);
+		pi.setActiveTools(["advisor", "read", "bash"]);
+
+		await captured.tools.get("advisor")?.execute?.("tc", {}, undefined as never, undefined as never, createMockCtx());
+
+		expect(pi.getAllTools).not.toHaveBeenCalled();
+		expect(pi.getActiveTools).toHaveBeenCalled();
+		const payload = vi.mocked(completeSimple).mock.calls[0]?.[1] as { messages?: unknown[] };
+		const inventoryMessage = payload.messages?.[0] as { content: Array<{ text: string }> } | undefined;
+		const inventory = inventoryMessage?.content[0]?.text ?? "";
+		expect(inventory).toContain("- bash");
+		expect(inventory).toContain("- read");
+		expect(inventory).not.toContain("- advisor");
+		expect(inventory).not.toContain("- write");
+	});
+
 	it("aborted stopReason returns cancel envelope", async () => {
 		setAdvisorModel({ provider: "a", id: "m" } as never);
 		vi.mocked(completeSimple).mockResolvedValueOnce(resp({ stopReason: "aborted" }) as never);

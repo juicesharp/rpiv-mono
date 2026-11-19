@@ -16,12 +16,20 @@ time and serialised automatically.
 
 Each call assembles the request in this order:
 
-1. **Tool inventory prefix** — one synthetic message listing every tool
-   registered in the executor's session (Pi's `getAllTools()`, i.e. the full
-   registry, not the active subset), so the reviewer knows what the executor can
-   do. It is cached and only rebuilt when the registered tool-name set changes;
-   the JSON is key-sorted so identical inventories serialise byte-identically
-   and stay prompt-cache friendly.
+1. **Active tool-name prefix** — one synthetic message listing the names in
+   Pi's active tool set (Pi's `getActiveTools()`, names only — no descriptions
+   or parameter schemas), so the reviewer can judge tool-choice correctness. It
+   is not an exact list of what the provider request declares: active names can
+   be hidden from the request. Inactive tools — including deferred tools not yet
+   activated — are not listed, so this is not the executor's complete reachable
+   capability set; those indirect capabilities may still be reachable through
+   codemode scripts or tool search. The advisor tool itself is excluded. Names
+   are sorted so the same rendered prefix serialises byte-identically, and the
+   message is cached until that rendered text changes — because it sits at the
+   front of the prompt, a change starts a new cache prefix. The name list is
+   capped at 12,000 characters on whole-name boundaries — the fixed header and
+   the omission marker sit outside that budget — and anything left out is
+   reported as `(+N more active tool names omitted)`.
 2. **The conversation branch** — built from Pi's resolved LLM context, not a raw
    replay of history. Compaction summaries and branch summaries are forwarded as
    the model actually sees them, so a compacted session sends the summary rather

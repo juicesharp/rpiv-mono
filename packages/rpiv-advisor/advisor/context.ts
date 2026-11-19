@@ -44,8 +44,8 @@ export function ensureUserTailForAdvisor(messages: Message[]): Message[] {
 // transcript as `system` messages, and every provider resolves the request's
 // tools from those `toolsAdded`/`toolsRemoved` deltas — so `tools: []` alone
 // leaves the executor's tools callable and the advisor can stop on `toolUse`
-// with no text (#295). Drop the deltas, keep the prompt text; the inventory
-// message already tells the advisor what the executor's tools are.
+// with no text (#295). Drop the deltas, keep the prompt text; the active-name
+// message is only a bounded hint and never restores callable declarations.
 export function stripToolDeclarations(messages: Message[]): Message[] {
 	if (!messages.some((m) => m.role === "system" && (m.toolsAdded || m.toolsRemoved))) return messages;
 	return messages.map((m) => {

@@ -54,6 +54,16 @@ judgment. To turn it back off, run `/advisor` and choose **No advisor**.
   conversation branch is serialised and forwarded automatically: the task, every
   tool call made, every result seen. That whole branch is billed against the
   reviewer model on every call, so escalations are not free.
+- **The reviewer sees which tools are active, by name** — a short prefix lists
+  the names in Pi's active tool set (names only, no descriptions or
+  schemas), so the reviewer can judge tool-choice correctness. It is not an
+  exact list of what the provider request declares — some active names can be
+  hidden from the request — and inactive tools, including deferred tools not yet
+  activated, are absent; those indirect capabilities may still be reachable
+  through codemode or tool search. The advisor itself is excluded. The name list
+  is capped at 12,000 characters (the fixed header and omission marker sit
+  outside that budget), with anything left out reported as
+  `(+N more active tool names omitted)`.
 - **The reviewer sees what survived compaction** — the branch is built from Pi's
   resolved LLM context, so compaction and branch summaries are forwarded instead
   of a stale raw replay.

@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The reviewer's tool prefix now lists the executor's **active** tool names (Pi's `getActiveTools()`) instead of the process-wide registry (`getAllTools()`). It sends names only — no descriptions or parameter schemas — excludes the advisor itself, and caps the name list at 12,000 characters per whole name, reporting anything left out as `(+N more active tool names omitted)`. Inactive tools — including deferred tools not yet activated — are no longer serialized as if they were active, though they may still be reachable through codemode scripts or tool search; Pi's active set can also include names hidden from the provider request, so the list is not an exact declaration of what is callable. The cached prefix is rebuilt only when the rendered active-name prefix or the omission count changes; swapping an already-omitted tail name for another with the same count reuses the cache (#324).
+
 ## [2.15.0] - 2026-10-24
 
 ### Fixed
