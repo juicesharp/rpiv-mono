@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A failed `web_search` or `web_fetch` call shows the failure reason.** The result line rendered a failed call like a successful one (`✓ 5 results`, `✓ Fetched`) with the error text inside the preview. Both tools now draw `✗ Failed:` with the first line of the error text, capped at 70 characters so the whole line fits an 80-column terminal, or `✗ Failed` alone when there is no reason. The error flag is read from the result, or from the render context on older Pi. `web_fetch` keeps the content preview below the label when expanded, starting at the second line so the reason is not repeated. Only the transcript display changes; what the model receives is unchanged.
+
 ## [2.15.0] - 2026-10-24
 
 ### Added

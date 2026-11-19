@@ -112,6 +112,23 @@ describe("web_search renderResult", () => {
 		expect(text).not.toContain("R6");
 		expect(text).toContain("... and 2 more");
 	});
+	it("error: shows the failure reason, generic label when no reason", () => {
+		const { search } = setup();
+		const withReason = search.renderResult?.(
+			{ content: [{ type: "text", text: "rate limited" }], details: {}, isError: true } as never,
+			{} as never,
+			theme,
+			undefined as never,
+		) as Text;
+		expect(rendered(withReason)).toBe("✗ Failed: rate limited");
+		const withoutReason = search.renderResult?.(
+			{ content: [], details: {}, isError: true } as never,
+			{} as never,
+			theme,
+			undefined as never,
+		) as Text;
+		expect(rendered(withoutReason)).toBe("✗ Failed");
+	});
 });
 
 describe("web_fetch renderCall", () => {
@@ -217,6 +234,73 @@ describe("web_fetch renderResult", () => {
 		) as Text;
 		const text = rendered(node);
 		expect(text).toContain("line 1");
+		expect(text).toContain("line 15");
+		expect(text).not.toContain("line 16");
+		expect(text).toContain("use read tool to see full content");
+	});
+
+	it("error: shows the failure reason", () => {
+		const { fetch } = setup();
+		const node = fetch.renderResult?.(
+			{ content: [{ type: "text", text: "kr-egress [imds] blocked" }], details: {}, isError: true } as never,
+			{} as never,
+			theme,
+			undefined as never,
+		) as Text;
+		expect(rendered(node)).toBe("✗ Failed: kr-egress [imds] blocked");
+	});
+
+	it("error: uses the render context when the result has no flag (older pi)", () => {
+		const { fetch } = setup();
+		const node = fetch.renderResult?.(
+			{ content: [{ type: "text", text: "blocked" }], details: {} } as never,
+			{} as never,
+			theme,
+			{ isError: true } as never,
+		) as Text;
+		expect(rendered(node)).toBe("✗ Failed: blocked");
+	});
+
+	it("error: reason is one line and capped so the line fits 80 columns", () => {
+		const { fetch } = setup();
+		const reason = `${"x".repeat(90)}\nsecond line`;
+		const node = fetch.renderResult?.(
+			{ content: [{ type: "text", text: reason }], details: {}, isError: true } as never,
+			{} as never,
+			theme,
+			undefined as never,
+		) as Text;
+		const text = rendered(node);
+		expect(text).toBe(`✗ Failed: ${"x".repeat(70)}`);
+		expect(text).not.toContain("second line");
+		expect(text.length).toBeLessThanOrEqual(80);
+	});
+
+	it("error: expanded shows the reason line and the content preview", () => {
+		const { fetch } = setup();
+		const node = fetch.renderResult?.(
+			{ content: [{ type: "text", text: "rate limited\nsecond line" }], details: {}, isError: true } as never,
+			{ expanded: true } as never,
+			theme,
+			undefined as never,
+		) as Text;
+		const text = rendered(node);
+		expect(text).toContain("✗ Failed: rate limited");
+		expect(text).toContain("second line");
+		expect(text.split("rate limited")).toHaveLength(2);
+	});
+
+	it("error: expanded preview counts 15 lines after the reason and shows the overflow hint", () => {
+		const { fetch } = setup();
+		const body = ["reason", ...Array.from({ length: 20 }, (_, i) => `line ${i + 1}`)].join("\n");
+		const node = fetch.renderResult?.(
+			{ content: [{ type: "text", text: body }], details: {}, isError: true } as never,
+			{ expanded: true } as never,
+			theme,
+			undefined as never,
+		) as Text;
+		const text = rendered(node);
+		expect(text).toContain("✗ Failed: reason");
 		expect(text).toContain("line 15");
 		expect(text).not.toContain("line 16");
 		expect(text).toContain("use read tool to see full content");
