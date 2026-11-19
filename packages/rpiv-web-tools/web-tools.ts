@@ -42,6 +42,7 @@ const DEFAULT_SEARCH_RESULTS = 5;
 
 const SEARCH_RESULT_PREVIEW_LIMIT = 5;
 const FETCH_PREVIEW_LINE_LIMIT = 15;
+const ERROR_REASON_MAX_CHARS = 70;
 const API_KEY_MASK_VISIBLE_CHARS = 4;
 
 const FETCH_TEMP_DIR_PREFIX = "rpiv-fetch-";
@@ -414,9 +415,12 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 			return new Text(text, 0, 0);
 		},
 
-		renderResult(result, { expanded, isPartial }, theme, _context) {
+		renderResult(result, { expanded, isPartial }, theme, context) {
 			if (isPartial) {
 				return new Text(theme.fg("warning", "Searching..."), 0, 0);
+			}
+			if (result.isError || context?.isError) {
+				return new Text(errorLine(result.content[0], theme), 0, 0);
 			}
 			const details = result.details as { resultCount?: number; results?: SearchResult[] };
 			const count = details?.resultCount ?? 0;
@@ -427,6 +431,12 @@ export function registerWebSearchTool(pi: ExtensionAPI): void {
 			return new Text(text, 0, 0);
 		},
 	});
+}
+
+/** Shared error line: `✗ Failed: reason`, capped so the whole line fits an 80-column terminal. Uses the result flag, or the render context on older pi. */
+function errorLine(block: { type: string; text?: string } | undefined, theme: Theme): string {
+	const reason = (block?.type === "text" ? (block.text ?? "") : "").split("\n")[0].trim();
+	return theme.fg("error", reason ? `✗ Failed: ${reason.slice(0, ERROR_REASON_MAX_CHARS)}` : "✗ Failed");
 }
 
 function renderSearchResultsPreview(results: SearchResult[], theme: Theme): string {
@@ -530,9 +540,15 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 			return new Text(text, 0, 0);
 		},
 
-		renderResult(result, { expanded, isPartial }, theme, _context) {
+		renderResult(result, { expanded, isPartial }, theme, context) {
 			if (isPartial) {
 				return new Text(theme.fg("warning", "Fetching..."), 0, 0);
+			}
+			const block = result.content[0];
+			if (result.isError || context?.isError) {
+				let text = errorLine(block, theme);
+				if (expanded && block?.type === "text") text += renderFetchedContentPreview(block.text ?? "", theme, 1);
+				return new Text(text, 0, 0);
 			}
 			const details = result.details as FetchDetails | undefined;
 			let text = theme.fg("success", "✓ Fetched");
@@ -549,14 +565,14 @@ export function registerWebFetchTool(pi: ExtensionAPI): void {
 	});
 }
 
-function renderFetchedContentPreview(content: string, theme: Theme): string {
+function renderFetchedContentPreview(content: string, theme: Theme, firstLine = 0): string {
 	const lines = content.split("\n");
-	const visible = lines.slice(0, FETCH_PREVIEW_LINE_LIMIT);
+	const visible = lines.slice(firstLine, firstLine + FETCH_PREVIEW_LINE_LIMIT);
 	let text = "";
 	for (const line of visible) {
 		text += `\n  ${theme.fg("dim", line)}`;
 	}
-	if (lines.length > FETCH_PREVIEW_LINE_LIMIT) {
+	if (lines.length > firstLine + FETCH_PREVIEW_LINE_LIMIT) {
 		text += `\n  ${theme.fg("muted", "... (use read tool to see full content)")}`;
 	}
 	return text;
