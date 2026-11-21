@@ -2,6 +2,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetState, registerTodosCommand, registerTodoTool, TOOL_NAME } from "./todo.ts";
+import { DESCRIPTION_WRAP_WIDTH } from "./view/format.ts";
 
 function setup() {
 	__resetState();
@@ -161,5 +162,70 @@ describe("/todos command — grouped output", () => {
 		const out = grabOutput(ctx);
 		expect(out).toContain("keep");
 		expect(out).not.toContain("drop");
+	});
+});
+
+describe("/todos open — outstanding tasks with their descriptions", () => {
+	function grabOutput(ctx: ExtensionContext): string {
+		const notify = ctx.ui.notify as ReturnType<typeof vi.fn>;
+		expect(notify).toHaveBeenCalledTimes(1);
+		const [text, level] = notify.mock.calls[0];
+		expect(level).toBe("info");
+		return text as string;
+	}
+	it("lists pending and in-progress tasks and omits completed ones", async () => {
+		const { tool, cmd } = setup();
+		await seed(tool, [
+			{ action: "create", subject: "still pending", description: "needs work" },
+			{ action: "create", subject: "running", description: "halfway" },
+			{ action: "update", id: 2, status: "in_progress" },
+			{ action: "create", subject: "finished", description: "done already" },
+			{ action: "update", id: 3, status: "completed" },
+		]);
+		const ctx = createMockCtx({ hasUI: true });
+		await cmd.handler("open", ctx as never);
+		const out = grabOutput(ctx);
+		expect(out).toContain("still pending");
+		expect(out).toContain("running");
+		expect(out).not.toContain("finished");
+		// The description is the reason this view exists: it must be present.
+		expect(out).toContain("needs work");
+		expect(out).toContain("halfway");
+		// A completed task's description must not survive as stray text.
+		expect(out).not.toContain("done already");
+	});
+
+	it("keeps the default view unchanged when the argument is absent", async () => {
+		const { tool, cmd } = setup();
+		await seed(tool, [{ action: "create", subject: "alpha", description: "some description" }]);
+		const ctx = createMockCtx({ hasUI: true });
+		await cmd.handler("", ctx as never);
+		const out = grabOutput(ctx);
+		expect(out).toContain("Pending");
+		expect(out).not.toContain("some description");
+	});
+
+	it("wraps a long description instead of emitting one overlong line", async () => {
+		const { tool, cmd } = setup();
+		const long = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ");
+		await seed(tool, [{ action: "create", subject: "long one", description: long }]);
+		const ctx = createMockCtx({ hasUI: true });
+		await cmd.handler("open", ctx as never);
+		const out = grabOutput(ctx);
+		for (const line of out.split("\n")) expect(line.length).toBeLessThanOrEqual(DESCRIPTION_WRAP_WIDTH);
+		// Same words, same order — wrapping must not lose or reorder any.
+		expect(out.replace(/\s+/g, " ")).toContain("word0 word1");
+		expect(out.replace(/\s+/g, " ")).toContain("word39");
+	});
+
+	it("says so when every task is completed", async () => {
+		const { tool, cmd } = setup();
+		await seed(tool, [
+			{ action: "create", subject: "only" },
+			{ action: "update", id: 1, status: "completed" },
+		]);
+		const ctx = createMockCtx({ hasUI: true });
+		await cmd.handler("open", ctx as never);
+		expect(grabOutput(ctx)).toContain("Nothing outstanding");
 	});
 });

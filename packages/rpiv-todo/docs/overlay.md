@@ -123,6 +123,30 @@ tasks. Tombstoned tasks are never listed.
 - With no tasks: `No todos yet. Ask the agent to add some!`
 - In a non-interactive session: `/todos requires interactive mode`
 
+### `/todos open`
+
+`/todos open` answers the other question: what is still outstanding, and what
+does each of those actually ask for. It lists only pending and in-progress
+tasks — in-progress first, since that is what is being worked on — and prints
+each task's description underneath, wrapped to 76 columns:
+
+```
+Outstanding tasks
+  ◐ #3 Create DemoTodoRepository (creating the repository)
+      Wrap the mock repository in a decorator that logs each call, so the
+      integration test can assert the call order without a real database.
+  ○ #4 Register DI bindings
+  ○ #5 Add integration tests
+```
+
+A task without a description takes one line, so the shape does not depend on
+which tasks happen to carry one. Completed tasks are left out entirely rather
+than counted: a count of what is finished does not help decide what is next.
+
+- When everything is completed: `Nothing outstanding — every task is completed.`
+
+The plain `/todos` output above is unchanged — the argument is additive.
+
 ## Localization
 
 The overlay heading, the `+N more` summary, the collapse hint, the `/todos`

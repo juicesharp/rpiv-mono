@@ -15,5 +15,7 @@
   "command.requires_interactive": "/todos nécessite le mode interactif",
   "command.section.pending": "── En attente ──",
   "command.section.in_progress": "── En cours ──",
-  "command.section.completed": "── Terminées ──"
+  "command.section.completed": "── Terminées ──",
+  "command.open.header": "Tâches restantes",
+  "command.open.all_done": "Rien en attente — toutes les tâches sont terminées."
 }

@@ -15,5 +15,7 @@
   "command.requires_interactive": "/todos потребує інтерактивного режиму",
   "command.section.pending": "── Очікування ──",
   "command.section.in_progress": "── У роботі ──",
-  "command.section.completed": "── Виконано ──"
+  "command.section.completed": "── Виконано ──",
+  "command.open.header": "Незавершені завдання",
+  "command.open.all_done": "Нічого не залишилося — усі завдання виконано."
 }

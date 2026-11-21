@@ -13,5 +13,7 @@
   "command.requires_interactive": "/todos requires interactive mode",
   "command.section.pending": "── Pending ──",
   "command.section.in_progress": "── In Progress ──",
-  "command.section.completed": "── Completed ──"
+  "command.section.completed": "── Completed ──",
+  "command.open.header": "Outstanding tasks",
+  "command.open.all_done": "Nothing outstanding — every task is completed."
 }
