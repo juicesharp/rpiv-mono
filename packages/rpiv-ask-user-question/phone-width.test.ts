@@ -1,4 +1,5 @@
-import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
+import { stripVTControlCharacters } from "node:util";
+import { CURSOR_MARKER, getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import { createMockPi } from "@juicesharp/rpiv-test-utils";
 import { describe, expect, it } from "vitest";
 import { registerAskUserQuestionTool } from "./ask-user-question.ts";
@@ -63,12 +64,9 @@ async function onTerminal(
 	await tool.execute?.("tc", { questions } as never, undefined as never, undefined as never, ctx);
 }
 
-/** The key hints: the dialog's last row of text (blank rows may pad it to a steady height). */
+/** The key hints, as plain text: the dialog's last row of text (blank rows may pad it to a steady height). */
 const hintLine = (lines: string[]) =>
-	lines
-		.filter((line) => line.trim() !== "")
-		.at(-1)!
-		.trim();
+	stripVTControlCharacters(lines.filter((line) => line.trim() !== "").at(-1)!).trim();
 
 describe("ask_user_question on a 45-column phone screen", () => {
 	it("shortens the key hints so every key fits on one row", async () => {
@@ -84,6 +82,26 @@ describe("ask_user_question on a 45-column phone screen", () => {
 			expect(hintLine(dialog.render(160))).toBe(
 				"Enter to select · ↑/↓ to navigate · n to add notes · Tab to switch questions · Esc to cancel · Ctrl+] to collapse",
 			);
+		});
+	});
+
+	it("keeps the row being typed in view as a long custom answer wraps past the dialog's rows", async () => {
+		const answer =
+			"no I want dates to fill in early this year. then keep track of the last day commits happened the make the next commit the next day that has no commits";
+		await onTerminal(45, 16, [commitDates, forcePush, unused], (dialog) => {
+			dialog.handleInput(KEY.DOWN);
+			dialog.handleInput(KEY.DOWN); // → "Type something."
+			for (let typed = 1; typed <= answer.length; typed++) {
+				dialog.handleInput(answer[typed - 1]!);
+				const lines = dialog.render(45);
+				expect(
+					lines.some((line) => line.includes(CURSOR_MARKER)),
+					`cursor hidden after typing "${answer.slice(0, typed)}"`,
+				).toBe(true);
+			}
+			const lines = dialog.render(45);
+			expect(lines.find((line) => line.includes(CURSOR_MARKER))).toContain("has no commits");
+			expect(hintLine(lines)).toBe("Enter · ↑/↓ · Tab · Esc · ^] hide · Shift+E…");
 		});
 	});
 });
