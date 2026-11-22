@@ -26,6 +26,22 @@ export const HINT_PART_COLLAPSE_TEMPLATE = `${KEY_PLACEHOLDER} to collapse`;
 export const HINT_PART_EXPAND_TEMPLATE = `${KEY_PLACEHOLDER} to expand`;
 /** Notes hint, templated the same way on the configurable `notesKey`. */
 export const HINT_PART_NOTES_TEMPLATE = `${KEY_PLACEHOLDER} to add notes`;
+/**
+ * Short key hints, for a terminal too narrow for the full ones (a phone's SSH app is
+ * about 45 columns): a key that says what it does alone (Enter, ↑/↓, Tab, Esc) is named
+ * bare, and the others get one word. `buildHintText` picks this form only when the full
+ * line does not fit.
+ */
+export const HINT_SHORT_ENTER = "Enter";
+export const HINT_SHORT_NAV = "↑/↓";
+export const HINT_SHORT_TOGGLE = "Space";
+export const HINT_SHORT_NOTES_TEMPLATE = `${KEY_PLACEHOLDER} notes`;
+export const HINT_SHORT_TAB = "Tab";
+export const HINT_SHORT_CANCEL = "Esc";
+export const HINT_SHORT_COLLAPSE_TEMPLATE = `${KEY_PLACEHOLDER} hide`;
+export const HINT_SHORT_NEW_LINE = "Shift+Enter newline";
+export const HINT_SHORT_CLEAR = "Ctrl+U clear";
+export const HINT_SHORT_REVIEW_NOTE_TEMPLATE = `${KEY_PLACEHOLDER} note`;
 /** Default-key (`n`) rendering of the notes template. */
 export const HINT_PART_NOTES = HINT_PART_NOTES_TEMPLATE.replace(
 	KEY_PLACEHOLDER,

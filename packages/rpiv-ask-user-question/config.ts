@@ -116,6 +116,17 @@ export function formatKeySpecForDisplay(spec: CollapseKeySpec): string {
 		.join("+");
 }
 
+/**
+ * The shortest display of a key spec, for the short key hints: Ctrl with one
+ * character is caret notation (`"ctrl+]"` → `"^]"`, `"ctrl+g"` → `"^G"`); any
+ * other spec is `formatKeySpecForDisplay`'s.
+ */
+export function formatKeySpecForShortDisplay(spec: CollapseKeySpec): string {
+	const parts = spec.split("+");
+	if (parts.length === 2 && parts[0] === "ctrl" && parts[1].length === 1) return `^${parts[1].toUpperCase()}`;
+	return formatKeySpecForDisplay(spec);
+}
+
 export function loadConfig(): AskUserQuestionConfig {
 	return loadJsonConfigWithLegacyFallback<AskUserQuestionConfig>("rpiv-ask-user-question");
 }
