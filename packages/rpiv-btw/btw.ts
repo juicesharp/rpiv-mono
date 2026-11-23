@@ -9,7 +9,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { AssistantMessage, Message, StopReason, UserMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, RetryPolicy, StopReason, UserMessage } from "@earendil-works/pi-ai";
 import {
 	buildContextEntries,
 	buildSessionContext,
@@ -18,11 +18,17 @@ import {
 	type ExtensionCommandContext,
 	type ExtensionContext,
 	type SessionEntry,
+	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { type CappedHistory, capHistory, type FitBranchResult, fitBranch } from "./btw-budget.ts";
 import { assistantMessageText, type BtwTurn, userMessageText } from "./btw-messages.ts";
 import { showBtwOverlay } from "./btw-ui.ts";
-import { getRuntimeCompleteSimple, loadCompleteSimple, loadIsContextOverflow } from "./pi-compat.ts";
+import {
+	getRuntimeCompleteSimple,
+	loadCompleteSimple,
+	loadIsContextOverflow,
+	loadRetryAssistantCall,
+} from "./pi-compat.ts";
 
 // ---------------------------------------------------------------------------
 // Constants — flat named consts, grouped by concern (advisor pattern, b9428e9)
@@ -283,6 +289,7 @@ export async function executeBtw(
 	question: string,
 	ctx: ExtensionContext,
 	controller: AbortController,
+	retry?: RetryPolicy, // the host's `retry` settings; transient provider errors only
 ): Promise<BtwExecResult> {
 	const model = ctx.model;
 	if (!model) {
@@ -325,15 +332,18 @@ export async function executeBtw(
 			? { signal: controller.signal } // own AbortController, NOT ctx.signal (Decision 8)
 			: { apiKey: auth.apiKey, headers: auth.headers, signal: controller.signal };
 		const overflowFn = await loadIsContextOverflow();
+		const retryFn = retry ? await loadRetryAssistantCall() : undefined;
 		let retried = false;
 		const callCompleteSimple = async (
 			built: BtwBuiltContext,
 		): Promise<{ kind: "aborted"; stopReason: StopReason } | { kind: "completed"; response: AssistantMessage }> => {
-			const response = await completeSimple(
-				model,
-				{ systemPrompt: built.systemPrompt, messages: built.messages, tools: [] },
-				requestOptions,
-			);
+			const call = () =>
+				completeSimple(
+					model,
+					{ systemPrompt: built.systemPrompt, messages: built.messages, tools: [] },
+					requestOptions,
+				);
+			const response = retryFn ? await retryFn(call, retry, controller.signal) : await call();
 			if (response.stopReason === "aborted") {
 				return { kind: "aborted", stopReason: response.stopReason };
 			}
@@ -430,7 +440,13 @@ export function registerBtwCommand(pi: ExtensionAPI): void {
 	});
 }
 
-async function handleBtwCommand(_pi: ExtensionAPI, args: string, ctx: ExtensionCommandContext): Promise<void> {
+// Hosts without `getSettings` (pi < 0.99) keep the single-call behavior.
+function hostRetryPolicy(pi: ExtensionAPI): RetryPolicy | undefined {
+	if (typeof pi.getSettings !== "function") return undefined;
+	return SettingsManager.inMemory(pi.getSettings()).getRetrySettings();
+}
+
+async function handleBtwCommand(pi: ExtensionAPI, args: string, ctx: ExtensionCommandContext): Promise<void> {
 	if (!ctx.hasUI) {
 		ctx.ui.notify(MSG_REQUIRES_INTERACTIVE, "error");
 		return;
@@ -457,7 +473,7 @@ async function handleBtwCommand(_pi: ExtensionAPI, args: string, ctx: ExtensionC
 	});
 
 	const overlayCtl = await controllerReady;
-	const result = await executeBtw(question, ctx, controller);
+	const result = await executeBtw(question, ctx, controller, hostRetryPolicy(pi));
 
 	switch (result.kind) {
 		case "success": {

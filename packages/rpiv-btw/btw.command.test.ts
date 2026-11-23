@@ -62,8 +62,8 @@ afterEach(() => {
 	delete (globalThis as Record<symbol, unknown>)[BTW_STATE_KEY];
 });
 
-function register() {
-	const { pi, captured } = createMockPi();
+function register(options: Parameters<typeof createMockPi>[0] = {}) {
+	const { pi, captured } = createMockPi(options);
 	registerBtwCommand(pi);
 	return captured.commands.get(BTW_COMMAND_NAME)!;
 }
@@ -143,6 +143,27 @@ describe("/btw — executor failure", () => {
 		await cmd.handler("q", ctx as never);
 		expect(ctl.setError).toHaveBeenCalledWith(expect.stringContaining("upstream 502"));
 		expect(ctl.setAnswer).not.toHaveBeenCalled();
+	});
+});
+
+describe("/btw — host retry settings", () => {
+	it("retries a transient error with the host's retry settings", async () => {
+		const ctl = stubOverlay();
+		vi.mocked(completeSimple)
+			.mockResolvedValueOnce({
+				role: "assistant",
+				content: [],
+				timestamp: Date.now(),
+				stopReason: "error",
+				errorMessage: "upstream 502",
+			} as never)
+			.mockResolvedValueOnce(doneResponse("42") as never);
+		const cmd = register({ getSettings: () => ({ retry: { maxRetries: 1, baseDelayMs: 0 } }) });
+		const ctx = createMockCtx({ hasUI: true, model });
+		await cmd.handler("q", ctx as never);
+		expect(completeSimple).toHaveBeenCalledTimes(2);
+		expect(ctl.setAnswer).toHaveBeenCalledWith("42");
+		expect(ctl.setError).not.toHaveBeenCalled();
 	});
 });
 

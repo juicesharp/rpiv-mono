@@ -18,6 +18,7 @@
 
 type CompleteSimpleFn = typeof import("@earendil-works/pi-ai/compat").completeSimple;
 type IsContextOverflowFn = typeof import("@earendil-works/pi-ai/compat").isContextOverflow;
+type RetryAssistantCallFn = typeof import("@earendil-works/pi-ai").retryAssistantCall;
 
 /**
  * Resolve Pi's auth-aware completion facade when the host exposes one.
@@ -120,4 +121,16 @@ export async function loadIsContextOverflow(): Promise<IsContextOverflowFn | und
 		return undefined; // expected absence on a host lacking the export — degrade, don't crash
 	}
 	return isContextOverflow;
+}
+
+/**
+ * Loader for pi-ai's `retryAssistantCall` — the transient-error retry loop the
+ * host agent applies to its own turns (pi-ai >= 1.0, package root only). Its
+ * absence is an expected host state: the caller then makes a single call, as
+ * before. Any import failure propagates, like the other loaders' real failures.
+ */
+export async function loadRetryAssistantCall(): Promise<RetryAssistantCallFn | undefined> {
+	const mod = (await import("@earendil-works/pi-ai")) as { retryAssistantCall?: RetryAssistantCallFn };
+	const retryAssistantCall = mod.retryAssistantCall;
+	return typeof retryAssistantCall === "function" ? retryAssistantCall : undefined;
 }
