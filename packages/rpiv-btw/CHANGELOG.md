@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `/btw` now retries transient provider errors (dropped connections, `ETIMEDOUT`, `429`, `5xx`) with the host's `retry` settings, as the main agent does. Before, the first such error failed the side call. Non-transient errors and aborts still end at once, and hosts without `getSettings` (Pi < 0.99) or `retryAssistantCall` keep the single call.
+
 ## [2.15.0] - 2026-10-24
 
 ## [2.14.2] - 2026-10-23

@@ -38,6 +38,7 @@ vi.mock("./pi-compat.ts", async (importOriginal) => {
 		getRuntimeCompleteSimple: actual.getRuntimeCompleteSimple,
 		loadCompleteSimple: vi.fn(),
 		loadIsContextOverflow: vi.fn(),
+		loadRetryAssistantCall: actual.loadRetryAssistantCall,
 	};
 });
 
@@ -517,6 +518,63 @@ describe("executeBtw — overflow retry", () => {
 		expect(r.kind).toBe("error");
 		if (r.kind !== "error") throw new Error("unexpected");
 		expect(r.error).toContain("call failed");
+		expect(completeSimple).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("executeBtw — transient-error retry", () => {
+	const retry = { enabled: true, maxRetries: 2, baseDelayMs: 0 };
+	const dropped = () =>
+		makeCompletionResponse({
+			stopReason: "error",
+			errorMessage: "upstream connection lost before a response (relay failure AggregateError (ETIMEDOUT))",
+		}) as never;
+
+	it("retries a dropped connection with the host retry policy, then succeeds", async () => {
+		const ctx = createMockCtx();
+		ctx.model = { provider: "a", id: "m" } as never;
+		vi.mocked(completeSimple)
+			.mockResolvedValueOnce(dropped())
+			.mockResolvedValueOnce(makeCompletionResponse({ text: "answer" }) as never);
+
+		const r = await executeBtw("q", ctx, new AbortController(), retry);
+
+		expect(r).toMatchObject({ kind: "success", answer: "answer" });
+		expect(completeSimple).toHaveBeenCalledTimes(2);
+	});
+
+	it("stops after maxRetries and shows the last error", async () => {
+		const ctx = createMockCtx();
+		ctx.model = { provider: "a", id: "m" } as never;
+		vi.mocked(completeSimple).mockResolvedValue(dropped());
+
+		const r = await executeBtw("q", ctx, new AbortController(), retry);
+
+		expect(r).toMatchObject({ kind: "error" });
+		expect(completeSimple).toHaveBeenCalledTimes(3);
+	});
+
+	it("does not retry a non-transient error", async () => {
+		const ctx = createMockCtx();
+		ctx.model = { provider: "a", id: "m" } as never;
+		vi.mocked(completeSimple).mockResolvedValueOnce(
+			makeCompletionResponse({ stopReason: "error", errorMessage: "invalid api key" }) as never,
+		);
+
+		const r = await executeBtw("q", ctx, new AbortController(), retry);
+
+		expect(r).toMatchObject({ kind: "error" });
+		expect(completeSimple).toHaveBeenCalledTimes(1);
+	});
+
+	it("makes a single call without a retry policy", async () => {
+		const ctx = createMockCtx();
+		ctx.model = { provider: "a", id: "m" } as never;
+		vi.mocked(completeSimple).mockResolvedValueOnce(dropped());
+
+		const r = await executeBtw("q", ctx, new AbortController());
+
+		expect(r).toMatchObject({ kind: "error" });
 		expect(completeSimple).toHaveBeenCalledTimes(1);
 	});
 });
