@@ -2,6 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { t } from "../state/i18n-bridge.ts";
 import { NO_INPUT_PLACEHOLDER } from "../tool/format-answer.ts";
+import { prepareQuestionArguments } from "../tool/normalize-params.ts";
 import {
 	isQuestionnaireResult,
 	type QuestionAnswer,
@@ -16,21 +17,50 @@ const RECOMMENDED_SUFFIX = /\s*\(Recommended\)$/;
 
 type ToolResultView = { content: ReadonlyArray<{ type: string; text?: string }>; details?: unknown };
 
-/** Lines laid out at render time, so wrapping and truncation follow the terminal width. */
+/** The part of a recorded question the transcript draws. */
+type RecordedQuestion = { header: string; question: string | undefined };
+
+/**
+ * The questions as the session recorded them. Pi decodes a provider's double-encoded
+ * `questions` before the tool runs (#244), but a replayed session hands the renderers
+ * the raw recorded arguments, so they are decoded again here. A shape that is still
+ * not an array draws as no questions, and an element that is not a question keeps its
+ * slot (answers point at questions by index) with an empty header, so a malformed
+ * transcript cannot throw out of the render path.
+ */
+function recordedQuestions(args: unknown): RecordedQuestion[] {
+	const questions: unknown = prepareQuestionArguments(args ?? {})?.questions;
+	if (!Array.isArray(questions)) return [];
+	return questions.map((q) => {
+		const fields = typeof q === "object" && q !== null ? (q as Record<string, unknown>) : {};
+		return {
+			header: typeof fields.header === "string" ? fields.header : "",
+			question: typeof fields.question === "string" ? fields.question : undefined,
+		};
+	});
+}
+
+/**
+ * Lines laid out at render time, so wrapping and truncation follow the terminal width.
+ * Every line is clamped to the width: Pi stops the whole TUI on a line wider than the
+ * terminal, so no receipt branch may hand it one.
+ */
 class WidthLines implements Component {
 	constructor(private readonly layout: (width: number) => string[]) {}
 	render(width: number): string[] {
-		return this.layout(width);
+		return this.layout(width).map((line) => truncateToWidth(line, width, "…"));
 	}
 	invalidate(): void {}
 }
 
 /** `Ask Format · Migration`: the headers name the questions. */
 export function renderAskCall(args: QuestionParams | undefined, theme: Theme): Component {
-	const headers = (args?.questions ?? []).map((q) => q?.header).filter(Boolean);
+	const headers = recordedQuestions(args)
+		.map((q) => q.header)
+		.filter(Boolean);
 	const title = theme.fg("toolTitle", theme.bold("Ask"));
 	const text = headers.length > 0 ? `${title} ${theme.fg("accent", headers.join(" · "))}` : title;
-	return new WidthLines((width) => [truncateToWidth(text, width, "…")]);
+	return new WidthLines(() => [text]);
 }
 
 /**
@@ -52,10 +82,10 @@ export function renderAskResult(
 	if (details.cancelled) {
 		return new WidthLines(() => [theme.fg("dim", `✗ ${t("transcript.no_answer", "no answer")}`)]);
 	}
-	const questions = args?.questions ?? [];
+	const questions = recordedQuestions(args);
 	return new WidthLines((width) =>
 		questions.length > 1
-			? tableLines(details, args as QuestionParams, theme, options.expanded, width)
+			? tableLines(details, questions, theme, options.expanded, width)
 			: singleLines(details, questions[0]?.question, theme, options.expanded, width),
 	);
 }
@@ -75,14 +105,14 @@ function singleLines(
 
 function tableLines(
 	details: QuestionnaireResult,
-	args: QuestionParams,
+	questions: readonly RecordedQuestion[],
 	theme: Theme,
 	expanded: boolean,
 	width: number,
 ): string[] {
-	const headerWidth = Math.max(...args.questions.map((q) => visibleWidth(q.header)));
+	const headerWidth = Math.max(...questions.map((q) => visibleWidth(q.header)));
 	const answerIndent = " ".repeat(INDENT.length + headerWidth + COLUMN_GAP.length);
-	const lines = args.questions.flatMap((q, i) => {
+	const lines = questions.flatMap((q, i) => {
 		const answer = details.answers.find((a) => a.questionIndex === i);
 		const header = q.header + " ".repeat(headerWidth - visibleWidth(q.header));
 		const row = hanging(`${INDENT}${theme.fg("muted", header)}${COLUMN_GAP}`, answerText(answer, theme), width);

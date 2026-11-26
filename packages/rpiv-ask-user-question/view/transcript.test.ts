@@ -210,3 +210,86 @@ describe("renderAskResult — no answers", () => {
 		]);
 	});
 });
+
+describe("renderAskResult — never wider than the terminal (#348)", () => {
+	const width = (line: string) => visibleWidth(stripTerminalSequences(line));
+
+	it("truncates a tool error's first line to the terminal width", () => {
+		// The reported crash: a 132-column receipt in a 129-column terminal.
+		const message =
+			'Invalid arguments for tool "ask_user_question": Unexpected non-whitespace character after JSON at position 502 (line 1 column 503)';
+		const rejected = { content: [{ type: "text" as const, text: message }], details: undefined };
+		const rendered = renderAskResult(rejected, undefined, colored, { expanded: false, isError: true }).render(129);
+		expect(rendered).toHaveLength(1);
+		expect(width(rendered[0] ?? "")).toBeLessThanOrEqual(129);
+		expect(stripTerminalSequences(rendered[0] ?? "")).toMatch(/^<error>✗ Invalid arguments.*…$/);
+	});
+
+	it("keeps every receipt branch within a narrow terminal", () => {
+		const args = params(question("Format"), question("A much longer header"));
+		const answered = { answers: [answer(0, { kind: "option", answer: "TOML", notes: "a note" })], cancelled: false };
+		const receipts = [
+			renderAskResult(result(answered), args, colored, { expanded: true, isError: false }),
+			renderAskResult(result(answered), params(question("Format")), colored, collapsed),
+			renderAskResult(result({ answers: [], cancelled: true }), args, colored, collapsed),
+			renderAskResult(
+				result({ answers: [], cancelled: true, error: "no_ui" }, "x".repeat(300)),
+				args,
+				colored,
+				collapsed,
+			),
+			renderAskResult({ content: [], details: undefined }, args, colored, collapsed),
+			renderAskCall(args, colored),
+		];
+		for (const w of [1, 4, 12, 40]) {
+			for (const receipt of receipts) {
+				for (const line of receipt.render(w)) expect(width(line)).toBeLessThanOrEqual(w);
+			}
+		}
+	});
+});
+
+describe("recorded arguments a provider double-encoded (#353)", () => {
+	const answered: QuestionnaireResult = {
+		answers: [answer(0, { kind: "option", answer: "Run API" }), answer(1, { kind: "option", answer: "claude" })],
+		cancelled: false,
+	};
+	const recorded = (questions: unknown) => ({ questions }) as unknown as QuestionParams;
+	const encoded = recorded(JSON.stringify([question("Transport"), question("Types")]));
+
+	it("decodes a stringified questions array for the call line and the receipt", () => {
+		expect(renderAskCall(encoded, theme).render(100)).toEqual(["Ask Transport · Types"]);
+		expect(lines(encoded, answered)).toEqual(["  Transport  Run API", "  Types      claude"]);
+	});
+
+	it("decodes questions that were stringified one by one", () => {
+		const each = recorded([JSON.stringify(question("Transport")), JSON.stringify(question("Types"))]);
+		expect(lines(each, answered)).toEqual(["  Transport  Run API", "  Types      claude"]);
+	});
+
+	it.each([
+		["a truncated string", '[{"header":"Transport"'],
+		["an object", { 0: { header: "Transport" } }],
+		["null", null],
+		["a number", 3],
+	])("draws %s as no questions instead of throwing", (_name, questions) => {
+		expect(renderAskCall(recorded(questions), theme).render(100)).toEqual(["Ask"]);
+		expect(lines(recorded(questions), answered)).toEqual(["✓ Run API"]);
+	});
+
+	it("keeps each answer on its own row when some recorded questions are malformed", () => {
+		const mixed = recorded([null, { question: "No header?" }, question("Types")]);
+		expect(renderAskCall(mixed, theme).render(100)).toEqual(["Ask Types"]);
+		const rows = lines(mixed, {
+			answers: [answer(1, { kind: "option", answer: "Run API" }), answer(2, { kind: "option", answer: "claude" })],
+			cancelled: false,
+		});
+		expect(rows).toEqual(["         not answered", "         Run API", "  Types  claude"]);
+	});
+
+	it("draws arguments that are not an object at all", () => {
+		const odd = "not arguments" as unknown as QuestionParams;
+		expect(renderAskCall(odd, theme).render(100)).toEqual(["Ask"]);
+		expect(lines(odd, answered)).toEqual(["✓ Run API"]);
+	});
+});

@@ -791,4 +791,49 @@ describe("tool registration", () => {
 		expect(ok?.render(80)).toEqual(["✓ TOML"]);
 		expect(failed?.render(80)).toEqual(["✗ Validation failed"]);
 	});
+
+	it("draws a recorded double-encoded questions string instead of throwing", () => {
+		const { pi, captured } = createMockPi();
+		registerAskUserQuestionTool(pi);
+		const tool = captured.tools.get("ask_user_question");
+		// A session replay: the provider serialized the nested array as a JSON
+		// string, and Pi hands that recorded shape to both renderers.
+		const recorded = {
+			questions: JSON.stringify([
+				{ question: "Which transport?", header: "Transport", options: [{ label: "Run API" }, { label: "ACP" }] },
+				{ question: "Which types?", header: "Types", options: [{ label: "claude" }, { label: "codex" }] },
+			]),
+		};
+		const answered = buildToolResult("User has answered your questions", {
+			answers: [
+				{ questionIndex: 0, question: "Which transport?", kind: "option", answer: "Run API" },
+				{ questionIndex: 1, question: "Which types?", kind: "option", answer: "claude" },
+			],
+			cancelled: false,
+		});
+		const draw = (args: unknown) => ({
+			call: tool?.renderCall?.(args as never, makeTheme() as never, {} as never)?.render(80),
+			result: tool
+				?.renderResult?.(
+					answered as never,
+					{ expanded: false } as never,
+					makeTheme() as never,
+					{
+						args,
+						isError: false,
+					} as never,
+				)
+				?.render(80),
+		});
+
+		expect(draw(recorded)).toEqual({
+			call: ["Ask Transport · Types"],
+			result: ["  Transport  Run API", "  Types      claude"],
+		});
+		// The same parser class can also hand over half-written or non-array shapes.
+		expect(draw({ questions: '[{"header":"Transport"' }).result).toEqual(["✓ Run API"]);
+		expect(draw({ questions: { 0: { header: "Transport" } } }).result).toEqual(["✓ Run API"]);
+		expect(draw({ questions: null }).call).toEqual(["Ask"]);
+		expect(draw(undefined).call).toEqual(["Ask"]);
+	});
 });
