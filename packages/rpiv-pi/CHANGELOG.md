@@ -7,6 +7,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Support for jujutsu (jj) working copies** in the skills, the bundled agents and the workflow VCS readers. Every helper, skill gate, agent playbook and workflow reader that assumed git now detects the backend once (`jj root`, else the git toplevel) and reads the working copy in git's `XY` grammar, so a jj workspace runs the same skills, agents and workflows with no on-the-fly improvisation.
+
 ### Fixed
 
 - **Resumed fanout runs no longer show finished units as pending.** Rerunning a run after a failed stage seeded every fanout unit `○ pending`, including the ones that had already finished, and they stayed that way while the remaining units ran. If the resumed run then failed, those finished units turned ✗. Already-finished units now show ✓ (or ✗ for a collected halt), and the `units x/y` counter starts from their count.

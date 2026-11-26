@@ -2,7 +2,7 @@
 name: changelog
 description: Regenerate the [Unreleased] section of every affected CHANGELOG.md in Keep a Changelog style. Reads commits since the last release tag plus any uncommitted or staged changes, classifies them by Conventional Commit prefix, and rewrites each [Unreleased] block. Works in single-package repos and monorepos (one CHANGELOG.md per package). Use when preparing a release or drafting changelog entries. Idempotent — safe to re-run as work lands.
 argument-hint: [--since <ref>]
-allowed-tools: Bash(git *), Read, Edit
+allowed-tools: Bash(git *), Bash(jj *), Read, Edit
 shell-timeout: 10
 contract:
   produces:
@@ -32,6 +32,30 @@ node "${SKILL_DIR}/../_shared/changelog-bootstrap.mjs"
 - `last_tag:` — last release tag, or `(no tags)`. Used by Step 1.3 and Step 2.1 when no `--since` is supplied.
 - `---changelogs---` block — paths of every tracked `CHANGELOG.md` (one per line, empty if none). Used by Step 1.2.
 
+## VCS backend
+
+One decision governs every command in this skill:
+
+1. `jj root` succeeds → backend `jj`.
+2. Otherwise `git rev-parse --show-toplevel` succeeds → backend `git`.
+3. Neither → this skill's repository gate applies, unchanged.
+
+When the Metadata block prints a `vcs:` line, it carries the same decision.
+
+| Purpose | `git` | `jj` |
+|---|---|---|
+| working-copy state | `git status --short --untracked-files=all` | `jj diff --summary` — an `A` line is a new file, not untracked |
+| change against the parent | `git diff HEAD` | `jj diff --git` |
+| recent commits | `git log --oneline -n 20` | `jj log -r '::@-' --no-graph -T 'commit_id.short() ++ " " ++ description.first_line() ++ "\n"'` |
+| one commit | `git show <id>` | `jj show <id>` — a change id and a commit id both resolve |
+| one file in one commit | `git show <id>:<path>` | `jj file show -r <id> <path>` |
+| changed paths between two revisions | `git diff <a> <b> --name-only` | `jj diff --from <a> --to <b> --name-only` |
+| path-filtered history | `git log -- <path>` | `jj log -r '::@' -- <path>` |
+| parent revision | `<id>^` | `<id>-` |
+| ancestry proof | `git merge-base --is-ancestor <a> <b>` | `jj log -r '<a> & ::<b>' --no-graph -T commit_id` prints `<a>` when `<a>` is an ancestor of `<b>` |
+| undo a local edit | `git restore <path>` | `cp` the captured bytes back — never `jj restore --from @-`, which also discards pre-existing uncommitted edits |
+| never run | `git reset` | `jj abandon`, `jj op restore` |
+
 ## Workflow
 
 1. Bail-out checks
@@ -43,7 +67,7 @@ node "${SKILL_DIR}/../_shared/changelog-bootstrap.mjs"
 
 ## Step 1: Bail-out checks
 
-1. If `in_repo:` is `no`, tell the user "This directory is not a git repository." and stop.
+1. If `vcs:` in the Metadata block is `none`, tell the user "This directory is neither a git nor a jj repository." and stop.
 2. If the `---changelogs---` block is empty, tell the user "No `CHANGELOG.md` found in the repository — create one (root or per-package) before running this skill." and stop.
 3. If `last_tag:` is `(no tags)` AND `$ARGUMENTS` lacks `--since <ref>`, ask the user to supply `--since <ref>` and stop until they do.
 
@@ -63,8 +87,11 @@ Each `CHANGELOG.md` discovered in Step 1.2 owns a path scope:
 
 For each scope:
 
-1. Committed: `git log $SINCE..HEAD --pretty=format:"%H%x09%s%x09%b%x1e" -- <scope>`. For root-with-exclusions, pass `:(exclude)<dir>` pathspecs for every nested-CHANGELOG directory. Records are `\x1e`-delimited; parse subject (`%s`) and body (`%b`).
-2. Uncommitted: `git diff HEAD -- <scope>` and `git diff --cached -- <scope>` with the same pathspec rules. Treat the union as a single virtual "pending" change set with no commit message — the model classifies it from the diff itself.
+1. Committed — `git`: `git log $SINCE..HEAD --pretty=format:"%H%x09%s%x09%b%x1e" -- <scope>`. For root-with-exclusions, pass `:(exclude)<dir>` pathspecs for every nested-CHANGELOG directory. Records are `\x1e`-delimited; parse subject (`%s`) and body (`%b`).
+   `jj`: `jj log -r "$SINCE::@-" --no-graph -T 'commit_id.short() ++ "\t" ++ description.first_line() ++ "\t" ++ description ++ "\n---\n"'`, then read each revision's paths with `jj diff --name-only --from <rev>- --to <rev> -- <scope>`.
+2. Uncommitted — `git`: `git diff HEAD -- <scope>` and `git diff --cached -- <scope>` with the same pathspec rules.
+   `jj`: `jj diff --git -- <scope>` — jj has no index, so there is exactly one pending state.
+   Treat the union as a single virtual "pending" change set with no commit message — the model classifies it from the diff itself.
 3. Skip CHANGELOGs whose scope has no committed and no uncommitted changes in range.
 
 ## Step 4: Classify and draft entries
@@ -158,7 +185,7 @@ What this example demonstrates:
    - `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
    - Header: "Changelog"
    - Options:
-     - "Apply (Recommended)" — Write the regenerated sections to disk. Refinement, if needed, happens afterward in normal chat (`Edit` tool) or via `git restore` to roll back.
+     - "Apply (Recommended)" — Write the regenerated sections to disk. Refinement, if needed, happens afterward in normal chat (`Edit` tool) or via `git restore` (`jj`: re-apply the captured bytes) to roll back.
      - "Show Preview" — For each affected CHANGELOG, render a unified diff between the **current** `[Unreleased]` body on disk and the **proposed** regenerated body. Lines marked `-` are about to be removed; lines marked `+` are about to be added. After printing, re-ask this same question.
 
 ## Step 6: Apply

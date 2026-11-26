@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { hasJj } from "@juicesharp/rpiv-test-utils/vcs";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const helperPath = fileURLToPath(new URL("./review-range.mjs", import.meta.url));
 
@@ -223,5 +224,79 @@ describe("review-range tree scopes", () => {
 		expect(valueFor(output, "strategy")).toBe("tree");
 		expect(valueFor(output, "files_list")).toBe("src/a.ts");
 		expect(changedFiles(output)).toEqual(["src/a.ts"]);
+	});
+
+	it("neutralises the output fence literal in an unrecognised scope", () => {
+		const repo = createRepo();
+
+		const output = runHelper(repo, "foo---changed-files---bar");
+
+		expect(valueFor(output, "strategy")).toBe("unrecognised");
+		expect(noteFor(output)).toContain("---changed-files---(literal)");
+		// Exactly one REAL fence line survives.
+		expect(output.split("\n").filter((line) => line === "---changed-files---")).toHaveLength(1);
+	});
+
+	it("collapses a newline in the scope so it cannot inject a labeled line", () => {
+		const repo = createRepo();
+
+		const output = runHelper(repo, "a\nb");
+
+		expect(output.split("\n").filter((line) => line.startsWith("strategy:"))).toHaveLength(1);
+	});
+});
+
+describe.runIf(hasJj())("review-range jj workspace", () => {
+	let jjDir: string;
+
+	const jj = (args: string[]) =>
+		execFileSync("jj", args, {
+			cwd: jjDir,
+			encoding: "utf-8",
+			stdio: ["ignore", "pipe", "pipe"],
+		});
+
+	beforeEach(() => {
+		jjDir = mkdtempSync(join(tmpdir(), "rpiv-review-range-jj-"));
+		tempDirs.push(jjDir);
+		jj(["git", "init"]);
+		jj(["describe", "-m", "base"]);
+		jj(["bookmark", "create", "main", "-r", "@"]);
+		jj(["new"]);
+		write(jjDir, "src/feature.ts", "export const feature = 1;\n");
+	});
+
+	it("resolves the empty scope as a net-endpoint range against trunk under jj", () => {
+		const output = runHelper(jjDir, "");
+
+		expect(valueFor(output, "vcs")).toBe("jj");
+		expect(valueFor(output, "strategy")).toBe("net-endpoint");
+		expect(valueFor(output, "default_branch")).toBe("main");
+		expect(valueFor(output, "fp_flag")).toBe("(empty)");
+		expect(valueFor(output, "base")).toMatch(/^[0-9a-f]{12,}$/);
+		expect(valueFor(output, "tip")).toMatch(/^[0-9a-f]{12,}$/);
+	});
+
+	it("reports @'s commit id for the commit scope's endpoints under jj", () => {
+		const output = runHelper(jjDir, "commit");
+
+		expect(valueFor(output, "strategy")).toBe("working-tree");
+		expect(valueFor(output, "oldest")).toMatch(/^[0-9a-f]{12,}$/);
+		expect(valueFor(output, "newest")).toBe(valueFor(output, "oldest"));
+	});
+
+	it("writes the patch tempfile outside any .git directory under jj", () => {
+		const output = runHelper(jjDir, "");
+		const patchPath = valueFor(output, "patch_path");
+
+		expect(patchPath).not.toBe("");
+		expect(isAbsolute(patchPath)).toBe(true);
+		expect(patchPath.includes("/.git/")).toBe(false);
+	});
+
+	it("lists the working-copy change in the changed-files block under jj", () => {
+		const output = runHelper(jjDir, "");
+
+		expect(changedFiles(output)).toContain("src/feature.ts");
 	});
 });

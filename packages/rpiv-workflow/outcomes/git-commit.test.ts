@@ -10,10 +10,11 @@
  * never shells git and goes fatal on a foreign `meta` shape.
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hasJj } from "@juicesharp/rpiv-test-utils/vcs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CollectContext, ParseContext, SnapshotContext } from "../output-spec.ts";
 import {
@@ -38,6 +39,10 @@ const initRepo = (cwd: string): void => {
 	execSync("git config user.email test@example.com", { cwd });
 	execSync("git config user.name Test", { cwd });
 	execSync("git commit --allow-empty -q -m initial", { cwd });
+};
+
+const jjIn = (cwd: string, ...args: string[]): void => {
+	execFileSync("jj", args, { cwd, stdio: ["ignore", "pipe", "ignore"] });
 };
 
 const snapshotCtx = (cwd: string): SnapshotContext => ({
@@ -258,6 +263,76 @@ describe("gitCommitParser is pure and validates its meta contract", () => {
 		expect(result.kind).toBe("ok");
 		if (result.kind !== "ok") return;
 		expect(result.payload.data).toEqual({ sha: "feed", prevSha: "dead", subject: "add a", filesChanged: 3 });
+	});
+});
+
+describe.runIf(hasJj())("gitCommitOutcome — jj backend", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-git-jj-"));
+		jjIn(tmpDir, "git", "init");
+		jjIn(tmpDir, "describe", "-m", "seed");
+		jjIn(tmpDir, "new");
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("reports the landed commit when the stage describes and jj news", async () => {
+		const snap = await gitHeadSnapshot(snapshotCtx(tmpDir));
+		expect(snap?.backend).toBe("jj");
+		expect(snap?.baselineDescription).toBe("");
+
+		jjIn(tmpDir, "describe", "-m", "landed");
+		jjIn(tmpDir, "new");
+
+		const result = await runOutcome(tmpDir, snap);
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		const data = result.payload.data;
+		// A real commit payload omits `noOp` entirely (the git path's convention).
+		expect(data.noOp).toBeUndefined();
+		expect(data.subject).toBe("landed");
+		// `commits` carries the landed commit's id and subject.
+		expect(data.commits).toHaveLength(1);
+		expect(data.commits?.[0]?.subject).toBe("landed");
+		expect(data.commits?.[0]?.sha).toMatch(/^[0-9a-f]{7,}$/);
+	});
+
+	it("emits noOp when the working copy is untouched after the snapshot", async () => {
+		const snap = await gitHeadSnapshot(snapshotCtx(tmpDir));
+		const result = await runOutcome(tmpDir, snap);
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		expect(result.payload.data.noOp).toBe(true);
+	});
+
+	it("reports a described @ as the landed commit when no jj new follows", async () => {
+		const snap = await gitHeadSnapshot(snapshotCtx(tmpDir));
+		jjIn(tmpDir, "describe", "-m", "landed-in-place");
+		const result = await runOutcome(tmpDir, snap);
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		const data = result.payload.data;
+		expect(data.noOp).toBeUndefined();
+		expect(data.subject).toBe("landed-in-place");
+		expect(data.commits?.[0]?.subject).toBe("landed-in-place");
+	});
+
+	it("counts the summary line, not a filename that looks like one", async () => {
+		// `jj diff --stat` prints per-file lines before the summary, so an
+		// unanchored /(\d+) files? changed/ matches the FILENAME below.
+		const snap = await gitHeadSnapshot(snapshotCtx(tmpDir));
+		writeFileSync(join(tmpDir, "2 files changed.txt"), "y\n");
+		jjIn(tmpDir, "describe", "-m", "tricky");
+		jjIn(tmpDir, "new");
+
+		const result = await runOutcome(tmpDir, snap);
+		expect(result.kind).toBe("ok");
+		if (result.kind !== "ok") return;
+		expect(result.payload.data.filesChanged).toBe(1);
 	});
 });
 

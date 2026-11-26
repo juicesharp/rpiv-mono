@@ -31,6 +31,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { type Dirent, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { isJjWorkspace } from "./vcs-probe.ts";
 
 /** Wall-clock ceiling per git subprocess. The digest runs SYNCHRONOUSLY on the
  *  validation-retry critical path and the bash watchdog cannot cover it (not a
@@ -109,6 +110,17 @@ function readdirRecursively(root: string, excludedTopDirs?: ReadonlySet<string>)
  */
 export function computeWorktreeDigest(cwd: string): string | undefined {
 	try {
+		const input = workingCopyInput(cwd);
+		const artifacts = hashArtifactsTree(cwd);
+		return createHash("sha256").update(input).update("\0").update(artifacts).digest("hex");
+	} catch {
+		return undefined;
+	}
+}
+
+/** Failure still throws to the caller's catch, which degrades to `undefined`. */
+function workingCopyInput(cwd: string): string {
+	if (!isJjWorkspace(cwd, GIT_DIGEST_TIMEOUT_MS)) {
 		const status = execFileSync("git", ["status", "--porcelain"], {
 			cwd,
 			encoding: "utf-8",
@@ -125,11 +137,16 @@ export function computeWorktreeDigest(cwd: string): string | undefined {
 			stdio: ["ignore", "pipe", "ignore"],
 			timeout: GIT_DIGEST_TIMEOUT_MS,
 		});
-		const artifacts = hashArtifactsTree(cwd);
-		return createHash("sha256").update(status).update("\0").update(diff).update("\0").update(artifacts).digest("hex");
-	} catch {
-		return undefined;
+		return `${status}\0${diff}`;
 	}
+	// Under jj the input is `jj diff --git` (working copy against `@-`; there
+	// is no index).
+	return execFileSync("jj", ["--no-pager", "diff", "--git"], {
+		cwd,
+		encoding: "utf-8",
+		stdio: ["ignore", "pipe", "ignore"],
+		timeout: GIT_DIGEST_TIMEOUT_MS,
+	});
 }
 
 /**

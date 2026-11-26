@@ -2,7 +2,7 @@
 name: validate
 description: Verify that an implementation plan was correctly executed by running each phase's success criteria against the working tree and producing a validation report. Use after the implement skill completes, when the user asks to "validate the plan", wants a post-implementation audit, or needs to confirm a feature is fully shipped per its plan.
 argument-hint: "[plan-path] [--goal <path>] [--baseline <path>] [--scope <path>] [--acceptance <path>]"
-allowed-tools: Read, Bash(git *), Bash(make *), Glob, Grep
+allowed-tools: Read, Bash(git *), Bash(jj *), Bash(make *), Glob, Grep
 shell-timeout: 10
 disable-model-invocation: true
 contract:
@@ -61,6 +61,30 @@ echo "recent plans:"
 node "${SKILL_DIR}/../_shared/list-recent.mjs" .rpiv/artifacts/plans 10
 ```
 
+## VCS backend
+
+One decision governs every command in this skill:
+
+1. `jj root` succeeds → backend `jj`.
+2. Otherwise `git rev-parse --show-toplevel` succeeds → backend `git`.
+3. Neither → this skill's repository gate applies, unchanged.
+
+When the Metadata block prints a `vcs:` line, it carries the same decision.
+
+| Purpose | `git` | `jj` |
+|---|---|---|
+| working-copy state | `git status --short --untracked-files=all` | `jj diff --summary` — an `A` line is a new file, not untracked |
+| change against the parent | `git diff HEAD` | `jj diff --git` |
+| recent commits | `git log --oneline -n 20` | `jj log -r '::@-' --no-graph -T 'commit_id.short() ++ " " ++ description.first_line() ++ "\n"'` |
+| one commit | `git show <id>` | `jj show <id>` — a change id and a commit id both resolve |
+| one file in one commit | `git show <id>:<path>` | `jj file show -r <id> <path>` |
+| changed paths between two revisions | `git diff <a> <b> --name-only` | `jj diff --from <a> --to <b> --name-only` |
+| path-filtered history | `git log -- <path>` | `jj log -r '::@' -- <path>` |
+| parent revision | `<id>^` | `<id>-` |
+| ancestry proof | `git merge-base --is-ancestor <a> <b>` | `jj log -r '<a> & ::<b>' --no-graph -T commit_id` prints `<a>` when `<a>` is an ancestor of `<b>` |
+| undo a local edit | `git restore <path>` | `cp` the captured bytes back — never `jj restore --from @-`, which also discards pre-existing uncommitted edits |
+| never run | `git reset` | `jj abandon`, `jj op restore` |
+
 ## Steps
 
 ### Step 1: Input Handling and Context Discovery
@@ -87,14 +111,14 @@ When invoked:
 
 5. **Gather implementation evidence**:
 
-   **If `in_repo:` in the Metadata block is `no`:**
-   - Skip git-based evidence gathering (git log, git diff).
+   **If `vcs:` in the Metadata block is `none`:**
+   - Skip VCS-based evidence gathering (`git log`, `git diff`, `jj log`, `jj diff`).
    - Validate via file inspection, the plan's `#### Automated Verification:` commands, and the plan checklist.
    - Note in report: "Git history unavailable — validation based on file inspection only".
 
    Otherwise:
-   - `git log --oneline -n 20` — recent commits for implementation context.
-   - `git diff <base>..HEAD` — where `<base>` covers the implementation commits (determine from `git log` above). Scope to specific paths if the diff is large.
+   - `git log --oneline -n 20` (`jj`: `jj log -r '::@-' --no-graph -T 'commit_id.short() ++ " " ++ description.first_line() ++ "\n"'`) — recent commits for implementation context.
+   - `git diff <base>..HEAD` (`jj`: `jj diff --git --from <base> --to @`) — where `<base>` covers the implementation commits (determine from `git log` above). Scope to specific paths if the diff is large.
    - The plan's own `#### Automated Verification:` commands — read them out of the plan and run them as-written. Do NOT hardcode `make` or any project-specific build tool here; the plan encodes the right commands per project (e.g. `npm run check`, `npm test`, `cargo test`, `pytest`).
 
 6. **Check pattern conformance and drift**:
@@ -131,7 +155,7 @@ For each phase in the plan:
    - A missing or unreadable baseline file: fall back to judging the whole tree (today's behavior) and say so in the report.
 
 6. **Attribute whole-plan command failures before they force the verdict.** When a whole-plan (not per-phase) command fails, attribute each failing finding to its file:
-   - If **every** failing file is outside the run's own delta — in the `--baseline` paths, or byte-identical to the merge base, verified per file with `git diff --quiet <base> -- <file>` (when the implementation is uncommitted — the workflow's normal case, validate runs before commit — `<base>` is simply `HEAD`) — the failure is pre-existing debt: the criterion was authored against an assumed-clean repo and is unachievable as written. Report it under `#### Potential Issues:` as "pre-existing at base — criterion unachievable as written", rule the criterion **not met, non-blocking**, and record it under `#### Deviations from Plan:` as a *plan* deviation (the criterion, not the implementation, deviated). Do NOT let such a failure alone force `verdict: fail`.
+   - If **every** failing file is outside the run's own delta — in the `--baseline` paths, or byte-identical to the merge base, verified per file with `git diff --quiet <base> -- <file>` (`jj`: `jj diff --from <base> --to @ -- <file>` prints nothing — an empty body is the same signal as exit status 1) (when the implementation is uncommitted — the workflow's normal case, validate runs before commit — `<base>` is simply `HEAD`) — the failure is pre-existing debt: the criterion was authored against an assumed-clean repo and is unachievable as written. Report it under `#### Potential Issues:` as "pre-existing at base — criterion unachievable as written", rule the criterion **not met, non-blocking**, and record it under `#### Deviations from Plan:` as a *plan* deviation (the criterion, not the implementation, deviated). Do NOT let such a failure alone force `verdict: fail`.
    - The evidence bar is mandatory: no `git diff --quiet` proof for a failing file, no downgrade — the failure blocks as usual.
    - Any failing finding inside the run's delta keeps normal behavior: the command fails, the verdict fails.
 
@@ -221,7 +245,7 @@ If you were part of the implementation:
 3. **Document everything** - Both successes and issues
 4. **Think critically** - Question if the implementation truly solves the problem
 5. **Consider maintenance** - Will this be maintainable long-term?
-6. **Repo-located scratch lives under `.rpiv/tmp/`, nowhere else** - Any file you create while running a plan's commands or a risk ruling's `procedure` — a driver script, a fixture, a captured payload — goes under `.rpiv/tmp/` (exempt from the workflow's scope floor) or outside the repo entirely. The floor counts **untracked** files too (`git status -uall`): scratch left anywhere else is an undeclared write the next `implement-scope-check` flags. Delete repo-located scratch when its command is done regardless.
+6. **Repo-located scratch lives under `.rpiv/tmp/`, nowhere else** - Any file you create while running a plan's commands or a risk ruling's `procedure` — a driver script, a fixture, a captured payload — goes under `.rpiv/tmp/` (exempt from the workflow's scope floor) or outside the repo entirely. The floor counts **untracked** files too (`git status --short --untracked-files=all`, `jj diff --summary`): scratch left anywhere else is an undeclared write the next `implement-scope-check` flags. Delete repo-located scratch when its command is done regardless.
 
 ## Validation Checklist
 

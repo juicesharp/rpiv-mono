@@ -22,6 +22,30 @@ contract:
 
 # Remediate
 
+## VCS backend
+
+One decision governs every command in this skill:
+
+1. `jj root` succeeds → backend `jj`.
+2. Otherwise `git rev-parse --show-toplevel` succeeds → backend `git`.
+3. Neither → this skill's repository gate applies, unchanged.
+
+When the Metadata block prints a `vcs:` line, it carries the same decision.
+
+| Purpose | `git` | `jj` |
+|---|---|---|
+| working-copy state | `git status --short --untracked-files=all` | `jj diff --summary` — an `A` line is a new file, not untracked |
+| change against the parent | `git diff HEAD` | `jj diff --git` |
+| recent commits | `git log --oneline -n 20` | `jj log -r '::@-' --no-graph -T 'commit_id.short() ++ " " ++ description.first_line() ++ "\n"'` |
+| one commit | `git show <id>` | `jj show <id>` — a change id and a commit id both resolve |
+| one file in one commit | `git show <id>:<path>` | `jj file show -r <id> <path>` |
+| changed paths between two revisions | `git diff <a> <b> --name-only` | `jj diff --from <a> --to <b> --name-only` |
+| path-filtered history | `git log -- <path>` | `jj log -r '::@' -- <path>` |
+| parent revision | `<id>^` | `<id>-` |
+| ancestry proof | `git merge-base --is-ancestor <a> <b>` | `jj log -r '<a> & ::<b>' --no-graph -T commit_id` prints `<a>` when `<a>` is an ancestor of `<b>` |
+| undo a local edit | `git restore <path>` | `cp` the captured bytes back — never `jj restore --from @-`, which also discards pre-existing uncommitted edits |
+| never run | `git reset` | `jj abandon`, `jj op restore` |
+
 You surgically repair a **working tree** that a validate stage judged `verdict: fail`. You do **not** re-validate the whole plan, re-run the project's full build/test suite, or rewrite anything broadly — you clear exactly the localized defects the failing risk rulings and structured blockers prescribe, and re-run each item's own `procedure`/`command` to confirm it now passes. One pass, non-interactive, side-effect only: you mutate code, never emit an artifact. The workflow loops you straight back to the validate gate, which re-judges; that is the only validation, so you do **not** self-review or ask for approval.
 
 You are the tools/contract twin of `implement` (`Bash(*)` + `code-mutation`, side-effect, not an artifact) and the body-discipline twin of `amend` (single-pass, surgical, no subagents, no self-review, no questions).
@@ -60,7 +84,7 @@ If `--plans` or `--validation` is missing, print an error and stop — it is a d
 - **Surgical, single-pass.** Touch only the code a fixable ruling's `procedure` gates; leave passing rulings' code and untouched files byte-for-byte. One fix attempt per ruling — no in-skill retry loop. The validate gate re-judges; that is the validation.
 - **Fix the code, never the plan or any `.rpiv/artifacts/` document.** Remediate mutates the working tree only. Reading the plan/report to locate a ruling is required; editing the plan, the report, or any artifact is out of scope (that is amend's / revise's authority). The embedded code blocks in a spliced plan are the plan's own content too — remediate does not edit them either; it edits the repo files the ruling's `procedure` exercises.
 - **Never touch code a passing ruling owns.** A `pass: true` ruling's cited area is verified-correct; editing it risks regressing a cleared dimension.
-- **Repo-located scratch lives under `.rpiv/tmp/`, nowhere else.** Any file you create that is not a ruling's minimal code fix — a procedure driver script, a fixture, a captured payload — goes under `.rpiv/tmp/` (exempt from the workflow's scope floor) or outside the repo entirely. The floor counts **untracked** files too (`git status -uall`): a scratch file left at the repo root or in any undeclared directory is an undeclared write the next `implement-scope-check` flags. Delete repo-located scratch when its procedure is done regardless.
+- **Repo-located scratch lives under `.rpiv/tmp/`, nowhere else.** Any file you create that is not a ruling's minimal code fix — a procedure driver script, a fixture, a captured payload — goes under `.rpiv/tmp/` (exempt from the workflow's scope floor) or outside the repo entirely. The floor counts **new** files too (`git status --short --untracked-files=all`, `jj diff --summary`): a scratch file left at the repo root or in any undeclared directory is an undeclared write the next `implement-scope-check` flags. Delete repo-located scratch when its procedure is done regardless.
 - **No subagents. No self-review. No `ask_user_question`.** Apply the localized fixes and re-run the procedures; the validate gate is the validation.
 
 ## Closing block

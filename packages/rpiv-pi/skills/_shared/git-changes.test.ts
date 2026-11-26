@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hasJj, seedJjStatusWorkspace } from "@juicesharp/rpiv-test-utils/vcs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const GIT_CHANGES_MJS = fileURLToPath(new URL("./git-changes.mjs", import.meta.url));
@@ -139,5 +140,28 @@ describe("git-changes.mjs", () => {
 		const out = run(dir);
 		expect(out).not.toContain("---pre-existing");
 		expect(out.slice(out.indexOf("---status---"))).toMatch(/src\.ts/);
+	});
+
+	it("keeps the first status line's leading space (the raw read, not a trimmed one)", () => {
+		initRepo(dir);
+		writeFileSync(join(dir, "f.txt"), "hi\n");
+		gitIn(dir, "add", "f.txt");
+		gitIn(dir, "commit", "-m", "init", "-q");
+		writeFileSync(join(dir, "f.txt"), "hi\nworld\n");
+		const out = run(dir);
+		const statusBlock = out.slice(out.indexOf("---status---\n") + "---status---\n".length);
+		expect(statusBlock.split("\n")[0]).toBe(" M f.txt");
+	});
+
+	describe.runIf(hasJj())("jj workspace", () => {
+		beforeEach(() => seedJjStatusWorkspace(dir));
+
+		it("reports the jj working copy through the shared status fence", () => {
+			const out = run(dir);
+			expect(out).toContain("in_repo: yes");
+			expect(out).toContain("---status---");
+			expect(out).toContain("---diffstat---");
+			expect(out).toContain("?? added.ts");
+		});
 	});
 });

@@ -25,11 +25,15 @@
 import { type Artifact, fs as fsHandle } from "../../handle.ts";
 import type { ArtifactCollector, CollectContext, CollectResult, SnapshotContext } from "../../output-spec.ts";
 import { defineCollector } from "../../output-spec.ts";
+import { isJjWorkspace, jjSummaryToPorcelain, unquoteGitPath } from "../../vcs-probe.ts";
 import { execFileAsync, GIT_EXEC_TIMEOUT_MS } from "../exec.ts";
 
 export interface WorkspaceDiffSnapshot {
 	/** Post-stage diff compares against this set of (path, statusCode) pairs captured pre-stage. */
 	statusByPath: ReadonlyMap<string, string>;
+	/** Backend that answered at snapshot time — named in the mid-stage fatal.
+	 *  Absent on a snapshot built before this field existed. */
+	backend?: "jj" | "git";
 }
 
 export interface WorkspaceDiffCollectorOpts {
@@ -54,9 +58,9 @@ export const workspaceDiffCollector = (
 // ---------------------------------------------------------------------------
 
 async function capturePorcelainSnapshot(ctx: SnapshotContext): Promise<WorkspaceDiffSnapshot | undefined> {
-	const status = await runGitStatus(ctx.cwd);
+	const status = await runStatus(ctx.cwd);
 	if (status === undefined) return undefined;
-	return { statusByPath: parsePorcelain(status) };
+	return { statusByPath: parsePorcelain(status.text), backend: status.backend };
 }
 
 async function collectDiffArtifacts(
@@ -68,17 +72,17 @@ async function collectDiffArtifacts(
 	// degrade, not an error (see the module header).
 	if (!snapshot) return { kind: "ok", artifacts: [] };
 
-	const status = await runGitStatus(ctx.cwd);
+	const status = await runStatus(ctx.cwd);
 	if (status === undefined) {
-		// git worked at snapshot time and fails now — an environment break,
-		// not "no changes." `ok []` here would route downstream logic on
+		// The backend worked at snapshot time and fails now — an environment
+		// break, not "no changes." `ok []` here would route downstream logic on
 		// fabricated nothing-happened data.
 		return {
 			kind: "fatal",
-			message: `${ctx.skill}: git status worked at snapshot time but failed after the stage — cannot diff the workspace`,
+			message: `${ctx.skill}: ${snapshot.backend ?? "version-control"} status worked at snapshot time but failed after the stage — cannot diff the workspace`,
 		};
 	}
-	const post = parsePorcelain(status);
+	const post = parsePorcelain(status.text);
 
 	const artifacts: Artifact[] = [];
 	for (const [path, code] of post) {
@@ -91,9 +95,31 @@ async function collectDiffArtifacts(
 	return { kind: "ok", artifacts };
 }
 
+/** Working-copy status beside the backend that answered it; `undefined` when
+ *  the backend command fails, so the caller degrades exactly as before. */
+async function runStatus(cwd: string): Promise<{ backend: "jj" | "git"; text: string } | undefined> {
+	if (!isJjWorkspace(cwd, GIT_EXEC_TIMEOUT_MS)) {
+		const text = await runGitStatus(cwd);
+		return text === undefined ? undefined : { backend: "git", text };
+	}
+	try {
+		const { stdout } = await execFileAsync("jj", ["--no-pager", "diff", "--summary"], {
+			cwd,
+			encoding: "utf-8",
+			timeout: GIT_EXEC_TIMEOUT_MS,
+		});
+		return { backend: "jj", text: jjSummaryToPorcelain(stdout) };
+	} catch {
+		return undefined;
+	}
+}
+
 async function runGitStatus(cwd: string): Promise<string | undefined> {
 	try {
-		const { stdout } = await execFileAsync("git", ["status", "--porcelain"], {
+		// `--untracked-files=all`: a collapsed `dir/` entry is byte-identical on
+		// both sides of the snapshot, so the equality skip would drop every file
+		// the stage created inside that directory.
+		const { stdout } = await execFileAsync("git", ["status", "--porcelain", "--untracked-files=all"], {
 			cwd,
 			encoding: "utf-8",
 			timeout: GIT_EXEC_TIMEOUT_MS,
@@ -120,7 +146,6 @@ const PORCELAIN_PATH_OFFSET = PORCELAIN_STATUS_CODE_WIDTH + 1;
 const PORCELAIN_MIN_LINE_WIDTH = PORCELAIN_PATH_OFFSET + 1;
 const PORCELAIN_RENAME_ARROW = " -> ";
 const PORCELAIN_RENAME_ARROW_WIDTH = PORCELAIN_RENAME_ARROW.length;
-const PORCELAIN_QUOTE = '"';
 
 /**
  * Parse `git status --porcelain` output: each line is `XY <path>` where
@@ -140,11 +165,9 @@ export function parsePorcelain(out: string): Map<string, string> {
 		// Rename: `R  old -> new` — take the new name.
 		const arrow = path.indexOf(PORCELAIN_RENAME_ARROW);
 		if (arrow !== -1) path = path.slice(arrow + PORCELAIN_RENAME_ARROW_WIDTH);
-		// Strip wrapping quotes (paths git cquote-escapes).
-		if (path.startsWith(PORCELAIN_QUOTE) && path.endsWith(PORCELAIN_QUOTE)) {
-			path = path.slice(PORCELAIN_QUOTE.length, -PORCELAIN_QUOTE.length);
-		}
-		map.set(path, code);
+		// Decode git's cquote wrapping AND its octal escapes, so one spelling
+		// crosses every boundary.
+		map.set(unquoteGitPath(path), code);
 	}
 	return map;
 }

@@ -24,11 +24,11 @@ contract:
 
 # Code Review
 
-Review changes across **Quality**, **Security**, **Dependencies** lenses with optional advisor adjudication. Valid scopes: `commit` | `staged` | `working` | `--folder <path>` | `--file <paths>` | hash | `A..B` | PR branch. **Empty scope defaults to feature-branch-vs-default-branch first-parent review** (default branch auto-detected; see Step 1).
+Review changes across **Quality**, **Security**, **Dependencies** lenses with optional advisor adjudication. Valid scopes: `commit` | `staged` | `working` | `--folder <path>` | `--file <paths>` | hash | `A..B` | PR branch. **Empty scope defaults to feature-branch-vs-default-branch review** (first-parent under git, net-endpoint under jj; default branch auto-detected; see Step 1).
 
 ## Input
 
-`$ARGUMENTS` — scope: `commit` | `staged` | `working` | `--folder <path>` | `--file <paths>` | a commit hash | `A..B` range | PR branch name. Empty defaults to feature-branch-vs-default-branch (first-parent).
+`$ARGUMENTS` — scope: `commit` | `staged` | `working` | `--folder <path>` | `--file <paths>` | a commit hash | `A..B` range | PR branch name. Empty defaults to feature-branch-vs-default-branch (first-parent under git, net-endpoint under jj).
 
 ## Metadata
 
@@ -39,6 +39,41 @@ node "${SKILL_DIR}/../_shared/git-context.mjs"
 ```
 
 Scope resolution (default branch, range, ChangedFiles) is LLM-invoked at Step 1.1 via the bundled `_helpers/review-range.mjs` — it depends on `$ARGUMENTS` and on conversational clarification, which render-time substitution cannot capture.
+
+## VCS backend
+
+One decision governs every command in this skill:
+
+1. `jj root` succeeds → backend `jj`.
+2. Otherwise `git rev-parse --show-toplevel` succeeds → backend `git`.
+3. Neither → this skill's repository gate applies, unchanged.
+
+When the Metadata block prints a `vcs:` line, it carries the same decision.
+
+| Purpose | `git` | `jj` |
+|---|---|---|
+| working-copy state | `git status --short --untracked-files=all` | `jj diff --summary` — an `A` line is a new file, not untracked |
+| change against the parent | `git diff HEAD` | `jj diff --git` |
+| recent commits | `git log --oneline -n 20` | `jj log -r '::@-' --no-graph -T 'commit_id.short() ++ " " ++ description.first_line() ++ "\n"'` |
+| one commit | `git show <id>` | `jj show <id>` — a change id and a commit id both resolve |
+| one file in one commit | `git show <id>:<path>` | `jj file show -r <id> <path>` |
+| changed paths between two revisions | `git diff <a> <b> --name-only` | `jj diff --from <a> --to <b> --name-only` |
+| path-filtered history | `git log -- <path>` | `jj log -r '::@' -- <path>` |
+| parent revision | `<id>^` | `<id>-` |
+| ancestry proof | `git merge-base --is-ancestor <a> <b>` | `jj log -r '<a> & ::<b>' --no-graph -T commit_id` prints `<a>` when `<a>` is an ancestor of `<b>` |
+| undo a local edit | `git restore <path>` | `cp` the captured bytes back — never `jj restore --from @-`, which also discards pre-existing uncommitted edits |
+| never run | `git reset` | `jj abandon`, `jj op restore` |
+
+| Step | `git` | `jj` |
+|---|---|---|
+| per-commit summary | `git log "<range>" <fp_flag> --stat --reverse` | `jj diff --stat --from <base> --to <tip>` |
+| union patch | `git log "<range>" <fp_flag> --patch --reverse --no-merges -U30 > <patch_path>` | `jj diff --git -U30 --from <base> --to <tip> > <patch_path>` |
+| commit messages | `git log "<range>" --reverse --format="%H %s%n%n%b%n---"` | `jj log -r "<base>::<tip>" --no-graph -T 'commit_id.short() ++ " " ++ description ++ "\n---\n"'` |
+| working tree | `git diff -U30 > <patch_path>` | `jj diff --git -U30 > <patch_path>` |
+| whole commit | `git show <hash> -U30 > <patch_path>` | `jj show <hash> --git -U30 > <patch_path>` |
+| tree scope `<null_tree>` | `git diff --cached -U30 <null_tree> -- <paths>` | `null_tree:` prints `(n/a)`: Read each path in `---changed-files---` directly |
+| ancestor proof | `git merge-base --is-ancestor <a> <b>` | `jj log -r "<a> & ::<b>" --no-graph -T commit_id` |
+| resolution read | `git show <hash> -- <file>` | `jj file show -r <hash> <file>` |
 
 ## Flow
 
@@ -77,13 +112,14 @@ Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the
 
 2. **Confirm strategy** from the helper output. The mapping into the rest of the skill:
    - `strategy: first-parent` (`auto` / PR branch / commit list) — use `<range>` AND `<fp_flag>` (which is `--first-parent`) in the subsequent git commands. `<base>` is the parent-of-first-feature-commit (helper computes via `merge-base`), so the range already includes OLDEST's own changes — do NOT add `^` anywhere.
+   - `strategy: net-endpoint` (ANY range scope under `vcs: jj` — `auto`, a PR branch, a commit list, a single hash, `A..B`) — the file list is the NET endpoint diff, not a union of a `--first-parent` walk: jj has no `--first-parent` and no back-merge sidecars. `<fp_flag>` is `(empty)` — never pass `--first-parent` to jj. Use `<range>` only in the jj column of the command table above. `InScopeFiles = ChangedFiles`.
    - `strategy: explicit-range` (single hash / `A..B`) — use `<range>` without `<fp_flag>` (it's empty for this strategy). `<base>` is OLDEST^ (so the range includes OLDEST itself, matching the original "user-inclusive endpoint" intent).
    - `strategy: working-tree` (`commit` / `staged` / `working`) — no `<range>`; use the working-tree commands listed in the next bullet.
    - `strategy: tree` (`--folder` / `--file`, plus legacy `folder:` / `file:` aliases) — no `<range>`; review tracked files in the specified path(s) as complete entities. The helper emits `null_tree:` plus `tree_path:` (folder) or `files_list:` (file) instead. Use the tree commands listed below. Precedent-locator is **skipped** for this strategy (no creation history to compare); all other Wave-1 agents still follow their normal gates.
 
    `--first-parent` is orthogonal to `--no-merges`: the former prunes second-parent subtrees from reachability, the latter drops merge commits themselves from the log. Both flags are independently controllable below.
 
-3. **Assemble the UNION of changes** (not the net endpoint-diff — so reverted intermediate work stays visible). Save the patch to a tempfile once with generous context; do NOT re-run `git log --patch` to slice windows later. Substitute literal `<range>`, `<fp_flag>`, and `<patch_path>` values from the helper output (`<fp_flag>` is `--first-parent` or empty — omit the flag entirely when empty; `<patch_path>` is the worktree-safe diff tempfile — a literal `.git/…` path fails inside a worktree):
+3. **Assemble the UNION of changes** (not the net endpoint-diff — so reverted intermediate work stays visible). **Exception — `strategy: net-endpoint`:** jj cannot produce a union walk, so the file list IS the net endpoint diff. Review it as such, and record `scope_strategy: net-endpoint` in the artifact so the reader knows reverted intermediate work is not visible. Save the patch to a tempfile once with generous context; do NOT re-run `git log --patch` to slice windows later. Substitute literal `<range>`, `<fp_flag>`, and `<patch_path>` values from the helper output (`<fp_flag>` is `--first-parent` or empty — omit the flag entirely when empty; `<patch_path>` is the worktree-safe diff tempfile — a literal `.git/…` path fails inside a worktree):
    - `ChangedFiles` — read from the helper's `---changed-files---` block. If a `(... N more files truncated ...)` footer appears, the change set exceeded the helper's 2000-line/40 KB cap; scope the review tighter or run the patch-tempfile command below to recover the full surface from disk.
    - `git log "<range>" <fp_flag> --stat --reverse` → per-commit size summary
    - `git log "<range>" <fp_flag> --patch --reverse --no-merges -U30 > <patch_path>` → union patches with **30 lines of surrounding context per hunk** (function-level context inline)
@@ -103,6 +139,7 @@ Every Wave-2 agent prompt contains EXACTLY: (a) `Known Context:` followed by the
 4. **Derive scope + flags** (orchestrator-side, used in later steps):
    - `InScopeFiles` — used by the Step 6 pre-filter. `ChangedFiles` reflects *tree-reachability* (inflated on branches that back-merged the default branch — each post-merge first-parent commit inherits the merge's tree, so `--name-only` includes every file the merge resolved); `InScopeFiles` reflects *commits' own diffs* and is what the developer actually authored. Derivation:
      - strategy=`first-parent` (`auto` / PR branch / commit-list inputs) → `InScopeFiles = ⋃ git diff-tree --no-commit-id --name-only -r <h>` over `git log "<range>" --first-parent --no-merges --pretty=%H` (each feature commit's own file delta; back-merge sidecars drop out even when the merge is on the first-parent line). For commit-list input, iterate over the user-named hashes instead of the first-parent walk to preserve non-contiguous-list intent.
+     - strategy=`net-endpoint` (any range scope under `vcs: jj`) → `InScopeFiles = ChangedFiles` (the helper already answered the net endpoint diff; there is no per-commit walk to narrow against).
      - strategy=`explicit-range` → `InScopeFiles = ChangedFiles` (user explicitly asked for range semantics; merges in the range are part of the intent).
      - strategy=`working-tree` → `InScopeFiles = ChangedFiles` (no merge surface).
      - strategy=`tree` → `InScopeFiles = ChangedFiles` (no merge surface; all files are treated as added).
@@ -397,7 +434,7 @@ No agent dispatch. Compute inline while 4a / 4b run:
 
 **Barrier**: Step 5 MUST NOT begin until the Precedents agent has returned. Severity weighting depends on historical follow-up counts; starting reconciliation without them produces mis-weighted severities that the verification pass (Step 6) cannot correct. For `strategy: tree`, no Precedents agent was dispatched — the barrier is satisfied immediately.
 
-**Resolution integrity check** (load-bearing): when Precedents returns a commit that claims to resolve or supersede a current finding, run `git merge-base --is-ancestor <precedent-hash> <TIP>` before accepting the resolution.
+**Resolution integrity check** (load-bearing): when Precedents returns a commit that claims to resolve or supersede a current finding, run `git merge-base --is-ancestor <precedent-hash> <TIP>` (`vcs: jj`: `jj log -r "<precedent-hash> & ::<TIP>" --no-graph -T commit_id` prints the hash) before accepting the resolution.
   - Ancestor: the precedent IS in the reviewed branch; mark the finding `resolved-by: <hash>` and demote its severity to 💭 (kept for context).
   - Not ancestor: the precedent is on a different branch / not merged; treat it as **context only**. Do NOT mark the finding resolved; annotate the precedent's row in `## Precedents` third column `NOT ancestor of {TIP} (context only)`.
   - Orchestrator unable to run git (e.g., `staged` / `working` scope with no commit): skip the check and annotate `resolution: unverified`.
@@ -436,7 +473,7 @@ No agent dispatch. Compute inline while 4a / 4b run:
 
 Before writing the artifact, spawn ONE `claim-verifier` whose sole job is to ground every reconciled finding in the actual code at its cited `file:line`. This catches two classes of error the lenses cannot self-detect: (a) *confident assertions* the agent never opened a file to confirm, and (b) *rationalisations* ("intentional-by-design", "pre-existing", "not a real deadlock") that contradict what the code does. Lens agents reason from the patch; the verifier reasons from the file.
 
-**Dispatch** after Step 5's reconciled severity map is final, before Step 7 writes anything. First apply the **InScopeFiles pre-filter**: drop any finding whose cited `file` ∉ `InScopeFiles` (orchestrator-side set arithmetic, matches Step 4c's idiom). On `first-parent` strategies `InScopeFiles ⊊ ChangedFiles` is expected — this is where back-merge sidecar findings get dropped. Record the dropped count in `## Reconciliation Notes` so the omission is auditable. Then dispatch the filtered map:
+**Dispatch** after Step 5's reconciled severity map is final, before Step 7 writes anything. First apply the **InScopeFiles pre-filter**: drop any finding whose cited `file` ∉ `InScopeFiles` (orchestrator-side set arithmetic, matches Step 4c's idiom). On `first-parent` strategies `InScopeFiles ⊊ ChangedFiles` is expected — this is where back-merge sidecar findings get dropped. Under `net-endpoint` the two sets are equal, so the pre-filter drops nothing. Record the dropped count in `## Reconciliation Notes` so the omission is auditable. Then dispatch the filtered map:
 
   ```
   Verify each finding below against the actual repository state. You have Read access to the whole tree.
@@ -448,7 +485,7 @@ Before writing the artifact, spawn ONE `claim-verifier` whose sole job is to gro
   1. `grep -n` the verbatim quote in the cited file. Absent → Falsified. Present at a different line → rewrite the citation to the actual line, then continue. Present at cited line → continue.
   2. If the finding makes a claim about behavior reachable elsewhere (consumer filters, dispatch registrations, peer aggregates, upstream guards, downstream sinks), Read those referenced files too. Do NOT trust the patch-only view.
   3. If the finding claims a state is "stranded" / a predicate is "false-promise" / a precondition is "missing" — construct a concrete 2–3 line reproducer trace: "caller at A:L invokes B:L with entity in state X; guard at C:L rejects; exit path would require D which the code does not provide." If you cannot construct it, the finding is Weakened.
-  4. If the finding was marked `resolved-by: <hash>` in Step 5, Read the resolving commit's changes on the reviewed branch (via `git show <hash> -- <file>`) and confirm the resolution is actually present at TIP.
+  4. If the finding was marked `resolved-by: <hash>` in Step 5, Read the resolving commit's changes on the reviewed branch (via `git show <hash> -- <file>`, or `jj file show -r <hash> <file>` under `vcs: jj`) and confirm the resolution is actually present at TIP.
 
   Return ONE tag per finding — output format:
 
@@ -558,7 +595,7 @@ Ask follow-ups, or chain forward.
   - ALWAYS run Step 6 (verification pass) between reconciliation and artifact write. It is the only mechanism that catches lens agents asserting claims they never opened a file to confirm, and the only mechanism that validates `resolved-by` annotations against the actual branch via `git merge-base --is-ancestor`. Skipping Step 6 silently re-admits the failure mode this skill was designed to prevent.
   - PRESERVE severity emoji/naming and frontmatter keys verbatim — `artifacts-locator` / `artifacts-analyzer` grep these.
   - Bundled row-only specialists at narrativisation-prone sites: `diff-auditor` (Wave-2 Q+S), `peer-comparator` (Wave-1 PM), `claim-verifier` (Step 6). See `.rpiv/guidance/agents/architecture.md`.
-  - **Scope strategy is load-bearing at both ends**: Step 1 sets `strategy` and `FP_FLAG`; Step 6 pre-filters the reconciled severity map against `InScopeFiles` before `claim-verifier` dispatch. `--first-parent` is orthogonal to `--no-merges` / `-U30` — additive, not a replacement. Agent contracts (`claim-verifier.md:11-30` in particular) stay scope-blind by design; orchestrator owns scope.
+  - **Scope strategy is load-bearing at both ends**: Step 1 sets `strategy` and `FP_FLAG`; Step 6 pre-filters the reconciled severity map against `InScopeFiles` before `claim-verifier` dispatch. `--first-parent` is orthogonal to `--no-merges` / `-U30` — additive, not a replacement. Under `vcs: jj` the strategy is `net-endpoint` and `FP_FLAG` is empty: jj has no `--first-parent` walk, so the file list is the net endpoint diff. Agent contracts (`claim-verifier.md:11-30` in particular) stay scope-blind by design; orchestrator owns scope.
 - **Agent roles**:
   - `integration-scanner` (Wave-1) — inbound/outbound refs, auth-boundary crossings.
   - `precedent-locator` (Wave-1) — git history + `.rpiv/artifacts/`. Skipped for `strategy: tree` (no creation history to compare).

@@ -12,27 +12,27 @@
  * recompute after, and publish `{ changed }` on the `remediation` channel for
  * the `validate-fix` route to fold.
  *
- * Git-only (status --porcelain + diff HEAD + untracked content) —
- * deliberately NOT the runner's `computeWorktreeDigest`, which also hashes
- * `.rpiv/artifacts/`: remediate is contractually forbidden from writing
- * artifacts, and validate writes a new timestamped report every lap, so the
- * artifacts component would flip the verdict on churn that is not a code
- * fix. `diff HEAD` (not bare `diff`) for the same staged-content reason the
- * runner's digest documents. The third component hashes every untracked,
- * non-ignored file's content: status porcelain lists a NEW untracked path
- * but never a byte mutation inside an already-untracked file, so a repair
- * confined to files that were already untracked would read as a no-op and
- * re-enter the identical-lap loop. Untracked content under `.rpiv/` is
- * excluded from that component deterministically — a whole-prefix filter,
- * never a gitignore trust: that tree root is engine-owned pipeline
- * bookkeeping (reports, run trails, scratch), never the code under repair.
+ * Backend-blind — every component reads through the `vcs-status.ts` seam, so
+ * git and jj produce the same digest grammar — deliberately NOT the runner's
+ * `computeWorktreeDigest`, which also hashes `.rpiv/artifacts/`: remediate is
+ * contractually forbidden from writing artifacts, and validate writes a new
+ * timestamped report every lap, so the artifacts component would flip the
+ * verdict on churn that is not a code fix. The change-text component is the
+ * working copy against its base (`git diff HEAD`; jj has no index, so
+ * `jj diff --git` against `@-`). The third component hashes every new-file
+ * (`??`-class) path's content: a status line lists a NEW path but never a byte
+ * mutation inside an already-untracked file, so a repair confined to files
+ * that were already untracked would read as a no-op and re-enter the
+ * identical-lap loop. Everything under `.rpiv/` and `thoughts/` is excluded from
+ * every component by the seam's own predicate (`isBookkeepingPath`), never by a
+ * gitignore trust: those trees are engine-owned pipeline bookkeeping (reports,
+ * run trails, scratch), never the code under repair.
  *
  * Degrade posture mirrors worktree-digest.ts: an `undefined` digest on either
  * side (non-repo / git missing / timeout) reports `changed: true` — a missing
  * signal is NEVER a reason to stop the run.
  */
 
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -43,36 +43,19 @@ import {
 	opaque,
 	type SnapshotContext,
 } from "@juicesharp/rpiv-workflow/registration";
-
-/** Wall-clock ceiling per git subprocess — the digest runs synchronously at
- *  the stage seam, so a wedged git (contended index.lock) must be killed here;
- *  on expiry the throw degrades to `undefined` (proceed). */
-const GIT_DIGEST_TIMEOUT_MS = 10_000;
-
-/** Engine-owned tree root — everything under `.rpiv/` is pipeline bookkeeping
- *  (validation reports, run trails, scratch), never the code under repair.
- *  Excluded from the untracked component deterministically via this
- *  whole-prefix filter, NOT via gitignore trust: a repo's ignore file is user
- *  state the digest must never depend on. */
-const UNTRACKED_EXCLUDED_PREFIX = ".rpiv/";
+import { detectVcs, vcsDiffText, vcsStatusEntries } from "../vcs-status.ts";
 
 /**
- * Content hash over the untracked, non-ignored, non-excluded tree. `rawZ` is
- * `git ls-files --others --exclude-standard -z` output: NUL-separated
- * repo-relative forward-slash paths. Surviving paths are sorted (JS code-unit
- * sort, mirroring the artifacts walker) so enumeration order never feeds the
- * hash, and each path is hashed verbatim in git's repo-relative form — never
- * `join()`-reconstructed. An unreadable file (raced delete) hashes the stable
- * `"<unreadable>"` token; the helper never throws. An empty surviving set
- * hashes to the sha256 of nothing — a stable constant.
+ * Content hash over the given working-copy paths, sorted so enumeration order
+ * never feeds the hash. Each path is hashed verbatim in repo-relative form —
+ * never `join()`-reconstructed. An unreadable file (raced delete) hashes the
+ * stable `"<unreadable>"` token; the helper never throws. An empty surviving
+ * set hashes to the sha256 of nothing — a stable constant.
  */
-const hashUntrackedTree = (cwd: string, rawZ: string): string => {
+const hashNewFiles = (cwd: string, paths: readonly string[]): string => {
 	const hash = createHash("sha256");
-	const paths = rawZ
-		.split("\0")
-		.filter((p) => p !== "" && !p.startsWith(UNTRACKED_EXCLUDED_PREFIX))
-		.sort();
-	for (const path of paths) {
+	const kept = paths.filter((p) => p !== "").sort();
+	for (const path of kept) {
 		hash.update(path);
 		hash.update("\0");
 		try {
@@ -86,26 +69,32 @@ const hashUntrackedTree = (cwd: string, rawZ: string): string => {
 };
 
 /**
- * Git-only content fingerprint of `cwd`'s working tree. Returns `undefined`
- * on ANY failure so callers degrade to "proceed", never "stop".
+ * Content fingerprint of `cwd`'s working tree under either backend; `undefined`
+ * when no backend answers and on ANY failure, so callers degrade to "proceed",
+ * never "stop". The timeout lives in the seam (`vcs-status.ts`), which kills a
+ * wedged backend process at the stage seam; on expiry the throw degrades to
+ * `undefined` (proceed).
  */
 export const gitTreeDigest = (cwd: string): string | undefined => {
+	// One probe for the whole digest: both readers take the captured backend, so
+	// a remediate outcome costs one `detectVcs` instead of up to six.
+	const backend = detectVcs(cwd);
+	// No backend answers: there is no signal to compare. Hashing an empty status
+	// would return a stable digest and read as "unchanged", which is the opposite
+	// of the contract `remediation.test.ts` pins for a non-repo cwd.
+	if (backend === "none") return undefined;
 	try {
-		const opts = {
-			cwd,
-			encoding: "utf-8" as const,
-			stdio: ["ignore", "pipe", "ignore"] as ["ignore", "pipe", "ignore"],
-			timeout: GIT_DIGEST_TIMEOUT_MS,
-		};
-		const status = execFileSync("git", ["status", "--porcelain"], opts);
-		const diff = execFileSync("git", ["diff", "HEAD"], opts);
-		const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], opts);
+		// The seam already removes `.rpiv/` and `thoughts/` from BOTH readers, so
+		// every component below is bookkeeping-free without a local filter.
+		const entries = vcsStatusEntries(cwd, backend);
+		const status = entries.map((e) => `${e.xy} ${e.path}`).join("\n");
+		const newPaths = entries.filter((e) => e.xy === "??").map((e) => e.path);
 		return createHash("sha256")
 			.update(status)
 			.update("\0")
-			.update(diff)
+			.update(vcsDiffText(cwd, backend))
 			.update("\0")
-			.update(hashUntrackedTree(cwd, untracked))
+			.update(hashNewFiles(cwd, newPaths))
 			.digest("hex");
 	} catch {
 		return undefined;

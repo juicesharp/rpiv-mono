@@ -6,7 +6,8 @@
 //   node "${SKILL_DIR}/_helpers/review-range.mjs" "<scope-spec>"
 //
 // Accepted <scope-spec> values:
-//   auto                — empty-scope-default: feature branch vs default branch, first-parent
+//   auto                — empty-scope-default: feature branch vs default branch
+//                         (first-parent under git, net-endpoint under jj)
 //   commit              — review the most recent commit (working-tree-style, HEAD)
 //   staged              — files staged for commit (git diff --cached)
 //   working             — files with unstaged changes only (git diff)
@@ -23,8 +24,9 @@
 //
 // Output (labeled key/value lines, then `---changed-files---` block):
 //
+//   vcs:            git|jj|none
 //   default_branch: <name>|(unresolved)
-//   strategy:       first-parent|working-tree|explicit-range|tree|unrecognised
+//   strategy:       first-parent|net-endpoint|working-tree|explicit-range|tree|unrecognised
 //   oldest:         <hash>|(n/a)
 //   newest:         <hash>|(n/a)
 //   base:           <hash>|(n/a)
@@ -33,7 +35,9 @@
 //   fp_flag:        --first-parent|(empty)
 //   patch_path:     <worktree-safe path for the diff tempfile>
 //   null_tree:      <empty tree hash>   (only when strategy=tree)
-//   note:           <reason>          (only when strategy=unrecognised)
+//   note:           <reason>          (set on unrecognised scopes, and under jj
+//                                     where a column carries different semantics —
+//                                     `net-endpoint` always carries one)
 //   ---changed-files---
 //   <deduplicated file list, capped at 2000 entries OR 40 KB whichever first>
 //
@@ -55,7 +59,9 @@
 //     `note:` so the LLM can ask the user via ask_user_question rather than fail.
 
 import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { detect, read } from "../../_shared/vcs.mjs";
 
 const CHANGED_FILES_LINE_CAP = 2000;
 const CHANGED_FILES_BYTE_CAP = 40 * 1024;
@@ -94,7 +100,48 @@ const refExists = (ref) => {
 	}
 };
 
+const { backend, root } = detect();
+
+const jj = (args, fb = "") => read("jj", ["--no-pager", ...args], fb, root);
+const jjRev = (rev) => jj(["log", "-r", rev, "--no-graph", "-T", "commit_id"]);
+
+// The revision questions the resolver asks, answered by either backend. jj
+// resolves a change id AND a git commit id, and a bookmark resolves as a
+// revision, so `refExists` keeps its meaning.
+const revParse = (rev) => (backend === "jj" ? jjRev(rev) : safe(["rev-parse", rev]));
+const revExists = (rev) => (backend === "jj" ? jjRev(rev) !== "" : refExists(rev));
+const ancestorOf = (a, b) =>
+	backend === "jj" ? jj(["log", "-r", `${a} & ::${b}`, "--no-graph", "-T", "commit_id"]) !== "" : isAncestor(a, b);
+const parentOf = (rev) => (backend === "jj" ? jjRev(`${rev}-`) : safe(["rev-parse", `${rev}^`]));
+const changedBetween = (from, to) =>
+	backend === "jj"
+		? jj(["diff", "--name-only", "--from", from, "--to", to])
+		: safe(["log", `${from}..${to}`, "--name-only", "--pretty=format:"]);
+const changedOfRev = (rev) =>
+	backend === "jj"
+		? jj(["diff", "--name-only", "--from", `${rev}-`, "--to", rev])
+		: safe(["show", rev, "--name-only", "--pretty=format:"]);
+const workingChanged = (staged) =>
+	backend === "jj"
+		? // jj has no index: `staged` and `working` name the same pending change set.
+			jj(["diff", "--name-only"])
+		: safe(staged ? ["diff", "--cached", "--name-only"] : ["diff", "--name-only"]);
+const modifiedChanged = () => (backend === "jj" ? jj(["diff", "--name-only"]) : safe(["diff", "HEAD", "--name-only"]));
+const trackedUnder = (path) => (backend === "jj" ? jj(["file", "list", "--", path]) : safe(["ls-files", "--cached", "--", path]));
+const singleTracked = (p) =>
+	backend === "jj" ? jj(["file", "list", "--", p]) : safe(["ls-files", "--cached", "--error-unmatch", "--", p]);
+const emptyTree = () =>
+	backend === "jj" ? "(n/a)" : safe(["hash-object", "-t", "tree", "/dev/null"], EMPTY_TREE_HASH);
+
 const resolveDefaultBranch = () => {
+	if (backend === "jj") {
+		// jj's nearest-bookmark answer for "what am I branching off": the first
+		// bookmark name reachable from @, else the trunk() commit id itself.
+		const names = jj(["log", "-r", "heads(::@ & bookmarks())", "--no-graph", "-T", 'bookmarks ++ "\n"']);
+		const first = names.split("\n").find((line) => line.trim() !== "");
+		if (first) return first.split(/\s+/)[0];
+		return jjRev("trunk()") || "(unresolved)";
+	}
 	const head = safe(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
 	if (head) return head.replace(/^origin\//, "");
 	if (refExists("main")) return "main";
@@ -163,25 +210,34 @@ const setUnrecognised = (note) => {
 };
 
 const argv = process.argv.slice(2).join(" ");
-const scope = stripOuterQuotes(argv);
+// The scope is user text that reaches the labeled block, so it must not be able
+// to relocate the output fence or inject a labeled line: neutralise the fence
+// literal and collapse newlines before anything renders.
+const scope = stripOuterQuotes(argv)
+	.replace(/[\r\n]+/g, " ")
+	.replace(/---changed-files---/g, "---changed-files---(literal)");
 const lower = scope.toLowerCase();
 const defaultBranch = result.default_branch;
 
+// Range strategies. Under jj there is no `--first-parent` walk and no
+// back-merge sidecars: every range strategy answers the NET endpoint diff.
+// A distinct strategy value keeps the skill body from promising a union the
+// helper cannot deliver.
 const setFirstParent = (oldest, newest) => {
-	result.strategy = "first-parent";
+	result.strategy = backend === "jj" ? "net-endpoint" : "first-parent";
 	result.oldest = oldest;
 	result.newest = newest;
 	result.base = oldest;
 	result.tip = newest;
 	result.range = `${oldest}..${newest}`;
-	result.fp_flag = "--first-parent";
+	result.fp_flag = backend === "jj" ? "(empty)" : "--first-parent";
 };
 
 const setExplicitRange = (oldest, newest) => {
-	result.strategy = "explicit-range";
+	result.strategy = backend === "jj" ? "net-endpoint" : "explicit-range";
 	result.oldest = oldest;
 	result.newest = newest;
-	const parent = safe(["rev-parse", `${oldest}^`]);
+	const parent = parentOf(oldest);
 	result.base = parent || oldest;
 	result.tip = newest;
 	result.range = `${result.base}..${newest}`;
@@ -199,7 +255,7 @@ const setWorkingTree = (oldest = "(n/a)", newest = "(n/a)") => {
 };
 
 const setTree = (path) => {
-	const raw = safe(["ls-files", "--cached", "--", path]);
+	const raw = trackedUnder(path);
 	const files = dedupChangedFiles(raw);
 	if (files.length === 0) {
 		setUnrecognised(`folder scope has no tracked files: ${path}`);
@@ -213,7 +269,7 @@ const setTree = (path) => {
 	result.range = "(n/a)";
 	result.fp_flag = "(empty)";
 	result.tree_path = path;
-	result.null_tree = safe(["hash-object", "-t", "tree", "/dev/null"], EMPTY_TREE_HASH);
+	result.null_tree = emptyTree();
 	// Enumerate tracked files only — git ls-files --cached respects .gitignore
 	// and excludes untracked files. The orchestrator diffs the INDEX against
 	// the repository's empty-tree object (git diff --cached <null_tree>), so
@@ -233,7 +289,7 @@ const setFiles = (paths) => {
 	const missing = [];
 	const notSingleFiles = [];
 	for (const p of pathList) {
-		const trackedPath = safe(["ls-files", "--cached", "--error-unmatch", "--", p]);
+		const trackedPath = singleTracked(p);
 		const matches = dedupChangedFiles(trackedPath);
 		if (matches.length === 1) {
 			tracked.push(matches[0]);
@@ -262,7 +318,7 @@ const setFiles = (paths) => {
 	result.tip = "(n/a)";
 	result.range = "(n/a)";
 	result.fp_flag = "(empty)";
-	result.null_tree = safe(["hash-object", "-t", "tree", "/dev/null"], EMPTY_TREE_HASH);
+	result.null_tree = emptyTree();
 	result.files_list = tracked.join(",");
 	result.changedFiles = formatChangedFiles(tracked);
 };
@@ -320,39 +376,59 @@ const isFilesScope = (s) => {
 
 const isHexHash = (s) => /^[0-9a-f]{4,40}$/i.test(s);
 
+// The `commit` scope's endpoints go through the backend dispatch too: under jj
+// `@`'s commit id is the endpoint, not git's HEAD (which a colocated repo also
+// answers but which may disagree with jj's snapshot).
+const headOf = () => (backend === "jj" ? jjRev("@") : safe(["rev-parse", "HEAD"]));
+
 if (isFolderScope(scope)) {
 	// folder strategy already set — skip all other branches.
 } else if (isFilesScope(scope)) {
 	// file strategy already set — skip all other branches.
-} else if (defaultBranch === "(unresolved)" && (lower === "" || lower === "auto")) {
-	result.strategy = "unrecognised";
-	result.note = "default branch unresolved — pass an explicit scope or run `git remote set-head origin -a`";
 } else if (lower === "" || lower === "auto") {
-	const oldest = safe(["merge-base", defaultBranch, "HEAD"]);
-	if (oldest) setFirstParent(oldest, safe(["rev-parse", "HEAD"]));
-	else result.note = `merge-base ${defaultBranch}..HEAD failed`;
+	if (backend === "jj") {
+		// trunk() is the configured trunk (falling back to main/master), and it is
+		// the only stable answer for "what am I branching off" — jj has no
+		// `refs/remotes/origin/HEAD`.
+		const base = jjRev("trunk()");
+		const tip = jjRev("@");
+		if (base && tip) setFirstParent(base, tip);
+		else result.note = "jj trunk() or @ did not resolve — pass an explicit scope";
+	} else if (defaultBranch === "(unresolved)") {
+		result.strategy = "unrecognised";
+		result.note = "default branch unresolved — pass an explicit scope or run `git remote set-head origin -a`";
+	} else {
+		const oldest = safe(["merge-base", defaultBranch, "HEAD"]);
+		if (oldest) setFirstParent(oldest, safe(["rev-parse", "HEAD"]));
+		else result.note = `merge-base ${defaultBranch}..HEAD failed`;
+	}
 } else if (lower === "commit") {
-	setWorkingTree(safe(["rev-parse", "HEAD"]), safe(["rev-parse", "HEAD"]));
+	setWorkingTree(headOf(), headOf());
 } else if (lower === "staged" || lower === "working" || lower === "modified") {
 	setWorkingTree();
 } else if (scope.includes("..") && !scope.includes("...")) {
 	const [a, b] = scope.split("..");
-	if (refExists(a) && refExists(b)) {
-		const aHash = safe(["rev-parse", a]);
-		const bHash = safe(["rev-parse", b]);
-		if (isAncestor(aHash, bHash)) setExplicitRange(aHash, bHash);
-		else if (isAncestor(bHash, aHash)) setExplicitRange(bHash, aHash);
+	if (revExists(a) && revExists(b)) {
+		const aHash = revParse(a);
+		const bHash = revParse(b);
+		if (ancestorOf(aHash, bHash)) setExplicitRange(aHash, bHash);
+		else if (ancestorOf(bHash, aHash)) setExplicitRange(bHash, aHash);
 		else result.note = `neither ${a} nor ${b} is an ancestor of the other`;
 	} else {
 		result.note = `range endpoint(s) do not resolve: ${a}..${b}`;
 	}
 } else if (/[,\s]/.test(scope)) {
 	const hashes = scope.split(/[,\s]+/).filter(Boolean);
-	const resolved = hashes.map((h) => safe(["rev-parse", h])).filter(Boolean);
+	const resolved = hashes.map((h) => revParse(h)).filter(Boolean);
 	if (resolved.length < 2) {
 		result.note = `commit list under-specified (need ≥2 valid hashes; got ${resolved.length})`;
 	} else {
-		const topo = safe(["rev-list", "--topo-order", ...resolved]).split("\n");
+		// Under jj there is no `rev-list --topo-order`: `jj log` orders a revset
+		// union topologically newest-first, which is the ordering the git walk gives.
+		const topo =
+			backend === "jj"
+				? jj(["log", "-r", resolved.join(" | "), "--no-graph", "-T", "commit_id"]).split("\n")
+				: safe(["rev-list", "--topo-order", ...resolved]).split("\n");
 		const present = new Set(resolved);
 		const ordered = topo.filter((h) => present.has(h));
 		if (ordered.length < 2) {
@@ -361,41 +437,63 @@ if (isFolderScope(scope)) {
 			setFirstParent(ordered.at(-1), ordered[0]);
 		}
 	}
-} else if (isHexHash(scope) && refExists(scope)) {
-	const hash = safe(["rev-parse", scope]);
+} else if (isHexHash(scope) && revExists(scope)) {
+	const hash = revParse(scope);
 	setExplicitRange(hash, hash);
-} else if (refExists(scope)) {
-	const oldest = safe(["merge-base", defaultBranch, "HEAD"]);
-	if (oldest) setFirstParent(oldest, safe(["rev-parse", "HEAD"]));
-	else result.note = `merge-base ${defaultBranch}..HEAD failed for branch ${scope}`;
+} else if (revExists(scope)) {
+	if (backend === "jj") {
+		// Under jj a bookmark name is a revision, so the branch scope resolves —
+		// and trunk() replaces merge-base as the "branch-off" point.
+		const base = jjRev("trunk()");
+		const tip = jjRev("@");
+		if (base && tip) setFirstParent(base, tip);
+		else result.note = `jj trunk() or @ did not resolve for branch ${scope}`;
+	} else {
+		const oldest = safe(["merge-base", defaultBranch, "HEAD"]);
+		if (oldest) setFirstParent(oldest, safe(["rev-parse", "HEAD"]));
+		else result.note = `merge-base ${defaultBranch}..HEAD failed for branch ${scope}`;
+	}
 } else {
 	result.note = `scope spec not recognised: ${scope}`;
 }
 
-// ChangedFiles per strategy.
+// ChangedFiles per strategy. Under jj the range strategies answer the NET
+// endpoint diff (`diff --from <base> --to <tip>`), not the union over a
+// first-parent walk — jj has no `--first-parent` and no back-merge sidecars.
 if (result.strategy === "first-parent") {
-	const raw = safe(["log", result.range, "--first-parent", "--name-only", "--pretty=format:"]);
+	const raw =
+		backend === "jj"
+			? changedBetween(result.base, result.tip)
+			: safe(["log", result.range, "--first-parent", "--name-only", "--pretty=format:"]);
 	result.changedFiles = formatChangedFiles(dedupChangedFiles(raw));
+} else if (result.strategy === "net-endpoint") {
+	// jj has no `--first-parent` walk and no back-merge sidecars. Say so without
+	// naming the output fence itself: consumers split on that literal line.
+	result.changedFiles = formatChangedFiles(dedupChangedFiles(changedBetween(result.base, result.tip)));
+	result.note = "jj: the file list is the net endpoint diff, not a union of a --first-parent walk";
 } else if (result.strategy === "explicit-range") {
-	const raw = safe(["log", result.range, "--name-only", "--pretty=format:"]);
+	const raw = changedBetween(result.base, result.tip);
 	result.changedFiles = formatChangedFiles(dedupChangedFiles(raw));
 } else if (result.strategy === "working-tree") {
 	if (lower === "commit") {
-		const raw = safe(["show", "HEAD", "--name-only", "--pretty=format:"]);
+		const raw = backend === "jj" ? changedOfRev("@") : safe(["show", "HEAD", "--name-only", "--pretty=format:"]);
 		result.changedFiles = formatChangedFiles(dedupChangedFiles(raw));
 	} else if (lower === "staged") {
-		const raw = safe(["diff", "--cached", "--name-only"]);
+		if (backend === "jj") {
+			result.note = "jj has no index — 'staged' reviews the whole working-copy change set";
+		}
+		const raw = workingChanged(true);
 		result.changedFiles = formatChangedFiles(dedupChangedFiles(raw));
 	} else if (lower === "modified") {
 		// modified: every tracked file that differs from HEAD (staged + unstaged,
 		// no untracked). Matches `git diff HEAD` semantics — what would be
 		// committed by `git add -u && git commit`.
-		const raw = safe(["diff", "HEAD", "--name-only"]);
+		const raw = modifiedChanged();
 		result.changedFiles = formatChangedFiles(dedupChangedFiles(raw));
 	} else {
 		// working: unstaged only (matches git's "working tree" definition and
 		// the skill's `git diff -U30` patch command — both exclude staged).
-		const raw = safe(["diff", "--name-only"]);
+		const raw = workingChanged(false);
 		result.changedFiles = formatChangedFiles(dedupChangedFiles(raw));
 	}
 } else if (result.strategy === "tree") {
@@ -407,12 +505,16 @@ if (result.strategy === "first-parent") {
 // `rev-parse --git-path` resolves to the real per-worktree gitdir; in a plain
 // checkout it returns `.git/<name>` unchanged. `rev-parse` returns the path
 // relative to CWD — resolve to absolute so the orchestrator and every subagent
-// hit the same file regardless of the directory they run from.
-const patchPath = resolve(
-	safe(["rev-parse", "--git-path", "code-review-patch.diff"], ".git/code-review-patch.diff"),
-);
+// hit the same file regardless of the directory they run from. A jj workspace
+// keeps no `.git` above it, so `rev-parse --git-path` fails there and the
+// tempfile lands in the system tmpdir instead.
+const patchPath =
+	backend === "jj"
+		? resolve(tmpdir(), `rpiv-code-review-${process.pid}.patch`)
+		: resolve(safe(["rev-parse", "--git-path", "code-review-patch.diff"], ".git/code-review-patch.diff"));
 
 const lines = [
+	`vcs:            ${backend}`,
 	`default_branch: ${result.default_branch}`,
 	`strategy:       ${result.strategy}`,
 	`oldest:         ${result.oldest}`,
@@ -432,7 +534,7 @@ if (result.strategy === "tree") {
 		lines.push(`files_list:     ${result.files_list}`);
 	}
 }
-if (result.strategy === "unrecognised" && result.note) {
+if (result.note) {
 	lines.push(`note:           ${result.note}`);
 }
 lines.push("---changed-files---");

@@ -89,6 +89,7 @@
 		"validate-workflow.ts",
 		"validate/",
 		"worktree-digest.ts",
+		"vcs-probe.ts",
 		"docs-protocol.ts",
 		"docs/",
 		"!docs/*.png",

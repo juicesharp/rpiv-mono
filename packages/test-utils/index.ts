@@ -9,3 +9,4 @@ export * from "./session.ts";
 export * from "./spawn.ts";
 export * from "./stdout.ts";
 export * from "./theme.ts";
+export * from "./vcs.ts";

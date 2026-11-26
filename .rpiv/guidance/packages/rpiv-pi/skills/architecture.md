@@ -37,7 +37,7 @@ _shared/                          — Cross-skill Node helpers (now, git-changes
 name: my-skill            # kebab-case; matches folder name; maps to /skill:my-skill
 description: "What it does. Use when [trigger]."
 argument-hint: "[what the user passes]"
-allowed-tools: Bash(git *), Read, Glob, Grep   # restricts the tool set (may list Agent); omit to inherit everything
+allowed-tools: Bash(git *), Bash(jj *), Read, Glob, Grep   # restricts the tool set (may list Agent); omit to inherit everything
 shell-timeout: 10         # seconds, for the body's shell blocks (rpiv-args; default 120s, 0 disables)
 disable-model-invocation: true   # the norm for pipeline-stage/fanout skills; utility skills omit it
 contract:                 # every skill declares one; produces/consumes drive routing + stage-compat validation
@@ -46,7 +46,7 @@ contract:                 # every skill declares one; produces/consumes drive ro
 ---
 ```
 
-`allowed-tools` is LLM-facing prompt context — Pi does not parse the field, but the agent reads its own declared allowlist and follows it by convention. **Skills that need the `Agent` tool either list `Agent` explicitly** (`annotate-guidance`, `annotate-inline`) **or omit the field entirely** to inherit the full tool surface (`code-review`, `frontend-design`).
+`allowed-tools` is LLM-facing prompt context — Pi does not parse the field, but the agent reads its own declared allowlist and follows it by convention. A skill that grants `git` also grants `jj` (`Bash(jj *)`), because the backend is decided at run time and the skill body carries both command columns. **Skills that need the `Agent` tool either list `Agent` explicitly** (`annotate-guidance`, `annotate-inline`) **or omit the field entirely** to inherit the full tool surface (`code-review`, `frontend-design`).
 
 ## Agent Dispatch Convention
 

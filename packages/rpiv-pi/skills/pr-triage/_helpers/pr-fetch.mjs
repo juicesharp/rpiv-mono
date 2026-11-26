@@ -83,6 +83,12 @@ const safeGit = (args, fb = "") => {
 	}
 };
 
+// A jj workspace keeps no `.git` above it, so `rev-parse --git-path` fails
+// there; `tmpdir()` is the only location a jj workspace and a git worktree both
+// allow. Derived paths stay worktree-safe because `rev-parse` answers the real
+// per-worktree gitdir when it exists.
+const worktreeTempPath = (name) => resolve(safeGit(["rev-parse", "--git-path", name], "") || join(tmpdir(), name));
+
 const stripOuterQuotes = (s) =>
 	s
 		.replace(/^['"]/, "")
@@ -279,8 +285,7 @@ if (diff.length > DIFF_BYTE_CAP) {
 
 // ── 6. write the context doc to a worktree-safe tempfile ────────────────────
 const docName = `pr-triage-${result.pr_number}-context.md`;
-const gitPath = safeGit(["rev-parse", "--git-path", docName], "");
-const contextPath = resolve(gitPath || join(tmpdir(), docName));
+const contextPath = worktreeTempPath(docName);
 
 const fmtComments = (arr, label) =>
 	Array.isArray(arr) && arr.length
@@ -343,8 +348,7 @@ try {
 // the input its contract expects. Same worktree-safe path resolution.
 if (diff) {
 	const patchName = `pr-triage-${result.pr_number}.diff`;
-	const patchGitPath = safeGit(["rev-parse", "--git-path", patchName], "");
-	const patchPath = resolve(patchGitPath || join(tmpdir(), patchName));
+	const patchPath = worktreeTempPath(patchName);
 	try {
 		writeFileSync(patchPath, diff);
 		result.patch_path = patchPath;

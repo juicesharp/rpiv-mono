@@ -29,6 +29,16 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
+      # Ten suites are gated on `describe.runIf(hasJj())`; without jj they skip,
+      # which is exactly where parser drift would go unnoticed. Pin the version
+      # so a jj release cannot change the fixtures' output shape under us.
+      - name: Install jj
+        run: |
+          curl -fsSL -o /tmp/jj.tar.gz \
+            https://github.com/jj-vcs/jj/releases/download/v0.47.1/jj-v0.47.1-x86_64-unknown-linux-musl.tar.gz
+          sudo tar -xzf /tmp/jj.tar.gz -C /usr/local/bin ./jj
+          jj --version
+
       - run: npm ci
 
       - run: npm run check:decision-codes

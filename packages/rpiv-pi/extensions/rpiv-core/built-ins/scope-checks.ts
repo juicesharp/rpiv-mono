@@ -9,7 +9,7 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { handleToString, type Output, type RunView, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
-import { gitDirtyEntries, goalBaselinePath, readGoalBaseline, scopeExcess } from "./goal-baseline.ts";
+import { goalBaselinePath, readGoalBaseline, scopeExcess, vcsDirtyEntries } from "./goal-baseline.ts";
 import { phaseFiles, planPhaseRecords, withTestTwins } from "./plan-phases.ts";
 import {
 	containedPath,
@@ -224,8 +224,8 @@ const validateReportAcceptance = (state: RunView): { declaredBy: "validate-repor
  * basename-keyed verdict path, which the `who`-attributed helper collapses. The
  * baseline is the run-start snapshot on the `goal` channel (`goalBaselinePath`,
  * the same reader `VALIDATE_GOAL_PROMPT` and `COMMIT_BASELINE_PROMPT` use); the
- * dirty set is `git status --porcelain` (non-repo / git-missing ⇒ empty dirty ⇒
- * pass — the lane degrades to unguarded rather than failing a non-repo run).
+ * dirty set is `vcsDirtyEntries` (git or jj; no backend ⇒ empty dirty ⇒ pass —
+ * the lane degrades to unguarded rather than failing a non-repo run).
  * Emits one `{ dimension: "scope" }` verdict, basename-keyed off the plan ⇒
  * idempotent across the build loop.
  *
@@ -269,7 +269,7 @@ const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 	// Run-start baseline (goal channel, role "baseline") + current dirty set —
 	// both best-effort (absent / non-repo ⇒ `[]`); see the two helpers' docs.
 	const baseline = readGoalBaseline(goalBaselinePath(state), cwd);
-	const entries = gitDirtyEntries(cwd);
+	const entries = vcsDirtyEntries(cwd);
 
 	// Validate-report acceptance (fail-closed): on the validate-fix re-entry
 	// the report's blocker-named paths join the declared set; refused ⇒
@@ -318,7 +318,7 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 	// Run-start baseline (goal channel, role "baseline") + current dirty set —
 	// both best-effort (absent / non-repo ⇒ `[]`); see the two helpers' docs.
 	const baseline = readGoalBaseline(goalBaselinePath(state), cwd);
-	const entries = gitDirtyEntries(cwd);
+	const entries = vcsDirtyEntries(cwd);
 
 	// Shared core: subtract the run's bookkeeping dirs (`.rpiv/`,
 	// `thoughts/`) and the run-start baseline; empty-`declared` ⇒ `[]` (degradation
@@ -335,7 +335,7 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 };
 
 /** Bookkeeping home for quarantined excess — under `.rpiv/`, so already exempt
- *  from the floor (`SCOPE_BOOKKEEPING_DIRS`) and outside every plan's write-set. */
+ *  from the floor (`isBookkeepingPath`) and outside every plan's write-set. */
 const QUARANTINE_DIR = ".rpiv/tmp/scope-quarantine";
 
 /** One quarantine move record: the path the floor flagged and where it went. */
@@ -397,7 +397,7 @@ const scopeQuarantine = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> =>
 	// Fresh status read — move ONLY what is untracked RIGHT NOW. A path that got
 	// tracked/settled since the check is never touched (the re-check re-judges it).
 	const untracked = new Set(
-		gitDirtyEntries(cwd)
+		vcsDirtyEntries(cwd)
 			.filter((e) => e.xy === "??")
 			.map((e) => e.path),
 	);

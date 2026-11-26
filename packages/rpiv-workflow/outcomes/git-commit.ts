@@ -67,7 +67,12 @@ export type GitCommitOutput = Output<"git-commit", GitCommitData>;
 
 /** Snapshot captured before the stage runs. */
 export interface GitHeadSnapshot {
+	/** `HEAD` under git, `@-` under jj. */
 	baselineSha: string;
+	/** Absent on a pre-jj snapshot — every existing consumer keeps reading `baselineSha`. */
+	backend?: "jj" | "git";
+	/** jj only: `@`'s description at snapshot time. */
+	baselineDescription?: string;
 }
 
 /**
@@ -90,6 +95,9 @@ export interface GitCommitArtifactMeta {
 	 * (pre-`commits`) meta still passes `isGitCommitMeta`; empty/absent on a no-op.
 	 */
 	commits?: readonly GitCommitRecord[];
+	/** Backend that answered the interrogation. Optional so a meta written
+	 *  before this change still parses. */
+	backend?: "jj" | "git";
 }
 
 /** Run a git command from `cwd`, returning trimmed stdout. */
@@ -100,6 +108,36 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 		timeout: GIT_EXEC_TIMEOUT_MS,
 	});
 	return stdout.trim();
+}
+
+/** Run a jj command from `cwd`, returning trimmed stdout. */
+async function jjCmd(cwd: string, ...args: string[]): Promise<string> {
+	const { stdout } = await execFileAsync("jj", ["--no-pager", ...args], {
+		cwd,
+		encoding: "utf-8",
+		timeout: GIT_EXEC_TIMEOUT_MS,
+	});
+	return stdout.trim();
+}
+
+/** `{ ok, out }` — a failed read is not an empty one. */
+async function jjRead(cwd: string, ...args: string[]): Promise<{ ok: boolean; out: string }> {
+	try {
+		return { ok: true, out: await jjCmd(cwd, ...args) };
+	} catch {
+		return { ok: false, out: "" };
+	}
+}
+
+/** The working-copy boundary a stage's commit lands on. `parentSha` is `@-`
+ *  (what `jj new` leaves behind), `headDescription` the first line of `@`'s
+ *  description (what `jj describe` sets when no `jj new` follows). */
+async function jjSnapshot(cwd: string): Promise<GitHeadSnapshot | undefined> {
+	const [parentSha, headDescription] = await Promise.all([
+		jjCmd(cwd, "log", "-r", "@-", "--no-graph", "-T", "commit_id"),
+		jjCmd(cwd, "log", "-r", "@", "--no-graph", "-T", "description.first_line()"),
+	]);
+	return parentSha ? { baselineSha: parentSha, backend: "jj", baselineDescription: headDescription } : undefined;
 }
 
 /**
@@ -113,6 +151,9 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
  */
 export async function gitHeadSnapshot(ctx: SnapshotContext): Promise<GitHeadSnapshot | undefined> {
 	try {
+		// jj wins over git in a colocated repository — a jj workspace keeps its
+		// working copy in `.jj` and may have no usable git HEAD above it at all.
+		if (await jjCmd(ctx.cwd, "root").catch(() => "")) return await jjSnapshot(ctx.cwd);
 		const sha = await git(ctx.cwd, "rev-parse", "HEAD");
 		return sha ? { baselineSha: sha } : undefined;
 	} catch {
@@ -139,6 +180,7 @@ export const gitCommitCollector: ArtifactCollector<GitHeadSnapshot | undefined> 
 			// Deliberate degrade: the stage ran outside a (working) git repo.
 			return ok(noOpMeta("", "", { baselineMissing: true }));
 		}
+		if (ctx.snapshot?.backend === "jj") return collectJj(ctx, baselineSha);
 		let headSha: string;
 		try {
 			headSha = await git(ctx.cwd, "rev-parse", "HEAD");
@@ -174,6 +216,60 @@ const fatal = (skill: string, reason: string): { kind: "fatal"; message: string 
 	message: `${skill}: ${reason}`,
 });
 
+/**
+ * jj arm of the collector. jj snapshots the working copy on every command, so
+ * `@` moves on every edit and cannot signal a commit; the landed commit is
+ * `@-` when the parent moved, otherwise a newly described `@`.
+ */
+async function collectJj(
+	ctx: CollectContext<GitHeadSnapshot | undefined>,
+	baselineSha: string,
+): Promise<{ kind: "ok"; artifacts: readonly Artifact[] } | { kind: "fatal"; message: string }> {
+	const parentSha = await jjCmd(ctx.cwd, "log", "-r", "@-", "--no-graph", "-T", "commit_id").catch(() => "");
+	if (!parentSha) {
+		return fatal(ctx.skill, "jj log -r @- failed after the stage");
+	}
+	let headSha = parentSha;
+	if (parentSha === baselineSha) {
+		// `jj describe` without `jj new` lands the commit in `@` itself.
+		const [descRead, idRead] = await Promise.all([
+			jjRead(ctx.cwd, "log", "-r", "@", "--no-graph", "-T", "description.first_line()"),
+			jjRead(ctx.cwd, "log", "-r", "@", "--no-graph", "-T", "commit_id"),
+		]);
+		// The module header reserves this class for `fatal`: a swallowed read is
+		// indistinguishable from "no description", and `gate` must never route on
+		// invented data.
+		if (!descRead.ok || !idRead.ok) {
+			return fatal(ctx.skill, "jj log -r @ failed after the stage");
+		}
+		if (!descRead.out || descRead.out === (ctx.snapshot?.baselineDescription ?? "")) {
+			return ok(noOpMeta(baselineSha, parentSha));
+		}
+		headSha = idRead.out;
+	}
+	try {
+		const [subject, filesChanged, commits] = await Promise.all([
+			jjCmd(ctx.cwd, "log", "-r", headSha, "--no-graph", "-T", "description.first_line()"),
+			countJjFilesChanged(ctx.cwd, headSha),
+			listJjCommits(ctx.cwd, baselineSha, headSha),
+		]);
+		return ok({
+			baselineSha,
+			headSha,
+			baselineMissing: false,
+			noOp: false,
+			subject,
+			filesChanged,
+			commits,
+			backend: "jj",
+		});
+	} catch (e) {
+		// A commit LANDED but its interrogation failed — fabricating noOp
+		// would route `gate` on invented data; halt with the real cause.
+		return fatal(ctx.skill, `commit ${headSha} landed but interrogating it failed: ${describeError(e)}`);
+	}
+}
+
 const noOpMeta = (
 	baselineSha: string,
 	headSha: string,
@@ -188,6 +284,43 @@ const noOpMeta = (
 });
 
 const describeError = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Read the SUMMARY line, not the first regex hit. `jj diff --stat` prints
+ *  per-file lines BEFORE the summary, and jj left-aligns the path column, so a
+ *  file named `2 files changed.txt` produces a per-file line that starts with
+ *  a digit — anchoring with `^`/`m` alone still matches it. */
+async function countJjFilesChanged(cwd: string, headSha: string): Promise<number> {
+	const stat = await jjCmd(cwd, "diff", "--stat", "--from", `${headSha}-`, "--to", headSha);
+	const summary =
+		stat
+			.split("\n")
+			.filter((line) => line.trim() !== "")
+			.at(-1) ?? "";
+	const match = summary.match(/^(\d+) files? changed/);
+	return match ? parseInt(match[1]!, 10) : 0;
+}
+
+/** Commits between the snapshot and the landed commit, oldest-first. jj
+ *  templates have no `\x1f` escape, so the id and the subject split on the
+ *  first space (a commit id contains none). */
+async function listJjCommits(cwd: string, baselineSha: string, headSha: string): Promise<GitCommitRecord[]> {
+	const raw = await jjCmd(
+		cwd,
+		"log",
+		"-r",
+		`${baselineSha}::${headSha} ~ ::${baselineSha}`,
+		"--no-graph",
+		"--reversed",
+		"-T",
+		'commit_id.short() ++ " " ++ description.first_line() ++ "\n"',
+	);
+	if (!raw) return [];
+	return raw.split("\n").flatMap((line) => {
+		const gap = line.indexOf(" ");
+		const sha = gap === -1 ? line : line.slice(0, gap);
+		return sha ? [{ sha, subject: gap === -1 ? "" : line.slice(gap + 1) }] : [];
+	});
+}
 
 /** Parse `git diff --shortstat` output for the "N files changed" count. */
 async function countFilesChanged(cwd: string, baselineSha: string, headSha: string): Promise<number> {
