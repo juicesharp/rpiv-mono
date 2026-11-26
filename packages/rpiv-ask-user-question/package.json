@@ -1,6 +1,6 @@
 {
 	"name": "@juicesharp/rpiv-ask-user-question",
-	"version": "2.15.0",
+	"version": "2.16.0",
 	"description": "Pi extension. A structured questionnaire the model can put to you when it would otherwise guess, with typed options instead of free-form replies.",
 	"keywords": [
 		"pi-package",
@@ -102,6 +102,6 @@
 		}
 	},
 	"dependencies": {
-		"@juicesharp/rpiv-config": "^2.15.0"
+		"@juicesharp/rpiv-config": "^2.16.0"
 	}
 }
