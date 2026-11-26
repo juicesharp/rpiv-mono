@@ -133,8 +133,9 @@ const CreateTaskInputSchema = Type.Object({
 
 export const TodoParamsSchema = Type.Object({
 	action: StringEnum(["create", "update", "list", "get", "delete", "clear"] as const, {
-		description:
-			"Required in every call — the operation to perform: create (one task by subject, or several with tasks[]), update (change an existing task by id), list, get (one task by id), delete (tombstone by id), clear (reset all).",
+		// The six actions are enumerated in the tool description, and the enum pins the
+		// values; this field only has to say that a call without it is rejected (#264).
+		description: "Required in every call — the operation to perform.",
 	}),
 	subject: Type.Optional(
 		Type.String({
@@ -149,8 +150,7 @@ export const TodoParamsSchema = Type.Object({
 	),
 	status: Type.Optional(
 		StringEnum(["pending", "in_progress", "completed", "deleted"] as const, {
-			description:
-				"Set this task's status (update): one of pending, in_progress, completed, deleted. When action is list, filters returned tasks by this status.",
+			description: "Set this task's status (update). When action is list, filters returned tasks by this status.",
 		}),
 	),
 	blockedBy: Type.Optional(
@@ -186,8 +186,9 @@ export const TodoParamsSchema = Type.Object({
 	),
 	tasks: Type.Optional(
 		Type.Array(CreateTaskInputSchema, {
+			// The sibling-dependency rule is on the item's `blockedBy`, the field it constrains.
 			description:
-				"Batch create: independent tasks in one call, one-of with subject. The whole list is validated then committed together. Items cannot blockedBy each other; create the prerequisite first, then the dependent with blockedBy.",
+				"Batch create: independent tasks in one call, one-of with subject. The whole list is validated then committed together.",
 		}),
 	),
 });

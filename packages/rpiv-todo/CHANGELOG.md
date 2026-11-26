@@ -19,6 +19,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - **The `action` parameter now has a schema description.** It was the only `todo` parameter without one. The description says that every call needs it and what each action does, so a model is less likely to send the task fields alone on its first call and be rejected. Thanks @JohannesBertens ([#320](https://github.com/juicesharp/rpiv-mono/pull/320)).
+- **The tool declaration is 404 bytes smaller.** Four sentences were stated twice: the six-action list (already in `description` and the `action` enum), the four status values (already the `status` enum), the `tasks[]` sibling-`blockedBy` rule (already on `tasks[].blockedBy`), and a third, threshold-free "when to use this tool" sentence competing with `promptSnippet` and guideline 1. Each rule now lives on the one channel that enforces or introduces it; nothing about a call, its validation or its result changed. The compact `{name, description, parameters}` declaration drops from 3240 to 2836 bytes, and `guidance.*` overrides behave exactly as before ([#374](https://github.com/juicesharp/rpiv-mono/issues/374)).
 
 ## [2.15.0] - 2026-10-24
 

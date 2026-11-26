@@ -2,7 +2,14 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { createMockCtx, createMockPi, makeTheme } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { __resetState, registerTodoTool, setActiveRenderSession, type TaskDetails, TOOL_NAME } from "./todo.ts";
+import {
+	__resetState,
+	DEFAULT_PROMPT_GUIDELINES,
+	registerTodoTool,
+	setActiveRenderSession,
+	type TaskDetails,
+	TOOL_NAME,
+} from "./todo.ts";
 import { STATE_ENTRY_TYPE } from "./tool/types.ts";
 
 const theme = makeTheme() as unknown as Theme;
@@ -302,5 +309,48 @@ describe("registerTodoTool — renderResult", () => {
 		expect(text).toContain('Validation failed for tool "todo":');
 		expect(text).not.toContain("must be present");
 		expect(text).not.toContain("✓");
+	});
+});
+
+// Pi sends `description`, the parameter schema and `promptGuidelines` on every
+// request. Restating one rule across two of those channels costs bytes in every
+// request and lets the copies drift into conflicting wording, so each rule below
+// lives on the single channel that enforces or introduces it.
+describe("registerTodoTool — the declaration states each rule once", () => {
+	it("keeps the six-action list in the description, not on `action`", () => {
+		const { tool } = setup();
+		const action = (tool.parameters as { properties: { action: { description?: string } } }).properties.action;
+		expect(action.description).toMatch(/^Required in every call/);
+		expect(action.description).not.toContain("create (");
+		expect(tool.description).toContain("create (new task");
+	});
+
+	it("keeps the status values in the enum, not in the status description", () => {
+		const { tool } = setup();
+		const status = (tool.parameters as { properties: { status: { description?: string } } }).properties.status;
+		expect(status.description).toMatch(/^Set this task's status/);
+		for (const value of ["pending", "in_progress", "completed", "deleted"]) {
+			expect(status.description).not.toContain(value);
+		}
+	});
+
+	it("keeps the tasks[] sibling rule on the item's blockedBy, not on tasks[]", () => {
+		const { tool } = setup();
+		const tasks = (
+			tool.parameters as {
+				properties: {
+					tasks: { description?: string; items: { properties: { blockedBy: { description?: string } } } };
+				};
+			}
+		).properties.tasks;
+		expect(tasks.items.properties.blockedBy.description).toContain("Cannot name another item in this same batch");
+		expect(tasks.description).not.toContain("blockedBy each other");
+	});
+
+	it("leaves the when-to-use trigger to the snippet and guidelines", () => {
+		const { tool } = setup();
+		expect(tool.description).not.toContain("research, design, and implementation");
+		expect(tool.promptSnippet).toContain("task list");
+		expect(DEFAULT_PROMPT_GUIDELINES.join(" ")).toContain("3+ steps");
 	});
 });
