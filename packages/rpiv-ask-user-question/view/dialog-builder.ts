@@ -165,7 +165,7 @@ export class DialogView implements StatefulView<DialogProps> {
 		);
 
 		// Build container WITHOUT residual spacer — spacer handled below based on overflow.
-		const natural = this.buildContainerFromStrategy(strategy, headingRowCache).render(width);
+		const natural = [...this.buildContainerFromStrategy(strategy, headingRowCache).render(width)];
 
 		// Residual spacer: equalizes total height across tabs (only needed when no overflow).
 		// Resting mid rows (a question's saved-note row, #197) come out of the spacer's slack,

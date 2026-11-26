@@ -1,8 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { Component, Editor } from "@earendil-works/pi-tui";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { type Component, Container, type Editor, visibleWidth } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	makeMultiSelectPropsFromState as msoPropsFromState,
 	makeSubmitPickerPropsFromState as submitPickerPropsFromState,
@@ -140,6 +139,24 @@ function makeDialog(parts: DialogParts): DialogView {
 }
 
 describe("makeDialog — single-question mode", () => {
+	it("returns mutable rows without exposing the container's render output", () => {
+		const dlg = makeDialog(makeConfig({ isMulti: false, getBodyHeight: () => 0 }));
+		const originalRender = Container.prototype.render;
+		let containerRows: readonly string[] | undefined;
+		const spy = vi.spyOn(Container.prototype, "render").mockImplementation(function (this: Container, width) {
+			containerRows = Object.freeze(originalRender.call(this, width));
+			return containerRows as string[];
+		});
+		try {
+			const rows = dlg.render(80);
+			expect(rows).toEqual(containerRows);
+			expect(rows).not.toBe(containerRows);
+			expect(() => rows.push("extra")).not.toThrow();
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
 	it("omits the TabBar entirely", () => {
 		const tabBar = stubComponent(["<TABBAR>", ""]) as unknown as TabBar;
 		const dlg = makeDialog(
