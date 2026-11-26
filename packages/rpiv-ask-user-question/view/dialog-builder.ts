@@ -38,12 +38,17 @@ export {
 const MIN_SCROLL_ROWS_WITH_PINNED_HEADING = 3;
 
 /** No-overflow path: append the residual spacer rows after the footer. */
-function renderFitsTerminal(natural: string[], spacerRows: number): string[] {
-	return spacerRows > 0 ? [...natural, ...Array<string>(spacerRows).fill("")] : natural;
+function renderFitsTerminal(natural: readonly string[], spacerRows: number): string[] {
+	return spacerRows > 0 ? [...natural, ...Array<string>(spacerRows).fill("")] : [...natural];
 }
 
 /** Terminal too small for any middle content — show just chrome, hard-clamped to termRows. */
-function renderChromeOnly(natural: string[], topFixed: number, bottomFixed: number, termRows: number): string[] {
+function renderChromeOnly(
+	natural: readonly string[],
+	topFixed: number,
+	bottomFixed: number,
+	termRows: number,
+): string[] {
 	const chromeOnly = [...natural.slice(0, topFixed), ...natural.slice(natural.length - bottomFixed)];
 	return chromeOnly.length > termRows ? chromeOnly.slice(0, termRows) : chromeOnly;
 }

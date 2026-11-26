@@ -384,7 +384,7 @@ export class LaneConsole implements Component {
 		// unit has one. The transcript is the only variable-height band, so the total stays exactly
 		// maxRows and the lane block never moves (the static-lanes + ghost-block invariant).
 		const border = renderLiveOutputBorder(this.theme, width);
-		let qLines: string[] = [];
+		let qLines: readonly string[] = [];
 		let q = 0;
 		// The arm-gate: paint the question band ONLY in question focus. In lane focus the
 		// questionnaire is mounted (ready to arm) but held off, so the surface is height-
@@ -414,7 +414,7 @@ export class LaneConsole implements Component {
 	/** Bottom-anchored, padded-to-`rows` transcript window. follow = newest tail; paused =
 	 *  frozen on `anchorLine`; padding keeps total height constant so the surface never changes
 	 *  shape while scrolling or re-targeting (ghost-block avoidance). */
-	private windowTranscript(body: string[], rows: number): string[] {
+	private windowTranscript(body: readonly string[], rows: number): string[] {
 		if (rows <= 0) return [];
 		const maxStart = Math.max(0, body.length - rows);
 		this.lastMaxStart = maxStart; // cache for scroll() (no body/rows in scope there)

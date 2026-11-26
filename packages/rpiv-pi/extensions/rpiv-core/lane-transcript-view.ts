@@ -87,7 +87,7 @@ export class LaneTranscriptView {
 
 	/** The transcript BODY (no header/footer): a fail-soft string[] the host windows.
 	 *  Placeholders (dismissed / starting / none / unavailable) come back as one dim line. */
-	renderBody(width: number, toolsExpanded: boolean): string[] {
+	renderBody(width: number, toolsExpanded: boolean): readonly string[] {
 		const lane = getLane(this.runId);
 		if (!lane) return dimLine("(run dismissed — esc to return)", this.theme).render(width);
 		const unit = getUnit(this.runId, this.unitIndex);

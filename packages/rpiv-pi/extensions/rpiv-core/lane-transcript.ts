@@ -40,7 +40,7 @@ const OSC_133 = /\x1b\]133;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
 /** Strip OSC-133 markers from rendered lines, DROPPING any line that was nothing but a marker
  *  (now blank) while preserving genuine blank lines (paragraph spacing) and all colored text. */
-function stripPromptMarkers(lines: string[]): string[] {
+function stripPromptMarkers(lines: readonly string[]): string[] {
 	const out: string[] = [];
 	for (const line of lines) {
 		const stripped = line.replace(OSC_133, "");

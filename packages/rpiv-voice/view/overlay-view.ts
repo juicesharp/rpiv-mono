@@ -70,7 +70,7 @@ export class OverlayView implements StatefulView<OverlayViewProps> {
 		return clipToTerminalHeight(padded, this.terminalRows());
 	}
 
-	private renderStrategy(strategy: ScreenContentStrategy, width: number): string[] {
+	private renderStrategy(strategy: ScreenContentStrategy, width: number): readonly string[] {
 		const container = new Container();
 		for (const child of strategy.children()) container.addChild(child);
 		return container.render(width);
