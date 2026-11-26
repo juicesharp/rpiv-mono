@@ -14,7 +14,14 @@ import { detectCycle } from "./task-graph.ts";
  */
 export type Op =
 	| { kind: "create"; taskIds: number[] }
-	| { kind: "update"; id: number; fromStatus: TaskStatus; toStatus: TaskStatus; changed: boolean }
+	| {
+			kind: "update";
+			id: number;
+			fromStatus: TaskStatus;
+			toStatus: TaskStatus;
+			changed: boolean;
+			demotedIds?: number[];
+	  }
 	| { kind: "delete"; id: number; subject: string }
 	| { kind: "list"; statusFilter?: TaskStatus; includeDeleted: boolean }
 	| { kind: "get"; task: Task }
@@ -254,7 +261,19 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 			if (newMetadata === undefined) delete updated.metadata;
 			else updated.metadata = newMetadata;
 
-			const newTasks = [...state.tasks];
+			// Single in_progress (#361 C): the prompt guidelines say exactly one
+			// task may be in_progress at a time, but the reducer never enforced it,
+			// so a second task could be promoted while the first still claimed to
+			// be running. Promoting a task demotes every other in_progress task to
+			// pending; the op reports the demoted ids so the tool result can say so.
+			// A same→same re-promotion still heals a legacy double claim.
+			const demotedIds: number[] =
+				newStatus === "in_progress"
+					? state.tasks.filter((t) => t.id !== current.id && t.status === "in_progress").map((t) => t.id)
+					: [];
+			const newTasks = state.tasks.map((t) =>
+				demotedIds.includes(t.id) ? { ...t, status: "pending" as TaskStatus } : t,
+			);
 			newTasks[idx] = updated;
 			return {
 				state: { tasks: newTasks, nextId: state.nextId },
@@ -263,7 +282,8 @@ export function applyTaskMutation(state: TaskState, action: TaskAction, params: 
 					id: updated.id,
 					fromStatus: current.status,
 					toStatus: newStatus,
-					changed: taskChanged(current, updated),
+					changed: taskChanged(current, updated) || demotedIds.length > 0,
+					...(demotedIds.length ? { demotedIds } : {}),
 				},
 			};
 		}

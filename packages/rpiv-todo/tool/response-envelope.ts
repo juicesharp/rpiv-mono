@@ -58,7 +58,10 @@ export function formatContent(op: Op, state: TaskState): string {
 				return `No change: #${op.id} already matches the requested values (status: ${op.toStatus})`;
 			}
 			const transition = op.fromStatus !== op.toStatus ? ` (${op.fromStatus} → ${op.toStatus})` : "";
-			return `Updated #${op.id}${transition}`;
+			const demoted = op.demotedIds?.length
+				? `; ${op.demotedIds.map((id) => `#${id}`).join(", ")} back to pending (only one task may be in_progress)`
+				: "";
+			return `Updated #${op.id}${transition}${demoted}`;
 		}
 		case "delete":
 			return `Deleted #${op.id}: ${sanitizeTerminalText(op.subject)}`;
