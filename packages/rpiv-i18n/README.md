@@ -47,6 +47,7 @@ pi --locale uk
 | `en` | English |
 | `es` | Español |
 | `fr` | Français |
+| `id` | Bahasa Indonesia |
 | `pt` | Português |
 | `pt-BR` | Português (Brasil) |
 | `ru` | Русский |
@@ -73,7 +74,7 @@ stay online in English when the SDK is absent.
 - **One dial for every extension** — `/languages` writes a single preference and
   rebuilds the strings of every registered package at once, not one setting per
   tool.
-- **Nine languages, no file editing** — every locale in the table above ships
+- **Ten languages, no file editing** — every locale in the table above ships
   with the extension; nothing to download, compile, or configure.
 - **A localized UI with zero setup on most Unix systems** — `LANG` and `LC_ALL`
   are read at startup, so `uk_UA.UTF-8` gives you Ukrainian chrome before you

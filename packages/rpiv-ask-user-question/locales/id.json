@@ -1,0 +1,43 @@
+{
+  "_meta.notes": "Draft Indonesian (id) translation. Native-speaker review welcome via PR. TUI symbols (↑/↓, ⚠) and key names (Enter, Esc, Tab, Space, n, Ctrl+G, Ctrl+U) are universal CLI conventions and stay untranslated.",
+
+  "sentinel.other": "Ketik sesuatu.",
+  "sentinel.next": "Lanjut",
+
+  "submit.label": "Kirim jawaban",
+  "submit.cancel": "Batal",
+
+  "hint.enter": "Enter untuk memilih",
+  "hint.navigate": "↑/↓ untuk navigasi",
+  "hint.newline": "Shift+Enter untuk baris baru",
+  "hint.clear": "Ctrl+U untuk menghapus",
+  "hint.toggle": "Spasi untuk memilih",
+  "hint.notes": "{key} untuk menambah catatan",
+  "hint.tab": "Tab untuk pindah pertanyaan",
+  "hint.collapse": "{key} untuk menciutkan",
+  "hint.expand_line": "{key} untuk memperluas · Esc untuk batal",
+  "hint.cancel": "Esc untuk batal",
+
+  "review.heading": "Tinjau jawabanmu",
+  "review.ready": "Siap mengirim jawaban?",
+  "review.incomplete": "⚠ Jawab pertanyaan yang tersisa sebelum mengirim:",
+  "review.global_hint": "{key} untuk menambah catatan",
+  "review.note_label": "Catatan",
+
+  "preview.no_preview": "Pratinjau tidak tersedia",
+  "preview.notes_affordance": "Catatan: tekan {key} untuk menambah",
+  "preview.notes_edit_affordance": "Catatan tersimpan: tekan {key} untuk mengubah",
+  "notes.header": "Catatan:",
+  "notes.saved_label": "Catatan untuk jawaban ini:",
+  "notes.global_header": "Catatan global:",
+
+  "editor.failed": "Editor eksternal gagal",
+
+  "rpc.multi_instructions": "Masukkan nomor semua yang berlaku, dipisah koma (mis. \"1,3\"). Tambahkan \"; jawaban kustom\" untuk menyertakan teks sendiri, atau ketik hanya teks kustom.",
+  "rpc.custom_answer_title": "Ketik jawabanmu:",
+
+  "transcript.not_answered": "belum dijawab",
+  "transcript.no_answer": "tidak ada jawaban",
+
+  "status.blocked": "Menunggu jawabanmu"
+}

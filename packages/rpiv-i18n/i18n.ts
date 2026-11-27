@@ -59,6 +59,7 @@ export const SUPPORTED_LOCALES: readonly { code: string; label: string }[] = [
 	{ code: DEFAULT_FALLBACK_LOCALE, label: "English" },
 	{ code: "es", label: "Español" },
 	{ code: "fr", label: "Français" },
+	{ code: "id", label: "Bahasa Indonesia" },
 	{ code: "pt", label: "Português" },
 	{ code: "pt-BR", label: "Português (Brasil)" },
 	{ code: "ru", label: "Русский" },
