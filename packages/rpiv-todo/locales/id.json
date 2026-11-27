@@ -1,0 +1,19 @@
+{
+  "_meta.notes": "Draft Indonesian (id) translation. Native-speaker review welcome via PR. Unicode box-drawing characters (──) stay untranslated.",
+
+  "status.pending": "tertunda",
+  "status.in_progress": "dikerjakan",
+  "status.completed": "selesai",
+  "status.deleted": "dihapus",
+
+  "overlay.heading": "Todo",
+  "overlay.more": "lagi",
+  "overlay.expandHint": "{key} untuk memperluas",
+  "overlay.collapsed": "diciutkan",
+
+  "command.no_todos": "Belum ada todo. Minta agent menambahkan!",
+  "command.requires_interactive": "/todos membutuhkan mode interaktif",
+  "command.section.pending": "── Tertunda ──",
+  "command.section.in_progress": "── Dikerjakan ──",
+  "command.section.completed": "── Selesai ──"
+}

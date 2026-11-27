@@ -1,0 +1,50 @@
+{
+  "_meta.notes": "Draft Indonesian (id) translation. Native-speaker review welcome via PR.",
+
+  "command.description": "Dikte teks dengan suaramu — STT lokal, tanpa cloud",
+
+  "error.requires_interactive": "/voice membutuhkan mode interaktif",
+  "error.model_download_failed": "Gagal mengunduh model STT. Periksa koneksi internetmu.",
+  "error.model_extract_failed": "Arsip model STT yang diunduh rusak. Silakan coba lagi.",
+  "error.model_verify_failed": "File model STT tidak lengkap setelah diunduh. Silakan coba lagi.",
+  "error.model_stale_install": "File model STT dihapus atau rusak. Akan diunduh ulang saat peluncuran berikutnya.",
+  "error.engine_load_failed": "Gagal memuat model STT.",
+  "error.mic_unavailable": "Mikrofon tidak tersedia. Pastikan perangkat input terhubung dan Pi punya izin mikrofon.",
+
+  "splash.preparing": "Menyiapkan model…",
+  "splash.downloading": "Mengunduh Whisper…",
+  "splash.extracting": "Mengekstrak file model…",
+  "splash.verifying": "Memverifikasi file model…",
+  "splash.loading_engine": "Memuat model suara…",
+  "splash.initializing_mic": "Menginisialisasi mikrofon…",
+
+  "footer.enter_paste": "Enter untuk menempel",
+  "footer.space_pause": "Spasi untuk jeda",
+  "footer.space_resume": "Spasi untuk lanjut",
+  "footer.tab_settings": "Tab untuk pengaturan",
+  "footer.esc_cancel": "Esc untuk batal",
+  "footer.esc_back": "Esc untuk kembali",
+  "footer.ctrl_s_save": "Ctrl-S untuk menyimpan",
+  "footer.enter_toggle": "Enter untuk beralih",
+
+  "transcript.placeholder": "Mendengarkan...",
+
+  "notify.settings_saved": "Pengaturan suara disimpan",
+
+  "status.recording": "Merekam",
+  "status.paused": "Dijeda",
+
+  "settings.microphone_label": "Mikrofon",
+  "settings.microphone_value_default": "Input default sistem",
+  "settings.language_label": "Bahasa",
+  "settings.language_value_auto": "Deteksi otomatis",
+  "settings.language_hint": "Jalankan /languages untuk mengubah.",
+  "settings.hallucination_filter_label": "Filter noise Whisper",
+  "settings.hallucination_filter_hint": "Membuang artefak dari segmen hening. Matikan untuk dikte satu kata.",
+
+  "settings.equalizer_label": "Equalizer",
+  "settings.equalizer_hint": "Tampilkan bentuk gelombang audio langsung di bawah transkrip. Nonaktif secara default.",
+
+  "settings.threads_label": "Thread",
+  "settings.threads_hint": "Setel numThreads di voice.json; jalankan ulang /voice untuk menerapkan."
+}

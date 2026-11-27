@@ -47,7 +47,7 @@ dependency — into its load graph.
 
 | Export | Value |
 | --- | --- |
-| `SUPPORTED_LOCALES` | `readonly { code: string; label: string }[]` — the nine picker entries, alphabetical by code, labelled with endonyms. |
+| `SUPPORTED_LOCALES` | `readonly { code: string; label: string }[]` — the ten picker entries, alphabetical by code, labelled with endonyms. |
 | `I18N_STATE_KEY` | `Symbol.for("rpiv-i18n")` — the key of the public snapshot on `globalThis`. |
 | `__resetState` | Test-only hook that clears the registry, active strings, and locale. |
 | Types | `TranslationMap`, `LocaleStrings`, `I18nState`, `LocaleConfig` |
