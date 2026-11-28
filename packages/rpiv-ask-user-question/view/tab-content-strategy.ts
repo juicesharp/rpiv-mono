@@ -1,6 +1,19 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, type Editor, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
-import { COLLAPSE_KEY_OFF, formatKeySpecForDisplay, formatNotesKeyForDisplay } from "../config.ts";
+import {
+	type Component,
+	Container,
+	type Editor,
+	Spacer,
+	Text,
+	truncateToWidth,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
+import {
+	COLLAPSE_KEY_OFF,
+	formatKeySpecForDisplay,
+	formatKeySpecForShortDisplay,
+	formatNotesKeyForDisplay,
+} from "../config.ts";
 import { t } from "../state/i18n-bridge.ts";
 import { selectSavedNote } from "../state/selectors/derivations.ts";
 import { formatAnswerScalar } from "../tool/format-answer.ts";
@@ -17,6 +30,16 @@ import {
 	HINT_PART_NOTES_TEMPLATE,
 	HINT_PART_TAB,
 	HINT_PART_TOGGLE,
+	HINT_SHORT_CANCEL,
+	HINT_SHORT_CLEAR,
+	HINT_SHORT_COLLAPSE_TEMPLATE,
+	HINT_SHORT_ENTER,
+	HINT_SHORT_NAV,
+	HINT_SHORT_NEW_LINE,
+	HINT_SHORT_NOTES_TEMPLATE,
+	HINT_SHORT_REVIEW_NOTE_TEMPLATE,
+	HINT_SHORT_TAB,
+	HINT_SHORT_TOGGLE,
 	INCOMPLETE_WARNING_PREFIX,
 	KEY_PLACEHOLDER,
 	READY_PROMPT,
@@ -51,6 +74,38 @@ class OneLineClippedText implements Component {
 		const pad = " ".repeat(this.paddingLeft);
 		const avail = Math.max(0, width - this.paddingLeft);
 		return [pad + truncateToWidth(this.text, avail, "…", false)];
+	}
+
+	invalidate(): void {}
+
+	handleInput(_data: string): void {}
+}
+
+/**
+ * Widest dialog that gets the short key hints when the full ones do not fit: a phone's
+ * SSH app in portrait (about 45 columns), and Herdr's one-column phone layout (64 and
+ * fewer). A wider terminal keeps the full hints, clipped at the right edge as before.
+ */
+export const SHORT_HINTS_MAX_WIDTH = 64;
+
+/**
+ * The key-hint row: one row, like `OneLineClippedText`. On a narrow terminal
+ * (`SHORT_HINTS_MAX_WIDTH`) whose width the full hints overflow it holds the short
+ * ones, so every key stays in view rather than the last ones clipping with `…`. The
+ * short form clips too if even it does not fit.
+ */
+class HintRow implements Component {
+	constructor(
+		private readonly build: (form: HintForm) => string,
+		private readonly style: (text: string) => string,
+		private readonly paddingLeft: number = 0,
+	) {}
+
+	render(width: number): string[] {
+		const avail = Math.max(0, width - this.paddingLeft);
+		const full = this.build("full");
+		const text = width > SHORT_HINTS_MAX_WIDTH || visibleWidth(full) <= avail ? full : this.build("short");
+		return new OneLineClippedText(this.style(text), this.paddingLeft).render(width);
 	}
 
 	invalidate(): void {}
@@ -153,17 +208,16 @@ export class QuestionTabStrategy implements TabContentStrategy {
 
 	footerRows(state: DialogState): Component[] {
 		const question = this.config.questions[state.currentTab];
-		// OneLineClippedText (not pi-tui `Text`) — `buildHintText` includes the collapse
-		// affordance, pushing the rendered string past 80 columns; `Text` would wrap and
-		// break the strategy's `footerRowCount = 2` invariant. Clipping on narrow terminals
-		// drops the trailing parts (collapse hint first, then cancel) with `…`.
+		// HintRow (not pi-tui `Text`) — `buildHintText` includes the collapse affordance,
+		// pushing the rendered string past 80 columns; `Text` would wrap and break the
+		// strategy's `footerRowCount = 2` invariant. A narrow terminal gets the short hints,
+		// which clip with `…` only if even they do not fit.
 		return [
 			new Spacer(1),
-			new OneLineClippedText(
-				this.config.theme.fg(
-					"dim",
-					buildHintText(question, this.config.isMulti, state, this.config.collapseKey, this.config.notesKey),
-				),
+			new HintRow(
+				(form) =>
+					buildHintText(question, this.config.isMulti, state, this.config.collapseKey, this.config.notesKey, form),
+				(text) => this.config.theme.fg("dim", text),
 				1,
 			),
 		];
@@ -285,7 +339,11 @@ export class SubmitTabStrategy implements TabContentStrategy {
 		// exactly 5. OneLineClippedText (not pi-tui Text) — a wrapped hint would inflate
 		// the footer past footerRowCount and desync the chrome's cross-tab height math.
 		out.push(
-			new OneLineClippedText(this.config.theme.fg("dim", buildSubmitHintText(state, this.config.notesKey)), 1),
+			new HintRow(
+				(form) => buildSubmitHintText(state, this.config.notesKey, form),
+				(text) => this.config.theme.fg("dim", text),
+				1,
+			),
 		);
 		return out;
 	}
@@ -316,20 +374,17 @@ export function buildHintText(
 	state: DialogState,
 	collapseKey: string,
 	notesKey: string,
+	form: HintForm = "full",
 ): string {
-	const parts: string[] = [t("hint.enter", HINT_PART_ENTER), t("hint.navigate", HINT_PART_NAV)];
-	if (question?.multiSelect === true) parts.push(t("hint.toggle", HINT_PART_TOGGLE));
-	if (question && !state.notesVisible && !state.inputMode)
-		parts.push(notesHint("hint.notes", HINT_PART_NOTES_TEMPLATE, notesKey));
-	if (isMulti) parts.push(t("hint.tab", HINT_PART_TAB));
-	parts.push(t("hint.cancel", HINT_PART_CANCEL));
-	if (collapseKey !== COLLAPSE_KEY_OFF) {
-		parts.push(
-			t("hint.collapse", HINT_PART_COLLAPSE_TEMPLATE).replace(KEY_PLACEHOLDER, formatKeySpecForDisplay(collapseKey)),
-		);
-	}
-	if (state.notesVisible || state.inputMode) parts.push(t("hint.newline", HINT_PART_NEW_LINE));
-	if (state.inputMode) parts.push(t("hint.clear", HINT_PART_CLEAR));
+	const copy = HINT_COPY[form];
+	const parts: string[] = [copy.enter(), copy.navigate()];
+	if (question?.multiSelect === true) parts.push(copy.toggle());
+	if (question && !state.notesVisible && !state.inputMode) parts.push(copy.notes(notesKey));
+	if (isMulti) parts.push(copy.tab());
+	parts.push(copy.cancel());
+	if (collapseKey !== COLLAPSE_KEY_OFF) parts.push(copy.collapse(collapseKey));
+	if (state.notesVisible || state.inputMode) parts.push(copy.newline());
+	if (state.inputMode) parts.push(copy.clear());
 	return parts.join(" · ");
 }
 
@@ -339,12 +394,56 @@ export function buildHintText(
  * open the note part drops (the editor is the affordance then) and the Shift+Enter
  * newline hint is appended after cancel, mirroring the question tabs' notes-open shape.
  */
-export function buildSubmitHintText(state: DialogState, notesKey: string): string {
-	const parts: string[] = [t("hint.enter", HINT_PART_ENTER), t("hint.navigate", HINT_PART_NAV)];
-	if (!state.notesVisible) parts.push(notesHint("review.global_hint", REVIEW_GLOBAL_HINT_TEMPLATE, notesKey));
-	parts.push(t("hint.cancel", HINT_PART_CANCEL));
-	if (state.notesVisible) parts.push(t("hint.newline", HINT_PART_NEW_LINE));
+export function buildSubmitHintText(state: DialogState, notesKey: string, form: HintForm = "full"): string {
+	const copy = HINT_COPY[form];
+	const parts: string[] = [copy.enter(), copy.navigate()];
+	if (!state.notesVisible) parts.push(copy.reviewNote(notesKey));
+	parts.push(copy.cancel());
+	if (state.notesVisible) parts.push(copy.newline());
 	return parts.join(" · ");
+}
+
+/** `full`: the key and what it does. `short`: for terminals too narrow for that (see `HINT_SHORT_ENTER`). */
+export type HintForm = "full" | "short";
+
+/** Each hint part in each form. Read at render time, so a language switch applies to the next frame. */
+const HINT_COPY: Record<HintForm, Record<string, (key?: string) => string>> = {
+	full: {
+		enter: () => t("hint.enter", HINT_PART_ENTER),
+		navigate: () => t("hint.navigate", HINT_PART_NAV),
+		toggle: () => t("hint.toggle", HINT_PART_TOGGLE),
+		notes: (key = "") => notesHint("hint.notes", HINT_PART_NOTES_TEMPLATE, key),
+		tab: () => t("hint.tab", HINT_PART_TAB),
+		cancel: () => t("hint.cancel", HINT_PART_CANCEL),
+		collapse: (key = "") =>
+			t("hint.collapse", HINT_PART_COLLAPSE_TEMPLATE).replace(KEY_PLACEHOLDER, formatKeySpecForDisplay(key)),
+		newline: () => t("hint.newline", HINT_PART_NEW_LINE),
+		clear: () => t("hint.clear", HINT_PART_CLEAR),
+		reviewNote: (key = "") => notesHint("review.global_hint", REVIEW_GLOBAL_HINT_TEMPLATE, key),
+	},
+	short: {
+		enter: () => t("hint.short.enter", HINT_SHORT_ENTER),
+		navigate: () => t("hint.short.navigate", HINT_SHORT_NAV),
+		toggle: () => t("hint.short.toggle", HINT_SHORT_TOGGLE),
+		notes: (key = "") =>
+			t("hint.short.notes", HINT_SHORT_NOTES_TEMPLATE).replace(KEY_PLACEHOLDER, shortNotesKey(key)),
+		tab: () => t("hint.short.tab", HINT_SHORT_TAB),
+		cancel: () => t("hint.short.cancel", HINT_SHORT_CANCEL),
+		collapse: (key = "") =>
+			t("hint.short.collapse", HINT_SHORT_COLLAPSE_TEMPLATE).replace(
+				KEY_PLACEHOLDER,
+				formatKeySpecForShortDisplay(key),
+			),
+		newline: () => t("hint.short.newline", HINT_SHORT_NEW_LINE),
+		clear: () => t("hint.short.clear", HINT_SHORT_CLEAR),
+		reviewNote: (key = "") =>
+			t("hint.short.review_note", HINT_SHORT_REVIEW_NOTE_TEMPLATE).replace(KEY_PLACEHOLDER, shortNotesKey(key)),
+	},
+};
+
+/** A single-character notes key as configured; a key spec in its shortest display. */
+function shortNotesKey(notesKey: string): string {
+	return [...notesKey].length === 1 ? notesKey : formatKeySpecForShortDisplay(notesKey);
 }
 
 /** A notes hint with the configured key in place of `{key}`. */

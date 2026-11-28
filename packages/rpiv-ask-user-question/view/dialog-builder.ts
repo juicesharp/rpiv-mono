@@ -53,6 +53,24 @@ function renderChromeOnly(
 	return chromeOnly.length > termRows ? chromeOnly.slice(0, termRows) : chromeOnly;
 }
 
+/**
+ * Focus range, in middle-region rows, while the "Type something." row takes typing. An
+ * answer that wraps past the scroll window keeps the row with the cursor marker in view,
+ * with as much of the answer above it as fits: the window follows the text as it grows,
+ * as it follows the notes editor's cursor (#317). Otherwise the whole row is the focus.
+ */
+function typedRowsInView(
+	middle: readonly string[],
+	focused: [number, number] | undefined,
+	windowRows: number,
+): [number, number] | undefined {
+	if (!focused || focused[1] - focused[0] <= windowRows) return focused;
+	const cursorRow = middle.findIndex((line, i) => i >= focused[0] && i < focused[1] && line.includes(CURSOR_MARKER));
+	if (cursorRow === -1) return focused;
+	const start = Math.max(focused[0], cursorRow + 1 - windowRows);
+	return [start, start + windowRows];
+}
+
 /** Shift an end-exclusive row range by `delta` rows; undefined (no focus) passes through. */
 function offsetRange(range: [number, number] | undefined, delta: number): [number, number] | undefined {
 	return range && [range[0] + delta, range[1] + delta];
@@ -211,9 +229,16 @@ export class DialogView implements StatefulView<DialogProps> {
 		const rowsBeforeBody = pinHeading ? 0 : headingHeight;
 		// Scroll-to-focus target in middle-region rows. While the notes editor is open it is the
 		// keyboard's target, so the window follows it rather than the focused option (#317).
+		const middle = natural.slice(top, top + middleRows);
 		const focusedRange = state.notesVisible
-			? this.notesFocusRange(natural.slice(top, top + middleRows), strategy, width, windowRows)
-			: offsetRange(strategy.focusedItemRowRange(width, state), rowsBeforeBody);
+			? this.notesFocusRange(middle, strategy, width, windowRows)
+			: state.inputMode
+				? typedRowsInView(
+						middle,
+						offsetRange(strategy.focusedItemRowRange(width, state), rowsBeforeBody),
+						windowRows,
+					)
+				: offsetRange(strategy.focusedItemRowRange(width, state), rowsBeforeBody);
 		const scrollStart = computeScrollStart(focusedRange, 0, windowRows, middleRows);
 		const scrollableMiddle = natural.slice(top + scrollStart, top + scrollStart + windowRows);
 		const focusedInWindow = offsetRange(focusedRange, -scrollStart);

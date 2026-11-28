@@ -563,9 +563,10 @@ describe("Dialog overflow — notes open on the Submit tab (NFR-2)", () => {
 		const lengths = new Set(widths.map((w) => makeSubmitDialog(submitState()).render(w).length));
 		expect(lengths.size).toBe(1);
 		// Ultra-narrow: exactly one hint row survives, clipped (never wrapped to two).
-		// The bottom hint opens with HINT_PART_ENTER, so its prefix is the row's signature.
+		// The bottom hint opens with Enter (the short form at this width), so its prefix is the
+		// row's signature.
 		const narrow = makeSubmitDialog(submitState()).render(10);
-		const hintRows = narrow.filter((l) => stripAnsi(l).startsWith("Enter to"));
+		const hintRows = narrow.filter((l) => stripAnsi(l).startsWith("Enter"));
 		expect(hintRows.length).toBe(1);
 		expect(visibleWidth(hintRows[0]!)).toBeLessThanOrEqual(10);
 	});

@@ -7,6 +7,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Short key hints on a phone-width terminal.** At 64 columns or fewer, where the full hints overflow the row, it shows `Enter · ↑/↓ · n notes · Tab · Esc · ^] hide`: keys that say what they do are named bare, and the others get one word. A phone's SSH app in portrait (about 45 columns) used to show only `Enter to select · ↑/↓ to navigate · n…`. Wider terminals keep the full hints. The new `hint.short.*` keys are in `en.json`, and other languages show them in English until translated.
+
+### Fixed
+
+- **The line you are typing stays in view.** A custom answer on the `Type something.` row that wraps past the dialog's rows (a phone with its keyboard up has about 16) now scrolls with the cursor, keeping as much of the answer above it as fits. It used to stay pinned to the answer's first row, so the text being typed went below the dialog.
+
 ## [2.16.0] - 2026-11-26
 
 ### Fixed
