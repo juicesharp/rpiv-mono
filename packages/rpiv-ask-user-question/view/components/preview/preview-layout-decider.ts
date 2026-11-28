@@ -18,7 +18,7 @@ export const MIN_LEFT = 30;
 export const MAX_LEFT_RATIO = 0.5;
 /** Floor for the preview column width — prevents right-side collapse on narrow terminals. */
 export const MIN_PREVIEW_WIDTH = 45;
-/** visibleWidth(" ✔") = 2 (space + ✔ codepoint). Reserved on the longest-label measurement
+/** visibleWidth(" ✓") = 2 (space + ✓ codepoint). Reserved on the longest-label measurement
  *  so a confirmed row never gets truncated when MIN_LEFT clamps the column. */
 export const CONFIRMED_OVERHEAD = 2;
 
@@ -52,7 +52,7 @@ export function adaptiveLeftWidth(
 	paneWidth: number,
 ): number {
 	const prefixW = String(Math.max(1, totalForNumbering)).length + 4; // digits + "❯ " + ". "
-	const confirmedOverhead = CONFIRMED_OVERHEAD; // visibleWidth(" ✔") = 2 (space + ✔ codepoint)
+	const confirmedOverhead = CONFIRMED_OVERHEAD; // visibleWidth(" ✓") = 2 (space + ✓ codepoint)
 	let maxLabel = 0;
 	for (const item of items) {
 		const w = visibleWidth(item.label);

@@ -368,7 +368,7 @@ describe("QuestionnaireSession — multi-select custom text joins checked option
 
 	it("the custom row is checked while it holds text and unchecked once cleared", () => {
 		const { session } = checkAThenType();
-		expect(session.component.render(120).join("\n")).toMatch(/\[✔\] my text/);
+		expect(session.component.render(120).join("\n")).toMatch(/\[✓\] my text/);
 		session.dispatch(CTRL_U);
 		expect(session.component.render(120).join("\n")).toMatch(/3\. \[ \]/);
 	});

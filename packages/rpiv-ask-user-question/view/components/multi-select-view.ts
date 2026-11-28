@@ -7,7 +7,7 @@ import { renderInlineInputRow } from "./inline-input.ts";
 
 const ACTIVE_POINTER = "❯ ";
 const INACTIVE_POINTER = "  ";
-const CHECKED = "[✔]";
+const CHECKED = "[✓]";
 const UNCHECKED = "[ ]";
 const NUMBER_SEPARATOR = ". ";
 const BOX_LABEL_GAP = " ";
