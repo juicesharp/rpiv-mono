@@ -15,5 +15,7 @@
   "command.requires_interactive": "/todos 需要交互模式",
   "command.section.pending": "── 待处理 ──",
   "command.section.in_progress": "── 进行中 ──",
-  "command.section.completed": "── 已完成 ──"
+  "command.section.completed": "── 已完成 ──",
+  "command.open.header": "未完成任务",
+  "command.open.all_done": "没有未完成任务——所有任务均已完成。"
 }

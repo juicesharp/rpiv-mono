@@ -15,5 +15,7 @@
   "command.requires_interactive": "/todos requer modo interativo",
   "command.section.pending": "── Pendentes ──",
   "command.section.in_progress": "── Em curso ──",
-  "command.section.completed": "── Concluídas ──"
+  "command.section.completed": "── Concluídas ──",
+  "command.open.header": "Tarefas pendentes",
+  "command.open.all_done": "Nada pendente — todas as tarefas estão concluídas."
 }

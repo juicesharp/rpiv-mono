@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { formatStatusLabel } from "../state/i18n-bridge.ts";
-import { selectTaskSubjectById } from "../state/selectors.ts";
+import { formatStatusLabel, t } from "../state/i18n-bridge.ts";
+import { selectTaskSubjectById, selectTasksByStatus } from "../state/selectors.ts";
 import type { TaskState } from "../state/state.ts";
 import { sanitizeTerminalText } from "../tool/sanitize.ts";
 import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } from "../tool/types.ts";
@@ -97,6 +97,89 @@ export function formatCommandTaskLine(t: Task, glyph: string): string {
 	const form = t.status === "in_progress" && t.activeForm ? ` (${sanitizeTerminalText(t.activeForm)})` : "";
 	const block = t.blockedBy?.length ? `    ⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}` : "";
 	return `  ${glyph} #${t.id} ${sanitizeTerminalText(t.subject)}${form}${block}`;
+}
+
+/**
+ * Default wrap width for description blocks in the `/todos open` output.
+ *
+ * A description is free text written for the model, not for a terminal, so it
+ * routinely runs past one line. Wrapping here rather than at the notify call
+ * site keeps the case deterministic: the tests can assert exact lines instead
+ * of matching a regex against whatever width the host happens to report.
+ */
+export const DESCRIPTION_WRAP_WIDTH = 76;
+
+/**
+ * Wrap one description into indented, prefix-aligned lines.
+ *
+ * Every produced line starts with `indent` so the block reads as part of the
+ * task it belongs to. Words longer than the available width are left intact
+ * (a path or a hash must not be split); the line just overflows, which is
+ * better than a broken identifier.
+ */
+export function wrapDescription(description: string, indent: string, width = DESCRIPTION_WRAP_WIDTH): string[] {
+	const text = sanitizeTerminalText(description).replace(/\s+/g, " ").trim();
+	if (text.length === 0) return [];
+	const available = Math.max(20, width - indent.length);
+	const lines: string[] = [];
+	let current = "";
+	for (const word of text.split(" ")) {
+		if (current.length === 0) {
+			current = word;
+			continue;
+		}
+		if (current.length + 1 + word.length <= available) {
+			current = `${current} ${word}`;
+			continue;
+		}
+		lines.push(`${indent}${current}`);
+		current = word;
+	}
+	if (current.length > 0) lines.push(`${indent}${current}`);
+	return lines;
+}
+
+/**
+ * One task entry for `/todos open`: the usual command line, then its
+ * description wrapped underneath. A task without a description yields exactly
+ * one line, so the shape never depends on which tasks happen to carry one.
+ */
+export function formatOpenTaskLines(t: Task, glyph: string): string[] {
+	const lines = [formatCommandTaskLine(t, glyph)];
+	for (const line of wrapDescription(t.description ?? "", "      ")) lines.push(line);
+	return lines;
+}
+
+/**
+ * Build the `/todos open` notification body: every task that is not completed,
+ * in work order (in progress first, then pending), each followed by its wrapped
+ * description and its blocking ids.
+ *
+ * Completed tasks are omitted entirely rather than folded into a count: this
+ * view exists to answer "what is left", and a count of what is finished does
+ * not help that question.
+ */
+export function formatOpenView(state: TaskState, visible: readonly Task[]): string {
+	const groups = selectTasksByStatus(state);
+	const open = [...groups.inProgress, ...groups.pending];
+	if (open.length === 0) {
+		// Every visible task is completed: say so rather than emitting an empty body.
+		return t("command.open.all_done", "Nothing outstanding — every task is completed.");
+	}
+	// `visible` is the caller's already-filtered set; the grouped selectors read
+	// the same state, so the only thing worth guarding is a task that the group
+	// selectors drop but the filter kept. Keeping the count honest matters more
+	// than keeping the list long.
+	const known = new Set(open.map((task) => task.id));
+	for (const task of visible) {
+		if (!known.has(task.id) && task.status !== "completed" && task.status !== "deleted") open.push(task);
+	}
+	const lines: string[] = [t("command.open.header", "Outstanding tasks")];
+	for (const task of open) {
+		const glyph = task.status === "in_progress" ? "◐" : "○";
+		lines.push(...formatOpenTaskLines(task, glyph));
+	}
+	return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------

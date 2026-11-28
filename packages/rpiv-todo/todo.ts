@@ -30,7 +30,7 @@ import {
 	TOOL_NAME,
 	TodoParamsSchema,
 } from "./tool/types.ts";
-import { formatCommandTaskLine, renderTodoCall, renderTodoResult } from "./view/format.ts";
+import { formatCommandTaskLine, formatOpenView, renderTodoCall, renderTodoResult } from "./view/format.ts";
 
 // English fallbacks for localized /todos section headers — the box-drawing
 // decoration is part of the localized string so translators can adjust spacing.
@@ -116,8 +116,8 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 
 export function registerTodosCommand(pi: ExtensionAPI): void {
 	pi.registerCommand(COMMAND_NAME, {
-		description: "Show all todos on the current branch, grouped by status",
-		handler: async (_args, ctx) => {
+		description: "Show all todos on the current branch, grouped by status (`open` for outstanding only)",
+		handler: async (args, ctx) => {
 			if (!ctx.hasUI) {
 				ctx.ui.notify(t("command.requires_interactive", ERR_REQUIRES_INTERACTIVE), "error");
 				return;
@@ -126,6 +126,19 @@ export function registerTodosCommand(pi: ExtensionAPI): void {
 			const visible = selectVisibleTasks(state);
 			if (visible.length === 0) {
 				ctx.ui.notify(t("command.no_todos", MSG_NO_TODOS), "info");
+				return;
+			}
+			// `/todos open` answers a different question from the default view: not
+			// "what is on this branch" but "what is still outstanding, and what does
+			// each of those actually ask for". The description is the part that
+			// matters there — it is what the reader needs to decide the next action,
+			// and it is exactly what the default grouped view leaves out.
+			//
+			// Additive on purpose: an unrecognised or absent argument must keep the
+			// existing output byte-for-byte, because other people's habits and other
+			// tools' expectations are attached to it.
+			if (args.trim() === "open") {
+				ctx.ui.notify(formatOpenView(state, visible), "info");
 				return;
 			}
 			const groups = selectTasksByStatus(state);
