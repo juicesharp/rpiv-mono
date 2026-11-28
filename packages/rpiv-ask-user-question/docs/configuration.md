@@ -60,6 +60,7 @@ type are likewise dropped back to their default without a warning.
 | --- | --- | --- |
 | `collapseKey` | Key that collapses and expands the dialog. | `"ctrl+]"` |
 | `notesKey` | Key that opens the notes editor. | `"n"` |
+| `bell` | Ring the terminal bell when the questionnaire starts waiting. | `true` |
 | `guidance.description` | Full text of the tool description the model sees. Replaces the built-in default entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line snippet describing the tool in the system prompt. | built-in snippet |
 | `guidance.promptGuidelines` | List of usage guidelines given to the model. | 4 built-in guidelines |
@@ -104,6 +105,15 @@ works on non-Latin layouts, because the terminal reports the key's Latin equival
 A spec that does not match the grammar, or that names a key the dialog already uses
 (`space`, `enter`, `return`, `tab`, `escape`, `esc`, and the arrow keys), is rejected and
 `"n"` is used. The notes hints in the dialog name whatever key you configure.
+
+### `bell`
+
+Whether the questionnaire writes one terminal BEL (`\x07`) when it starts waiting.
+Defaults to `true`. Set it to `false` when the bell makes the terminal window request
+attention and the compositor focuses it, stealing focus from another application. The
+`rpiv:ask-user:prompt` and `rpiv:ask-user:blocked` events still fire, so external
+notifiers keep working. Only a JSON boolean is honored; any other value falls back to
+`true`.
 
 ### `guidance.description`, `guidance.promptSnippet` and `guidance.promptGuidelines`
 

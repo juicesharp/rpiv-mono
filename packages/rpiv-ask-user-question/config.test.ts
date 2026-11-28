@@ -4,11 +4,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	type AskUserQuestionConfig,
 	COLLAPSE_KEY_OFF,
+	DEFAULT_BELL,
 	DEFAULT_COLLAPSE_KEY,
 	DEFAULT_NOTES_KEY,
 	formatKeySpecForDisplay,
 	formatNotesKeyForDisplay,
 	loadConfig,
+	resolveBell,
 	resolveCollapseKey,
 	resolveNotesKey,
 } from "./config.ts";
@@ -110,6 +112,24 @@ describe("resolveNotesKey", () => {
 		for (const notesKey of ["ctr+n", "тт", "space", "Enter", "tab", "escape", "up", "left"]) {
 			expect(resolveNotesKey({ notesKey }), notesKey).toBe("n");
 		}
+	});
+});
+
+describe("resolveBell", () => {
+	it("defaults to true", () => {
+		expect(DEFAULT_BELL).toBe(true);
+		expect(resolveBell({})).toBe(true);
+		expect(resolveBell({ bell: undefined })).toBe(true);
+	});
+
+	it("honors an explicit false", () => {
+		expect(resolveBell({ bell: false })).toBe(false);
+	});
+
+	it("falls back to true for non-boolean values", () => {
+		expect(resolveBell({ bell: "false" } as unknown as AskUserQuestionConfig)).toBe(true);
+		expect(resolveBell({ bell: 0 } as unknown as AskUserQuestionConfig)).toBe(true);
+		expect(resolveBell({ bell: null } as unknown as AskUserQuestionConfig)).toBe(true);
 	});
 });
 

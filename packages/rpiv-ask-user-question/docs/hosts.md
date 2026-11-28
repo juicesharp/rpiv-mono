@@ -13,9 +13,9 @@ render at all.
 
 ### Terminal attention
 
-After UI availability and questionnaire validation succeed, the package emits exactly one standard terminal BEL (`\x07`) immediately before the interactive wait begins. The signal is sent to `stdout` only when `process.stdout.isTTY` is true, so redirected output and non-TTY RPC streams stay untouched. A TTY-backed RPC dialog walker receives the same signal as the TUI path.
+After UI availability and questionnaire validation succeed, the package emits one standard terminal BEL (`\x07`) immediately before the interactive wait begins, unless the `bell` config disables it. The signal is sent to `stdout` only when `process.stdout.isTTY` is true, so redirected output and non-TTY RPC streams stay untouched. A TTY-backed RPC dialog walker receives the same signal as the TUI path.
 
-The BEL is best effort: if the synchronous terminal write fails, the questionnaire continues and its existing prompt/blocked lifecycle and result envelope are unchanged. The terminal configuration decides whether the BEL is audible, visual, or ignored. No BEL is emitted for missing UI, invalid questionnaires, or a failed TUI session load.
+The BEL is best effort: if the synchronous terminal write fails, the questionnaire continues and its existing prompt/blocked lifecycle and result envelope are unchanged. The terminal configuration decides whether the BEL is audible, visual, or ignored. Set `bell: false` in the config to suppress the signal; the prompt and `rpiv:ask-user:blocked` events are unchanged, so external notifiers still fire. No BEL is emitted for missing UI, invalid questionnaires, or a failed TUI session load.
 
 ### Non-interactive runs
 

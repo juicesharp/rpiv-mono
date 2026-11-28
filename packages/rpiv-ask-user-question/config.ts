@@ -7,6 +7,7 @@ export type CollapseKeySpec = string;
 export const DEFAULT_COLLAPSE_KEY: CollapseKeySpec = "ctrl+]";
 export const COLLAPSE_KEY_OFF: CollapseKeySpec = "off";
 export const DEFAULT_NOTES_KEY = "n";
+export const DEFAULT_BELL = true;
 
 export interface AskUserQuestionConfig {
 	guidance?: GuidanceFields;
@@ -24,6 +25,12 @@ export interface AskUserQuestionConfig {
 	 * key spec in the `collapseKey` format, e.g. `"ctrl+n"`.
 	 */
 	notesKey?: string;
+	/**
+	 * Ring the terminal bell once when the questionnaire starts waiting. Defaults
+	 * to `true`. Set it to `false` when the bell makes the terminal window request
+	 * attention and the compositor focuses it, stealing focus from another app.
+	 */
+	bell?: boolean;
 }
 
 // Named keys accepted by pi-tui's `matchesKey` (keys.js switch on the parsed base key).
@@ -84,6 +91,15 @@ export function resolveNotesKey(config: Pick<AskUserQuestionConfig, "notesKey">)
 	if ([...raw].length === 1) return raw;
 	const spec = raw.toLowerCase();
 	return isValidCollapseKeySpec(spec) && !NOTES_KEY_RESERVED.has(spec) ? spec : DEFAULT_NOTES_KEY;
+}
+
+/**
+ * Whether the questionnaire should ring the terminal bell when it starts waiting.
+ * Defaults to true; only an explicit boolean `false` disables it. Any other value
+ * (string, number, null) falls back to the default, matching the other settings.
+ */
+export function resolveBell(config: Pick<AskUserQuestionConfig, "bell">): boolean {
+	return typeof config.bell === "boolean" ? config.bell : DEFAULT_BELL;
 }
 
 /** A single-character notes key shows as configured (`n`, not `N`); a spec is display-cased. */
